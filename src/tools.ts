@@ -288,25 +288,31 @@ export function toolContent(toolUse: any): ToolCallContent[] {
       }
       break;
     case "Grep":
-      if (input) {
+      if (toolUse.content) {
         return [
-          { type: "content", content: { type: "text", text: `\`${input}\`` } },
+          {
+            type: "content",
+            content: { type: "text", text: toolUse.content },
+          },
         ];
       }
       break;
     case "WebFetch":
-      if (input && input.prompt) {
+      if (toolUse.content) {
         return [
-          { type: "content", content: { type: "text", text: input.prompt } },
+          {
+            type: "content",
+            content: { type: "text", text: toolUse.content },
+          },
         ];
       }
       break;
     case "WebSearch":
-      if (input) {
+      if (toolUse.content) {
         return [
           {
             type: "content",
-            content: { type: "text", text: input.toString() },
+            content: { type: "text", text: toolUse.content },
           },
         ];
       }
@@ -332,6 +338,16 @@ export function toolContent(toolUse: any): ToolCallContent[] {
       }
       break;
     case "mcp__acp__write":
+      if (input && input.abs_path) {
+        return [
+          {
+            type: "diff",
+            path: input.abs_path,
+            oldText: null,
+            newText: input.content,
+          },
+        ];
+      }
       if (input.content) {
         return [
           {
