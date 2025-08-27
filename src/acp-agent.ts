@@ -89,7 +89,6 @@ export class ClaudeAcpAgent implements Agent {
       options: {
         cwd: params.cwd,
         mcpServers,
-        executableArgs: ["--debug"],
         allowedTools: ["mcp__acp__read"],
         disallowedTools: ["Read"],
         strictMcpConfig: true,

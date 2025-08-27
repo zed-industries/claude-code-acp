@@ -24,8 +24,8 @@ describe("ACP subprocess integration", () => {
 
   beforeAll(async () => {
     // Start the subprocess
-    child = spawn("npm", ["run", "dev"], {
-      stdio: ["pipe", "pipe", "pipe"],
+    child = spawn("npm", ["run", "--silent", "dev"], {
+      stdio: ["pipe", "pipe", "inherit"],
       env: process.env,
     });
   });
@@ -46,7 +46,7 @@ describe("ACP subprocess integration", () => {
       throw new Error("Method not implemented.");
     }
     async sessionUpdate(params: SessionNotification): Promise<void> {
-      console.log(params);
+      console.error(params);
     }
     writeTextFile(
       params: WriteTextFileRequest,
@@ -64,7 +64,7 @@ describe("ACP subprocess integration", () => {
         return new TestClient(agent);
       },
       nodeToWebWritable(child.stdin!),
-      nodeToWebReadable(child.stdout!) as any,
+      nodeToWebReadable(child.stdout!),
     );
 
     let session = await connection.newSession({ cwd: "./", mcpServers: [] });

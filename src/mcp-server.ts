@@ -63,7 +63,7 @@ export function createMcpServer(
           {
             type: "text",
             text:
-              content +
+              content.content +
               `
 
               <system-reminder>
