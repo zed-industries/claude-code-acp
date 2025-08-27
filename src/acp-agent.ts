@@ -51,7 +51,9 @@ export class ClaudeAcpAgent implements Agent {
     return {
       protocolVersion: 1,
       // todo!()
-      agentCapabilities: { promptCapabilities: { image: true } },
+      agentCapabilities: {
+        promptCapabilities: { image: true, embeddedContext: true },
+      },
     };
   }
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
@@ -163,6 +165,23 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
+function formatUriAsLink(uri: string): string {
+  try {
+    if (uri.startsWith("file://")) {
+      const path = uri.slice(7); // Remove "file://"
+      const name = path.split("/").pop() || path;
+      return `[@${name}](${uri})`;
+    } else if (uri.startsWith("zed://")) {
+      const parts = uri.split("/");
+      const name = parts[parts.length - 1] || uri;
+      return `[@${name}](${uri})`;
+    }
+    return uri;
+  } catch {
+    return uri;
+  }
+}
+
 function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   const content: any[] = [];
   const context: any[] = [];
@@ -173,17 +192,19 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
         content.push({ type: "text", text: chunk.text });
         break;
       case "resource_link": {
+        const formattedUri = formatUriAsLink(chunk.uri);
         content.push({
           type: "text",
-          text: chunk.uri,
+          text: formattedUri,
         });
         break;
       }
       case "resource": {
         if ("text" in chunk.resource) {
+          const formattedUri = formatUriAsLink(chunk.resource.uri);
           content.push({
             type: "text",
-            text: `${chunk.resource.uri}`,
+            text: formattedUri,
           });
           context.push({
             type: "text",
@@ -194,14 +215,24 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
         break;
       }
       case "image":
-        content.push({
-          type: "image",
-          source: {
-            type: "base64",
-            data: chunk.data,
-            media_type: chunk.mimeType,
-          },
-        });
+        if (chunk.uri) {
+          content.push({
+            type: "image",
+            source: {
+              type: "url",
+              url: chunk.uri,
+            },
+          });
+        } else {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              data: chunk.data,
+              media_type: chunk.mimeType,
+            },
+          });
+        }
         break;
       // Ignore audio and other unsupported types
       default:
