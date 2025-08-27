@@ -90,6 +90,8 @@ export class ClaudeAcpAgent implements Agent {
         cwd: params.cwd,
         mcpServers,
         executableArgs: ["--debug"],
+        allowedTools: ["mcp__acp__read"],
+        disallowedTools: ["Read"],
         strictMcpConfig: true,
         permissionPromptToolName: "mcp__acp__permission",
         stderr: (err) => console.error(err),
@@ -266,82 +268,6 @@ export function toAcpNotifications(
         };
         break;
       case "tool_use":
-        // {
-        //     "type": "assistant",
-        //     "message": {
-        //         "id": "msg_017eNosJgww7F5qD4a8BcAcx",
-        //         "type": "message",
-        //         "role": "assistant",
-        //         "model": "claude-sonnet-4-20250514",
-        //         "content": [
-        //             {
-        //                 "type": "tool_use",
-        //                 "id": "toolu_01HaXZ4LfdchSeSR8ygt4zyq",
-        //                 "name": "TodoWrite",
-        //                 "input": {
-        //                     "todos": [
-        //                         {
-        //                             "content": "Analyze existing test coverage and identify gaps",
-        //                             "status": "in_progress",
-        //                             "activeForm": "Analyzing existing test coverage"
-        //                         },
-        //                         {
-        //                             "content": "Add comprehensive edge case tests",
-        //                             "status": "pending",
-        //                             "activeForm": "Adding comprehensive edge case tests"
-        //                         },
-        //                         {
-        //                             "content": "Add performance and timing tests",
-        //                             "status": "pending",
-        //                             "activeForm": "Adding performance and timing tests"
-        //                         },
-        //                         {
-        //                             "content": "Add error handling and panic behavior tests",
-        //                             "status": "pending",
-        //                             "activeForm": "Adding error handling tests"
-        //                         },
-        //                         {
-        //                             "content": "Add concurrent access and race condition tests",
-        //                             "status": "pending",
-        //                             "activeForm": "Adding concurrent access tests"
-        //                         },
-        //                         {
-        //                             "content": "Add tests for Each function with various data types",
-        //                             "status": "pending",
-        //                             "activeForm": "Adding Each function tests"
-        //                         },
-        //                         {
-        //                             "content": "Add benchmark tests for performance measurement",
-        //                             "status": "pending",
-        //                             "activeForm": "Adding benchmark tests"
-        //                         },
-        //                         {
-        //                             "content": "Improve test organization and helper functions",
-        //                             "status": "pending",
-        //                             "activeForm": "Improving test organization"
-        //                         }
-        //                     ]
-        //                 }
-        //             }
-        //         ],
-        //         "stop_reason": null,
-        //         "stop_sequence": null,
-        //         "usage": {
-        //             "input_tokens": 6,
-        //             "cache_creation_input_tokens": 326,
-        //             "cache_read_input_tokens": 17265,
-        //             "cache_creation": {
-        //                 "ephemeral_5m_input_tokens": 326,
-        //                 "ephemeral_1h_input_tokens": 0
-        //             },
-        //             "output_tokens": 1,
-        //             "service_tier": "standard"
-        //         }
-        //     },
-        //     "parent_tool_use_id": null,
-        //     "session_id": "d056596f-e328-41e9-badd-b07122ae5227",
-        //     "uuid": "b7c3330c-de8f-4bba-ac53-68c7f76ffeb5"
-        // }
         if (chunk.name == "TodoWrite") {
           update = {
             sessionUpdate: "plan",

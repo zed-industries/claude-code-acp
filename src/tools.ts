@@ -22,17 +22,22 @@ export function toolLabel(toolUse: any): string {
     case "Terminal":
     case "Bash":
       return input?.command ?? "Terminal";
-    case "ReadFile":
+    case "mcp__acp__read":
+      return "Read " + (input.abs_path ?? "File");
+    case "Read":
       return "Read File";
     case "LS":
       return input?.path ? `List Directory ${input.path}` : "List Directory";
+    case "mcp__zed__Edit":
     case "Edit":
       return input?.abs_path ? `Edit ${input.abs_path}` : "Edit";
     case "MultiEdit":
       return input?.file_path ? `Multi Edit ${input.file_path}` : "Multi Edit";
+    case "mcp__zed__Write":
     case "Write":
       return input?.abs_path ? `Write ${input.abs_path}` : "Write";
     case "Glob":
+      // todo!() don't render object
       return input ? `Glob \`${input}\`` : "Glob";
     case "Grep":
       return input ? `\`${input}\`` : "Grep";
@@ -59,13 +64,16 @@ export function toolKind(toolName: string): ToolKind {
       return "read";
     case "NotebookEdit":
       return "edit";
+    case "mcp__zed__Edit":
     case "Edit":
       return "edit";
     case "MultiEdit":
       return "edit";
+    case "mcp__zed__Write":
     case "Write":
       return "edit";
-    case "ReadFile":
+    case "mcp__acp__read":
+    case "Read":
       return "read";
     case "LS":
       return "search";
@@ -144,7 +152,17 @@ export function toolContent(toolUse: any): ToolCallContent[] {
         ];
       }
       break;
-    case "ReadFile":
+    case "mcp__acp__read":
+      if (toolUse.content) {
+        return [
+          {
+            type: "content",
+            content: { type: "text", text: toolUse.content },
+          },
+        ];
+      }
+      break;
+    case "Read":
       if (input && input.abs_path) {
         return [
           {
@@ -205,6 +223,7 @@ export function toolContent(toolUse: any): ToolCallContent[] {
         ];
       }
       break;
+    case "mcp__zed__Edit":
     case "Edit":
       if (input && input.abs_path) {
         return [
@@ -217,6 +236,7 @@ export function toolContent(toolUse: any): ToolCallContent[] {
         ];
       }
       break;
+    case "mcp__zed__Write":
     case "Write":
       if (input && input.abs_path) {
         return [

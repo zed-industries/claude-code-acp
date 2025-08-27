@@ -16,7 +16,65 @@ export function createMcpServer(
     version: "1.0.0",
   });
 
-  // Register a simple echo tool (for demonstration)
+  server.registerTool(
+    "read",
+    {
+      title: "Read File",
+      description: `
+        In sessions with 'mcp__acp__read' tool. Always use it instead of the 'Read' tool. The 'Read' tool is disabled.
+
+        The offset parameter is the line to start at (omit to start at the first line)
+        The limit parameter is the number of lines to read (omit to read all lines)
+        `,
+
+      inputSchema: {
+        abs_path: z.string(),
+        offset: z.number().optional(),
+        limit: z.number().optional(),
+      },
+    },
+    async (input) => {
+      console.error("READ TOOL", input);
+      const session = agent.sessions[sessionId];
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "The user has left the building",
+            },
+          ],
+        };
+      }
+      let content = await agent.client.readTextFile({
+        sessionId,
+        path: input.abs_path,
+        limit: input.limit,
+        line: input.offset,
+      });
+      if (!input.limit) {
+        throw new Error(
+          "Reading the file failed because it's too large. Try the first 10 lines",
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              content +
+              `
+
+              <system-reminder>
+              Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
+              </system-reminder>`,
+          },
+        ],
+      };
+    },
+  );
+
   server.registerTool(
     "permission",
     {
@@ -29,7 +87,6 @@ export function createMcpServer(
       },
     },
     async (input) => {
-      console.error("PERMISSION TOOl", input);
       const session = agent.sessions[sessionId];
       if (!session) {
         return {
