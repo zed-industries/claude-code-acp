@@ -1,0 +1,36 @@
+{
+  "name": "claude-code-acp-agent",
+  "version": "0.1.0",
+  "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
+  "main": "dist/acp-agent.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/acp-agent.js",
+    "dev": "npm run build && npm run start",
+    "lint": "eslint src --ext .ts"
+  },
+  "keywords": [
+    "claude",
+    "acp",
+    "agent",
+    "anthropic",
+    "typescript",
+    "sdk",
+    "code"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.92",
+    "@zed-industries/agent-client-protocol": "0.0.32",
+    "uuid": "11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/uuid": "^10.0.0",
+    "eslint": "^8.56.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
