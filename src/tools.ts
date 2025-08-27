@@ -44,7 +44,7 @@ export function toolLabel(toolUse: any): string {
       return input?.abs_path ? `Edit ${input.abs_path}` : "Edit";
     case "MultiEdit":
       return input?.file_path ? `Multi Edit ${input.file_path}` : "Multi Edit";
-    case "mcp__zed__Write":
+    case "mcp__acp__write":
     case "Write":
       return input?.abs_path ? `Write ${input.abs_path}` : "Write";
     case "Glob":
@@ -80,7 +80,7 @@ export function toolKind(toolName: string): ToolKind {
       return "edit";
     case "MultiEdit":
       return "edit";
-    case "mcp__zed__Write":
+    case "mcp__acp__write":
     case "Write":
       return "edit";
     case "mcp__acp__read":
@@ -169,6 +169,16 @@ export function toolContent(toolUse: any): ToolCallContent[] {
           {
             type: "content",
             content: { type: "text", text: toolUse.content },
+          },
+        ];
+      }
+      break;
+    case "mcp__acp__write":
+      if (input.content) {
+        return [
+          {
+            type: "content",
+            content: { type: "text", text: input.content },
           },
         ];
       }

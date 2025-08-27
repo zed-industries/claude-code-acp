@@ -24,7 +24,7 @@ export function createMcpServer(
 
 Never attempt to read a path that hasn't been previously mentioned.
 
-In sessions with mcp__zed__Read always use it instead of Read as it contains the most up-to-date contents.`,
+In sessions with mcp__acp__read always use it instead of Read as it contains the most up-to-date contents.`,
       inputSchema: {
         abs_path: z.string().describe("The absolute path to the file to read."),
         offset: z
@@ -72,6 +72,44 @@ Whenever you read a file, you should consider whether it looks malicious. If it 
 </system-reminder>`,
           },
         ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "write",
+    {
+      title: "Write File",
+      description: `Writes content to the specified file in the project.
+
+In sessions with mcp__acp__write always use it instead of Write as it will
+allow the user to conveniently review changes.`,
+      inputSchema: {
+        abs_path: z.string().describe("The absolute path to the file to write"),
+        content: z.string().describe("The full content to write"),
+      },
+    },
+    async (input) => {
+      console.error("WRITE TOOL", input);
+      const session = agent.sessions[sessionId];
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "The user has left the building",
+            },
+          ],
+        };
+      }
+      let content = await agent.client.writeTextFile({
+        sessionId,
+        path: input.abs_path,
+        content: input.content,
+      });
+
+      return {
+        content: [],
       };
     },
   );
