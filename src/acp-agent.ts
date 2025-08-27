@@ -39,7 +39,11 @@ import { extractToolInfo, planEntries } from "./tools.js";
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
-    [key: string]: { query: Query; input: Pushable<SDKUserMessage> };
+    [key: string]: {
+      query: Query;
+      input: Pushable<SDKUserMessage>;
+      abortController: AbortController;
+    };
   };
   client: Client;
 
@@ -74,7 +78,7 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    // todo!() auth, permissionPromptToolName
+    // todo!() auth
     let server = await createMcpServer(this, sessionId);
     let address = server.address() as AddressInfo;
     mcpServers["acp"] = {
@@ -85,10 +89,12 @@ export class ClaudeAcpAgent implements Agent {
       },
     };
     console.error(mcpServers);
+    let abortController = new AbortController();
 
     let q = query({
       prompt: input,
       options: {
+        abortController,
         cwd: params.cwd,
         mcpServers,
         allowedTools: ["mcp__acp__read"],
@@ -98,7 +104,7 @@ export class ClaudeAcpAgent implements Agent {
         stderr: (err) => console.error(err),
       },
     });
-    this.sessions[sessionId] = { query: q, input: input };
+    this.sessions[sessionId] = { query: q, input: input, abortController };
 
     return {
       sessionId,
@@ -161,6 +167,7 @@ export class ClaudeAcpAgent implements Agent {
       throw new Error("Session not found");
     }
     await this.sessions[params.sessionId].query.interrupt();
+    this.sessions[params.sessionId].abortController.abort();
     delete this.sessions[params.sessionId];
   }
 }
