@@ -23,7 +23,18 @@ export function toolLabel(toolUse: any): string {
     case "Bash":
       return input?.command ?? "Terminal";
     case "mcp__acp__read":
-      return "Read " + (input.abs_path ?? "File");
+      let limit = "";
+      if (input.limit) {
+        limit =
+          " (" +
+          ((input.offset ?? 0) + 1) +
+          " - " +
+          ((input.offset ?? 0) + input.limit) +
+          ")";
+      } else if (input.offset) {
+        limit = " (from line " + (input.offset + 1) + ")";
+      }
+      return "Read " + (input.abs_path ?? "File") + limit;
     case "Read":
       return "Read File";
     case "LS":
@@ -37,8 +48,8 @@ export function toolLabel(toolUse: any): string {
     case "Write":
       return input?.abs_path ? `Write ${input.abs_path}` : "Write";
     case "Glob":
-      // todo!() don't render object
-      return input ? `Glob \`${input}\`` : "Glob";
+      // todo!() show number of results when we hvae them
+      return input ? `Find ${input.pattern}` : "Find";
     case "Grep":
       return input ? `\`${input}\`` : "Grep";
     case "WebFetch":
@@ -183,11 +194,11 @@ export function toolContent(toolUse: any): ToolCallContent[] {
       }
       break;
     case "Glob":
-      if (input) {
+      if (toolUse.content) {
         return [
           {
             type: "content",
-            content: { type: "text", text: input.toString() },
+            content: { type: "text", text: toolUse.content },
           },
         ];
       }

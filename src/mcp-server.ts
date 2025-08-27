@@ -58,11 +58,6 @@ In sessions with mcp__zed__Read always use it instead of Read as it contains the
         limit: input.limit,
         line: input.offset,
       });
-      if (!input.limit) {
-        throw new Error(
-          "Reading the file failed because it's too large. Try the first 10 lines",
-        );
-      }
 
       return {
         content: [

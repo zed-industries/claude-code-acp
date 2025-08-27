@@ -100,6 +100,21 @@ describe("tool conversions", () => {
     ]);
   });
 
+  it("should handle Glob nicely", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01VtsS2mxUFwpBJZYd7BmbC9",
+      name: "Glob",
+      input: {
+        pattern: "*/**.ts",
+      },
+    };
+
+    expect(toolKind(tool_use.name)).toBe("search");
+    expect(toolLabel(tool_use)).toBe("Find */**.ts");
+    expect(toolContent(tool_use)).toStrictEqual([]);
+  });
+
   it("should handle plan entries", () => {
     const received: SDKAssistantMessage = {
       type: "assistant",
