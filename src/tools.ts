@@ -19,10 +19,9 @@ export function toolLabel(toolUse: any): string {
       return input?.notebook_path
         ? `Edit Notebook ${input.notebook_path}`
         : "Edit Notebook";
-    case "Terminal":
     case "Bash":
       return input?.command ?? "Terminal";
-    case "mcp__acp__read":
+    case "mcp__acp__read": {
       let limit = "";
       if (input.limit) {
         limit =
@@ -35,6 +34,7 @@ export function toolLabel(toolUse: any): string {
         limit = " (from line " + (input.offset + 1) + ")";
       }
       return "Read " + (input.abs_path ?? "File") + limit;
+    }
     case "Read":
       return "Read File";
     case "LS":
@@ -47,15 +47,99 @@ export function toolLabel(toolUse: any): string {
     case "mcp__acp__write":
     case "Write":
       return input?.abs_path ? `Write ${input.abs_path}` : "Write";
-    case "Glob":
+    case "Glob": {
+      let label = "Find";
+      if (input.path) {
+        label += ` ${input.path}`;
+      }
+      if (input.pattern) {
+        label += ` ${input.pattern}`;
+      }
       // todo!() show number of results when we hvae them
-      return input ? `Find ${input.pattern}` : "Find";
-    case "Grep":
-      return input ? `\`${input}\`` : "Grep";
-    case "WebFetch":
+      return label;
+    }
+    case "Grep": {
+      let label = "grep";
+
+      // Boolean flags
+      if (input.case_insensitive) {
+        label += " -i";
+      }
+      if (input.line_numbers) {
+        label += " -n";
+      }
+
+      // Context options
+      if (input.after_context !== undefined) {
+        label += ` -A ${input.after_context}`;
+      }
+      if (input.before_context !== undefined) {
+        label += ` -B ${input.before_context}`;
+      }
+      if (input.context !== undefined) {
+        label += ` -C ${input.context}`;
+      }
+
+      // Output mode
+      if (input.output_mode) {
+        switch (input.output_mode) {
+          case "FilesWithMatches":
+            label += " -l";
+            break;
+          case "Count":
+            label += " -c";
+            break;
+          case "Content":
+            break; // Default mode
+        }
+      }
+
+      // Head limit
+      if (input.head_limit !== undefined) {
+        label += ` | head -${input.head_limit}`;
+      }
+
+      // Glob pattern
+      if (input.glob) {
+        label += ` --include="${input.glob}"`;
+      }
+
+      // File type
+      if (input.file_type) {
+        label += ` --type=${input.file_type}`;
+      }
+
+      // Multiline
+      if (input.multiline) {
+        label += " -P"; // Perl-compatible regex for multiline
+      }
+
+      // Pattern (escaped if contains special characters)
+      label += ` "${input.pattern}"`;
+
+      // Path
+      if (input.path) {
+        label += ` ${input.path}`;
+      }
+
+      return label;
+    }
+    case "WebFetch": {
       return input?.url ? `Fetch ${input.url}` : "Fetch";
-    case "WebSearch":
-      return input ? `Web Search: ${input}` : "Web Search";
+    }
+    case "WebSearch": {
+      let label = `"${input.query}"`;
+
+      if (input.allowed_domains && input.allowed_domains.length > 0) {
+        label += ` (allowed: ${input.allowed_domains.join(", ")})`;
+      }
+
+      if (input.blocked_domains && input.blocked_domains.length > 0) {
+        label += ` (blocked: ${input.blocked_domains.join(", ")})`;
+      }
+
+      return label;
+    }
     case "TodoWrite":
       return input?.todos
         ? `Update TODOs: ${input.todos.map((todo: any) => todo.content).join(", ")}`
