@@ -90,7 +90,7 @@ export class ClaudeAcpAgent implements Agent {
         cwd: params.cwd,
         mcpServers,
         allowedTools: ["mcp__acp__read"],
-        disallowedTools: ["Read"],
+        disallowedTools: ["Read", "Write", "Edit", "MultiEdit"],
         strictMcpConfig: true,
         permissionPromptToolName: "mcp__acp__permission",
         stderr: (err) => console.error(err),
