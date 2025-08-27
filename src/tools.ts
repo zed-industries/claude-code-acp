@@ -274,20 +274,20 @@ function toolContent(toolUse: any): ToolCallContent[] {
       }
       break;
     case "LS":
-      if (input && input.path) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: input.path.toString() },
-          },
-        ];
-      }
       break;
     case "Glob":
       break;
     case "Grep":
       break;
     case "WebFetch":
+      if (input && input.prompt) {
+        return [
+          {
+            type: "content",
+            content: { type: "text", text: input.prompt },
+          },
+        ];
+      }
       break;
     case "WebSearch":
       break;

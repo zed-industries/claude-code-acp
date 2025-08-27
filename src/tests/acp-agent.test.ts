@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn } from "child_process";
 import {
   Agent,
-  AgentSideConnection,
   Client,
   ClientSideConnection,
   ReadTextFileRequest,
@@ -16,7 +15,6 @@ import {
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { extractToolInfo } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
-import { UUID } from "crypto";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
 describe("ACP subprocess integration", () => {
@@ -115,6 +113,112 @@ describe("tool conversions", () => {
     expect(extractToolInfo(tool_use)).toStrictEqual({
       kind: "search",
       title: "Find */**.ts",
+      content: [],
+    });
+  });
+
+  it("should handle Task tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01ANYHYDsXcDPKgxhg7us9bj",
+      name: "Task",
+      input: {
+        description: "Handle user's work request",
+        prompt:
+          'The user has asked me to "Create a Task to do the work!" but hasn\'t specified what specific work they want done. I need to:\n\n1. First understand what work needs to be done by examining the current state of the repository\n2. Look at the git status to see what files have been modified\n3. Check if there are any obvious tasks that need completion based on the current state\n4. If the work isn\'t clear from the context, ask the user to specify what work they want accomplished\n\nThe git status shows: "M src/tests/acp-agent.test.ts" - there\'s a modified test file that might need attention.\n\nPlease examine the repository state and determine what work needs to be done, then either complete it or ask the user for clarification on the specific task they want accomplished.',
+        subagent_type: "general-purpose",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "think",
+      title: "Handle user's work request",
+      content: [
+        {
+          content: {
+            text: 'The user has asked me to "Create a Task to do the work!" but hasn\'t specified what specific work they want done. I need to:\n\n1. First understand what work needs to be done by examining the current state of the repository\n2. Look at the git status to see what files have been modified\n3. Check if there are any obvious tasks that need completion based on the current state\n4. If the work isn\'t clear from the context, ask the user to specify what work they want accomplished\n\nThe git status shows: "M src/tests/acp-agent.test.ts" - there\'s a modified test file that might need attention.\n\nPlease examine the repository state and determine what work needs to be done, then either complete it or ask the user for clarification on the specific task they want accomplished.',
+            type: "text",
+          },
+          type: "content",
+        },
+      ],
+    });
+  });
+
+  it("should handle LS tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01EEqsX7Eb9hpx87KAHVPTey",
+      name: "LS",
+      input: {
+        path: "/Users/benbrandt/github/claude-code-acp",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "search",
+      title: "List Directory /Users/benbrandt/github/claude-code-acp",
+      content: [],
+    });
+  });
+
+  it("should handle Grep tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_016j8oGSD3eAZ9KT62Y7Jsjb",
+      name: "Grep",
+      input: {
+        pattern: ".*",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "search",
+      title: 'grep ".*"',
+      content: [],
+    });
+  });
+
+  it("should handle WebFetch tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01LxEjDn8ci9SAc3qG7LbbXV",
+      name: "WebFetch",
+      input: {
+        url: "https://agentclientprotocol.com",
+        prompt:
+          "Please provide a comprehensive summary of the content on this page, including what the Agent Client Protocol is, its main features, documentation links, and any other relevant information.",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "fetch",
+      title: "Fetch https://agentclientprotocol.com",
+      content: [
+        {
+          content: {
+            text: "Please provide a comprehensive summary of the content on this page, including what the Agent Client Protocol is, its main features, documentation links, and any other relevant information.",
+            type: "text",
+          },
+          type: "content",
+        },
+      ],
+    });
+  });
+
+  it("should handle WebSearch tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01NYMwiZFbdoQFxYxuQDFZXQ",
+      name: "WebSearch",
+      input: {
+        query: "agentclientprotocol.com",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "search",
+      title: '"agentclientprotocol.com"',
       content: [],
     });
   });
