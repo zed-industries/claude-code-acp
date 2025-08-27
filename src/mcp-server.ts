@@ -20,17 +20,23 @@ export function createMcpServer(
     "read",
     {
       title: "Read File",
-      description: `
-        In sessions with 'mcp__acp__read' tool. Always use it instead of the 'Read' tool. The 'Read' tool is disabled.
+      description: `Reads the content of the given file in the project.
 
-        The offset parameter is the line to start at (omit to start at the first line)
-        The limit parameter is the number of lines to read (omit to read all lines)
-        `,
+Never attempt to read a path that hasn't been previously mentioned.
 
+In sessions with mcp__zed__Read always use it instead of Read as it contains the most up-to-date contents.`,
       inputSchema: {
-        abs_path: z.string(),
-        offset: z.number().optional(),
-        limit: z.number().optional(),
+        abs_path: z.string().describe("The absolute path to the file to read."),
+        offset: z
+          .number()
+          .optional()
+          .describe(
+            "Which line to start reading from. Omit to start from the beginning.",
+          ),
+        limit: z
+          .number()
+          .optional()
+          .describe("How many lines to read. Omit for the whole file."),
       },
     },
     async (input) => {
