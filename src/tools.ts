@@ -1,4 +1,5 @@
 import {
+  PlanEntry,
   ToolCallContent,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
@@ -248,4 +249,18 @@ export function toolContent(toolUse: any): ToolCallContent[] {
   }
 
   return [];
+}
+
+type ClaudePlanEntry = {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+};
+
+export function planEntries(input: { todos: ClaudePlanEntry[] }): PlanEntry[] {
+  return input.todos.map((input) => ({
+    content: input.content,
+    status: input.status,
+    priority: "medium",
+  }));
 }
