@@ -42,7 +42,6 @@ export class ClaudeAcpAgent implements Agent {
     [key: string]: {
       query: Query;
       input: Pushable<SDKUserMessage>;
-      abortController: AbortController;
     };
   };
   client: Client;
@@ -89,12 +88,10 @@ export class ClaudeAcpAgent implements Agent {
       },
     };
     console.error(mcpServers);
-    let abortController = new AbortController();
 
     let q = query({
       prompt: input,
       options: {
-        abortController,
         cwd: params.cwd,
         mcpServers,
         allowedTools: ["mcp__acp__read"],
@@ -104,7 +101,7 @@ export class ClaudeAcpAgent implements Agent {
         stderr: (err) => console.error(err),
       },
     });
-    this.sessions[sessionId] = { query: q, input: input, abortController };
+    this.sessions[sessionId] = { query: q, input: input };
 
     return {
       sessionId,
@@ -167,8 +164,6 @@ export class ClaudeAcpAgent implements Agent {
       throw new Error("Session not found");
     }
     await this.sessions[params.sessionId].query.interrupt();
-    this.sessions[params.sessionId].abortController.abort();
-    delete this.sessions[params.sessionId];
   }
 }
 
