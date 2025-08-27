@@ -30,6 +30,8 @@ import {
 } from "./utils.js";
 import { ContentBlock } from "@zed-industries/agent-client-protocol";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
+import { createMcpServer } from "./mcp-server.js";
+import { AddressInfo } from "node:net";
 
 // Implement the ACP Agent interface
 class ClaudeAcpAgent implements Agent {
@@ -68,10 +70,27 @@ class ClaudeAcpAgent implements Agent {
     }
 
     // todo!() auth, permissionPromptToolName
+    let server = await createMcpServer();
+    let address = server.address() as AddressInfo;
+    mcpServers["acp"] = {
+      type: "http",
+      url: "http://127.0.0.1:" + address.port + "/mcp",
+      headers: {
+        "x-acp-proxy-session-id": sessionId,
+      },
+    };
+    console.error(mcpServers);
 
     let q = query({
       prompt: input,
-      options: { cwd: params.cwd, mcpServers },
+      options: {
+        cwd: params.cwd,
+        mcpServers,
+        executableArgs: ["--debug"],
+        strictMcpConfig: true,
+        permissionPromptToolName: "mcp__acp__permission",
+        stderr: (err) => console.error(err),
+      },
     });
     this.sessions[sessionId] = { query: q, input: input };
 
@@ -90,7 +109,6 @@ class ClaudeAcpAgent implements Agent {
     }
 
     const { query, input } = this.sessions[params.sessionId];
-    query.interrupt();
     input.push(promptToClaude(params));
     while (true) {
       let { value: message, done } = await query.next();
@@ -269,20 +287,19 @@ function toAcpNotifications(
       default:
         throw new Error("unhandled chunk type: " + chunk.type);
     }
-    output.push({ sessionId: message.session_id, update });
+    output.push({ sessionId, update });
   }
 
   return output;
 }
 
-new AgentSideConnection(
-  (client) => new ClaudeAcpAgent(client),
-  nodeToWebWritable(process.stdout),
-  nodeToWebReadable(process.stdin),
-);
-
-// Keep process alive
-process.stdin.resume();
+export function runAcp() {
+  new AgentSideConnection(
+    (client) => new ClaudeAcpAgent(client),
+    nodeToWebWritable(process.stdout),
+    nodeToWebReadable(process.stdin),
+  );
+}
 
 type ContentChunk =
   | { type: "text"; text: string }
