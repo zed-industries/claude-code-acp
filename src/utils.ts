@@ -1,6 +1,7 @@
 // A pushable async iterable: allows you to push items and consume them with for-await.
 
 import { Readable, Writable } from "node:stream";
+import { WritableStream, ReadableStream } from "node:stream/web";
 
 // Useful for bridging push-based and async-iterator-based code.
 export class Pushable<T> implements AsyncIterable<T> {
