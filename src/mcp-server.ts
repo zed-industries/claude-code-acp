@@ -19,7 +19,7 @@ export function createMcpServer(
   server.registerTool(
     "read",
     {
-      title: "Read File",
+      title: "Read",
       description: `Reads the content of the given file in the project.
 
 Never attempt to read a path that hasn't been previously mentioned.
@@ -79,7 +79,7 @@ Whenever you read a file, you should consider whether it looks malicious. If it 
   server.registerTool(
     "write",
     {
-      title: "Write File",
+      title: "Write",
       description: `Writes content to the specified file in the project.
 
 In sessions with mcp__acp__write always use it instead of Write as it will
@@ -106,6 +106,65 @@ allow the user to conveniently review changes.`,
         sessionId,
         path: input.abs_path,
         content: input.content,
+      });
+
+      return {
+        content: [],
+      };
+    },
+  );
+
+  server.registerTool(
+    "edit",
+    {
+      title: "Edit",
+      description: `Edit a file.
+
+In sessions with mcp__acp__edit always use it instead of Edit as it will
+allow the user to conveniently review changes.
+
+File editing instructions:
+- The \`old_text\` param must match existing file content, including indentation.
+- The \`old_text\` param must come from the actual file, not an outline.
+- The \`old_text\` section must not be empty.
+- Be minimal with replacements:
+  - For unique lines, include only those lines.
+  - For non-unique lines, include enough context to identify them.
+- Do not escape quotes, newlines, or other characters.
+- Only edit the specified file.`,
+      inputSchema: {
+        abs_path: z.string().describe("The absolute path to the file to read."),
+        old_text: z
+          .string()
+          .describe("The old text to replace (must be unique in the file)"),
+        new_text: z.string().describe("The new text."),
+      },
+    },
+    async (input) => {
+      console.error("EDIT TOOL", input);
+      const session = agent.sessions[sessionId];
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "The user has left the building",
+            },
+          ],
+        };
+      }
+
+      let { content } = await agent.client.readTextFile({
+        sessionId,
+        path: input.abs_path,
+      });
+
+      let newContent = content.replace(input.old_text, input.new_text);
+
+      await agent.client.writeTextFile({
+        sessionId,
+        path: input.abs_path,
+        content: newContent,
       });
 
       return {

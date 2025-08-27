@@ -39,7 +39,7 @@ export function toolLabel(toolUse: any): string {
       return "Read File";
     case "LS":
       return input?.path ? `List Directory ${input.path}` : "List Directory";
-    case "mcp__zed__Edit":
+    case "mcp__acp__edit":
     case "Edit":
       return input?.abs_path ? `Edit ${input.abs_path}` : "Edit";
     case "MultiEdit":
@@ -75,7 +75,7 @@ export function toolKind(toolName: string): ToolKind {
       return "read";
     case "NotebookEdit":
       return "edit";
-    case "mcp__zed__Edit":
+    case "mcp__acp__edit":
     case "Edit":
       return "edit";
     case "MultiEdit":
@@ -173,16 +173,6 @@ export function toolContent(toolUse: any): ToolCallContent[] {
         ];
       }
       break;
-    case "mcp__acp__write":
-      if (input.content) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: input.content },
-          },
-        ];
-      }
-      break;
     case "Read":
       if (input && input.abs_path) {
         return [
@@ -244,7 +234,7 @@ export function toolContent(toolUse: any): ToolCallContent[] {
         ];
       }
       break;
-    case "mcp__zed__Edit":
+    case "mcp__acp__edit":
     case "Edit":
       if (input && input.abs_path) {
         return [
@@ -257,7 +247,16 @@ export function toolContent(toolUse: any): ToolCallContent[] {
         ];
       }
       break;
-    case "mcp__zed__Write":
+    case "mcp__acp__write":
+      if (input.content) {
+        return [
+          {
+            type: "content",
+            content: { type: "text", text: input.content },
+          },
+        ];
+      }
+      break;
     case "Write":
       if (input && input.abs_path) {
         return [
