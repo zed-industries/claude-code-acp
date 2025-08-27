@@ -4,8 +4,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { Server } from "node:http";
+import { ClaudeAcpAgent } from "./acp-agent.js";
 
-export function createMcpServer(): Promise<Server> {
+export function createMcpServer(
+  agent: ClaudeAcpAgent,
+  sessionId: string,
+): Promise<Server> {
   // Create MCP server
   const server = new McpServer({
     name: "acp-mcp-server",
@@ -26,17 +30,59 @@ export function createMcpServer(): Promise<Server> {
     },
     async (input) => {
       console.error("PERMISSION TOOl", input);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              behavior: "allow",
-              updatedInput: input.input,
-            }),
-          },
+      const session = agent.sessions[sessionId];
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                behavior: "deny",
+                message: "Session not found",
+              }),
+            },
+          ],
+        };
+      }
+      let response = await agent.client.requestPermission({
+        options: [
+          { kind: "allow_once", name: "Allow", optionId: "allow" },
+          { kind: "reject_once", name: "Reject", optionId: "reject" },
         ],
-      };
+        sessionId,
+        toolCall: {
+          toolCallId: input.tool_use_id!,
+          rawInput: input.input,
+        },
+      });
+      if (
+        response.outcome?.outcome == "selected" &&
+        response.outcome.optionId == "allow"
+      ) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                behavior: "allow",
+                updatedInput: input.input,
+              }),
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                behavior: "deny",
+                message: "User refused permission to run tool",
+              }),
+            },
+          ],
+        };
+      }
     },
   );
 
