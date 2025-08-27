@@ -8,7 +8,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "npm run build && npm run start",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "claude",
@@ -34,8 +38,10 @@
     "@types/minimist": "^1.2.5",
     "@types/node": "^20.11.30",
     "@types/uuid": "^10.0.0",
+    "@vitest/ui": "^3.2.4",
     "eslint": "^8.56.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^3.2.4"
   }
 }
