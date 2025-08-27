@@ -38,6 +38,13 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
           .optional()
           .describe("How many lines to read. Omit for the whole file."),
       },
+      annotations: {
+        title: "Read file",
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: false,
+      },
     },
     async (input) => {
       console.error("READ TOOL", input);
@@ -87,6 +94,13 @@ allow the user to conveniently review changes.`,
       inputSchema: {
         abs_path: z.string().describe("The absolute path to the file to write"),
         content: z.string().describe("The full content to write"),
+      },
+      annotations: {
+        title: "Write file",
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: false,
       },
     },
     async (input) => {
@@ -138,6 +152,13 @@ File editing instructions:
           .string()
           .describe("The old text to replace (must be unique in the file)"),
         new_text: z.string().describe("The new text."),
+      },
+      annotations: {
+        title: "Edit file",
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: false,
       },
     },
     async (input) => {
