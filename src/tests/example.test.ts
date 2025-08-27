@@ -14,6 +14,7 @@ import {
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
+import { toolContent, toolKind, toolLabel } from "../tools.js";
 
 describe("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -68,5 +69,31 @@ describe("ACP subprocess integration", () => {
       prompt: [{ type: "text", text: "Hello Claude!" }],
       sessionId: session.sessionId,
     });
+  });
+});
+
+describe("tool conversions", () => {
+  it("should handle Bash nicely", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01VtsS2mxUFwpBJZYd7BmbC9",
+      name: "Bash",
+      input: {
+        command: "rm README.md.rm",
+        description: "Delete README.md.rm file",
+      },
+    };
+
+    expect(toolKind(tool_use.name)).toBe("execute");
+    expect(toolLabel(tool_use)).toBe("rm README.md.rm");
+    expect(toolContent(tool_use)).toStrictEqual([
+      {
+        content: {
+          text: "Delete README.md.rm file",
+          type: "text",
+        },
+        type: "content",
+      },
+    ]);
   });
 });

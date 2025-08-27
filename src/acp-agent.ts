@@ -11,6 +11,8 @@ import {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  ToolCallContent,
+  ToolKind,
 } from "@zed-industries/agent-client-protocol";
 import {
   McpServerConfig,
@@ -32,6 +34,7 @@ import { ContentBlock } from "@zed-industries/agent-client-protocol";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
+import { toolContent, toolLabel, toolKind } from "./tools.js";
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -265,11 +268,12 @@ function toAcpNotifications(
       case "tool_use":
         update = {
           toolCallId: chunk.id,
-          title: chunk.name,
+          title: toolLabel(chunk),
           sessionUpdate: "tool_call",
-          kind: "other", // todo!()
+          kind: toolKind(chunk.name), // todo!()
           rawInput: chunk.input,
           status: "pending",
+          content: toolContent(chunk),
         };
         break;
 
@@ -291,68 +295,6 @@ function toAcpNotifications(
   }
 
   return output;
-}
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:         "content": [
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:             {
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                 "type": "tool_use",
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                 "id": "toolu_01BZ6ZfAoU5Vw1g4YiRa8kv3",
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                 "name": "Bash",
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                 "input": {
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                     "command": "rm README.md.es",
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                     "description": "Delete README.md.es file"
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:                 }
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:             }
-2025-08-27T11:10:22-06:00 WARN  [agent_servers::acp] agent stderr:         ],
-
-pub fn label(&self) -> String {
-    match &self {
-        Self::Task(Some(params)) => params.description.clone(),
-        Self::Task(None) => "Task".into(),
-        Self::NotebookRead(Some(params)) => {
-            format!("Read Notebook {}", params.notebook_path.display())
-        }
-        Self::NotebookRead(None) => "Read Notebook".into(),
-        Self::NotebookEdit(Some(params)) => {
-            format!("Edit Notebook {}", params.notebook_path.display())
-        }
-        Self::NotebookEdit(None) => "Edit Notebook".into(),
-        Self::Terminal(Some(params)) => format!("`{}`", params.command),
-        Self::Terminal(None) => "Terminal".into(),
-        Self::ReadFile(_) => "Read File".into(),
-        Self::Ls(Some(params)) => {
-            format!("List Directory {}", params.path.display())
-        }
-        Self::Ls(None) => "List Directory".into(),
-        Self::Edit(Some(params)) => {
-            format!("Edit {}", params.abs_path.display())
-        }
-        Self::Edit(None) => "Edit".into(),
-        Self::MultiEdit(Some(params)) => {
-            format!("Multi Edit {}", params.file_path.display())
-        }
-        Self::MultiEdit(None) => "Multi Edit".into(),
-        Self::Write(Some(params)) => {
-            format!("Write {}", params.abs_path.display())
-        }
-        Self::Write(None) => "Write".into(),
-        Self::Glob(Some(params)) => {
-            format!("Glob `{params}`")
-        }
-        Self::Glob(None) => "Glob".into(),
-        Self::Grep(Some(params)) => format!("`{params}`"),
-        Self::Grep(None) => "Grep".into(),
-        Self::WebFetch(Some(params)) => format!("Fetch {}", params.url),
-        Self::WebFetch(None) => "Fetch".into(),
-        Self::WebSearch(Some(params)) => format!("Web Search: {}", params),
-        Self::WebSearch(None) => "Web Search".into(),
-        Self::TodoWrite(Some(params)) => format!(
-            "Update TODOs: {}",
-            params.todos.iter().map(|todo| &todo.content).join(", ")
-        ),
-        Self::TodoWrite(None) => "Update TODOs".into(),
-        Self::ExitPlanMode(_) => "Exit Plan Mode".into(),
-        Self::Other { name, .. } => name.clone(),
-    }
 }
 
 export function runAcp() {
