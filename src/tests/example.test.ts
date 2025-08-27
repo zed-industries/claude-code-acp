@@ -14,7 +14,7 @@ import {
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
-import { toolContent, toolKind, toolLabel } from "../tools.js";
+import { extractToolInfo } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
 import { UUID } from "crypto";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
@@ -87,17 +87,19 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolKind(tool_use.name)).toBe("execute");
-    expect(toolLabel(tool_use)).toBe("rm README.md.rm");
-    expect(toolContent(tool_use)).toStrictEqual([
-      {
-        content: {
-          text: "Delete README.md.rm file",
-          type: "text",
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "execute",
+      title: "rm README.md.rm",
+      content: [
+        {
+          content: {
+            text: "Delete README.md.rm file",
+            type: "text",
+          },
+          type: "content",
         },
-        type: "content",
-      },
-    ]);
+      ],
+    });
   });
 
   it("should handle Glob nicely", () => {
@@ -110,9 +112,11 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolKind(tool_use.name)).toBe("search");
-    expect(toolLabel(tool_use)).toBe("Find */**.ts");
-    expect(toolContent(tool_use)).toStrictEqual([]);
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "search",
+      title: "Find */**.ts",
+      content: [],
+    });
   });
 
   it("should handle plan entries", () => {

@@ -34,7 +34,7 @@ import { ContentBlock } from "@zed-industries/agent-client-protocol";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
-import { toolContent, toolLabel, toolKind, planEntries } from "./tools.js";
+import { extractToolInfo, planEntries } from "./tools.js";
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -276,12 +276,10 @@ export function toAcpNotifications(
         } else {
           update = {
             toolCallId: chunk.id,
-            title: toolLabel(chunk),
             sessionUpdate: "tool_call",
-            kind: toolKind(chunk.name), // todo!()
             rawInput: chunk.input,
             status: "pending",
-            content: toolContent(chunk),
+            ...extractToolInfo(chunk),
           };
           break;
         }

@@ -4,7 +4,21 @@ import {
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
 
-export function toolLabel(toolUse: any): string {
+interface ToolInfo {
+  title: string;
+  kind: ToolKind;
+  content: ToolCallContent[];
+}
+
+export function extractToolInfo(toolUse: any): ToolInfo {
+  return {
+    title: toolLabel(toolUse),
+    kind: toolKind(toolUse.name),
+    content: toolContent(toolUse),
+  };
+}
+
+function toolLabel(toolUse: any): string {
   const name = toolUse.name;
   const input = toolUse.input;
 
@@ -151,7 +165,7 @@ export function toolLabel(toolUse: any): string {
   }
 }
 
-export function toolKind(toolName: string): ToolKind {
+function toolKind(toolName: string): ToolKind {
   switch (toolName) {
     case "Task":
       return "think";
@@ -192,7 +206,7 @@ export function toolKind(toolName: string): ToolKind {
   }
 }
 
-export function toolContent(toolUse: any): ToolCallContent[] {
+function toolContent(toolUse: any): ToolCallContent[] {
   const input = toolUse.input;
   const name = toolUse.name;
 
@@ -248,14 +262,6 @@ export function toolContent(toolUse: any): ToolCallContent[] {
       }
       break;
     case "mcp__acp__read":
-      if (toolUse.content) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: toolUse.content },
-          },
-        ];
-      }
       break;
     case "Read":
       if (input && input.abs_path) {
@@ -278,44 +284,12 @@ export function toolContent(toolUse: any): ToolCallContent[] {
       }
       break;
     case "Glob":
-      if (toolUse.content) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: toolUse.content },
-          },
-        ];
-      }
       break;
     case "Grep":
-      if (toolUse.content) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: toolUse.content },
-          },
-        ];
-      }
       break;
     case "WebFetch":
-      if (toolUse.content) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: toolUse.content },
-          },
-        ];
-      }
       break;
     case "WebSearch":
-      if (toolUse.content) {
-        return [
-          {
-            type: "content",
-            content: { type: "text", text: toolUse.content },
-          },
-        ];
-      }
       break;
     case "exit_plan_mode":
       if (input && input.plan) {
