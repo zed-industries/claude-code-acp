@@ -182,6 +182,56 @@ describe("tool conversions", () => {
     });
   });
 
+  it("should handle Write tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01ABC123XYZ789",
+      name: "Write",
+      input: {
+        abs_path: "/Users/test/project/example.txt",
+        content: "Hello, World!\nThis is test content.",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "edit",
+      title: "Write /Users/test/project/example.txt",
+      content: [
+        {
+          type: "diff",
+          path: "/Users/test/project/example.txt",
+          oldText: null,
+          newText: "Hello, World!\nThis is test content.",
+        },
+      ],
+    });
+  });
+
+  it("should handle mcp__acp__write tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01GHI789JKL456",
+      name: "mcp__acp__write",
+      input: {
+        abs_path: "/Users/test/project/config.json",
+        content: '{"version": "1.0.0"}',
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "edit",
+      title: "Write /Users/test/project/config.json",
+      content: [
+        {
+          type: "diff",
+          path: "/Users/test/project/config.json",
+          oldText: null,
+          newText: '{"version": "1.0.0"}',
+        },
+      ],
+    });
+  });
+
   it("should handle WebFetch tool calls", () => {
     const tool_use = {
       type: "tool_use",
