@@ -466,14 +466,17 @@ export function toolUpdateFromToolResult(
     default: {
       // This happens for the mcp__acp__read tool,
       // but may also for others...
-      if (Array.isArray(toolResult.content)) {
+      if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
         return {
           content: toolResult.content.map((content: any) => ({
             type: "content",
             content,
           })),
         };
-      } else if (typeof toolResult.content === "string") {
+      } else if (
+        typeof toolResult.content === "string" &&
+        toolResult.content.length > 0
+      ) {
         return {
           content: [
             {
