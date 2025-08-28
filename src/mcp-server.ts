@@ -47,39 +47,51 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
       },
     },
     async (input) => {
-      console.error("READ TOOL", input);
-      const session = agent.sessions[sessionId];
-      if (!session) {
+      try {
+        console.error("READ TOOL", input);
+        const session = agent.sessions[sessionId];
+        if (!session) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "The user has left the building",
+              },
+            ],
+          };
+        }
+        let content = await agent.client.readTextFile({
+          sessionId,
+          path: input.abs_path,
+          limit: input.limit,
+          line: input.offset,
+        });
+        console.error("READ FILE READ", content);
+
         return {
           content: [
             {
               type: "text",
-              text: "The user has left the building",
-            },
-          ],
-        };
-      }
-      let content = await agent.client.readTextFile({
-        sessionId,
-        path: input.abs_path,
-        limit: input.limit,
-        line: input.offset,
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              content.content +
-              `
+              text:
+                content.content +
+                `
 
 <system-reminder>
 Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
 </system-reminder>`,
-          },
-        ],
-      };
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Reading file failed: " + error.message,
+            },
+          ],
+        };
+      }
     },
   );
 
@@ -104,27 +116,38 @@ allow the user to conveniently review changes.`,
       },
     },
     async (input) => {
-      console.error("WRITE TOOL", input);
-      const session = agent.sessions[sessionId];
-      if (!session) {
+      try {
+        console.error("WRITE TOOL", input);
+        const session = agent.sessions[sessionId];
+        if (!session) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "The user has left the building",
+              },
+            ],
+          };
+        }
+        let content = await agent.client.writeTextFile({
+          sessionId,
+          path: input.abs_path,
+          content: input.content,
+        });
+
+        return {
+          content: [],
+        };
+      } catch (error: any) {
         return {
           content: [
             {
               type: "text",
-              text: "The user has left the building",
+              text: "Writing file failed: " + error.message,
             },
           ],
         };
       }
-      let content = await agent.client.writeTextFile({
-        sessionId,
-        path: input.abs_path,
-        content: input.content,
-      });
-
-      return {
-        content: [],
-      };
     },
   );
 
@@ -162,35 +185,46 @@ File editing instructions:
       },
     },
     async (input) => {
-      console.error("EDIT TOOL", input);
-      const session = agent.sessions[sessionId];
-      if (!session) {
+      try {
+        console.error("EDIT TOOL", input);
+        const session = agent.sessions[sessionId];
+        if (!session) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "The user has left the building",
+              },
+            ],
+          };
+        }
+
+        let { content } = await agent.client.readTextFile({
+          sessionId,
+          path: input.abs_path,
+        });
+
+        let newContent = content.replace(input.old_text, input.new_text);
+
+        await agent.client.writeTextFile({
+          sessionId,
+          path: input.abs_path,
+          content: newContent,
+        });
+
+        return {
+          content: [],
+        };
+      } catch (error: any) {
         return {
           content: [
             {
               type: "text",
-              text: "The user has left the building",
+              text: "Editing file failed: " + error.message,
             },
           ],
         };
       }
-
-      let { content } = await agent.client.readTextFile({
-        sessionId,
-        path: input.abs_path,
-      });
-
-      let newContent = content.replace(input.old_text, input.new_text);
-
-      await agent.client.writeTextFile({
-        sessionId,
-        path: input.abs_path,
-        content: newContent,
-      });
-
-      return {
-        content: [],
-      };
     },
   );
 
