@@ -17,61 +17,64 @@ import { extractToolInfo } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
-describe("ACP subprocess integration", () => {
-  let child: ReturnType<typeof spawn>;
+describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
+  "ACP subprocess integration",
+  () => {
+    let child: ReturnType<typeof spawn>;
 
-  beforeAll(async () => {
-    // Start the subprocess
-    child = spawn("npm", ["run", "--silent", "dev"], {
-      stdio: ["pipe", "pipe", "inherit"],
-      env: process.env,
+    beforeAll(async () => {
+      // Start the subprocess
+      child = spawn("npm", ["run", "--silent", "dev"], {
+        stdio: ["pipe", "pipe", "inherit"],
+        env: process.env,
+      });
     });
-  });
 
-  afterAll(() => {
-    child.kill();
-  });
-
-  class TestClient implements Client {
-    agent: Agent;
-
-    constructor(agent: Agent) {
-      this.agent = agent;
-    }
-    requestPermission(
-      params: RequestPermissionRequest,
-    ): Promise<RequestPermissionResponse> {
-      throw new Error("Method not implemented.");
-    }
-    async sessionUpdate(params: SessionNotification): Promise<void> {
-      console.error(params);
-    }
-    writeTextFile(
-      params: WriteTextFileRequest,
-    ): Promise<WriteTextFileResponse> {
-      throw new Error("Method not implemented.");
-    }
-    readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-      throw new Error("Method not implemented.");
-    }
-  }
-
-  it("should connect to the ACP subprocess", async () => {
-    const connection = new ClientSideConnection(
-      (agent) => {
-        return new TestClient(agent);
-      },
-      nodeToWebWritable(child.stdin!),
-      nodeToWebReadable(child.stdout!),
-    );
-
-    let session = await connection.newSession({ cwd: "./", mcpServers: [] });
-    await connection.prompt({
-      prompt: [{ type: "text", text: "Hello Claude!" }],
-      sessionId: session.sessionId,
+    afterAll(() => {
+      child.kill();
     });
-  });
-});
+
+    class TestClient implements Client {
+      agent: Agent;
+
+      constructor(agent: Agent) {
+        this.agent = agent;
+      }
+      requestPermission(
+        params: RequestPermissionRequest,
+      ): Promise<RequestPermissionResponse> {
+        throw new Error("Method not implemented.");
+      }
+      async sessionUpdate(params: SessionNotification): Promise<void> {
+        console.error(params);
+      }
+      writeTextFile(
+        params: WriteTextFileRequest,
+      ): Promise<WriteTextFileResponse> {
+        throw new Error("Method not implemented.");
+      }
+      readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
+        throw new Error("Method not implemented.");
+      }
+    }
+
+    it("should connect to the ACP subprocess", async () => {
+      const connection = new ClientSideConnection(
+        (agent) => {
+          return new TestClient(agent);
+        },
+        nodeToWebWritable(child.stdin!),
+        nodeToWebReadable(child.stdout!),
+      );
+
+      let session = await connection.newSession({ cwd: "./", mcpServers: [] });
+      await connection.prompt({
+        prompt: [{ type: "text", text: "Hello Claude!" }],
+        sessionId: session.sessionId,
+      });
+    });
+  },
+);
 
 describe("tool conversions", () => {
   it("should handle Bash nicely", () => {
@@ -219,6 +222,40 @@ describe("tool conversions", () => {
     expect(extractToolInfo(tool_use)).toStrictEqual({
       kind: "search",
       title: '"agentclientprotocol.com"',
+      content: [],
+    });
+  });
+
+  it("should handle KillBash entries", () => {
+    let tool_use = {
+      type: "tool_use",
+      id: "toolu_01PhLms5fuvmdjy2bb6dfUKT",
+      name: "KillBash",
+      input: {
+        shell_id: "bash_1",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "execute",
+      title: `Kill Process`,
+      content: [],
+    });
+  });
+
+  it("should handle BashOutput entries", () => {
+    let tool_use = {
+      type: "tool_use",
+      id: "toolu_01SJUWPtj1QspgANgtpqGPuN",
+      name: "BashOutput",
+      input: {
+        bash_id: "bash_1",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "execute",
+      title: `Tail Logs`,
       content: [],
     });
   });

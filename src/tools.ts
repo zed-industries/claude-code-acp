@@ -83,6 +83,20 @@ export function extractToolInfo(toolUse: any): ToolInfo {
             : [],
       };
 
+    case "BashOutput":
+      return {
+        title: "Tail Logs",
+        kind: "execute",
+        content: [],
+      };
+
+    case "KillBash":
+      return {
+        title: "Kill Process",
+        kind: "execute",
+        content: [],
+      };
+
     case "mcp__acp__read": {
       let limit = "";
       if (input.limit) {

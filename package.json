@@ -10,7 +10,7 @@
     "dev": "npm run build && npm run start",
     "lint": "eslint src --ext .ts",
     "test": "vitest",
-    "test:ui": "vitest --ui",
+    "test:integration": "RUN_INTEGRATION_TESTS=true vitest run",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
