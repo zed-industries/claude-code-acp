@@ -232,6 +232,100 @@ describe("tool conversions", () => {
     });
   });
 
+  it("should handle Read tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01MNO456PQR789",
+      name: "Read",
+      input: {
+        abs_path: "/Users/test/project/readme.md",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "read",
+      title: "Read File",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "/Users/test/project/readme.md" },
+        },
+      ],
+    });
+  });
+
+  it("should handle mcp__acp__read tool calls", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01YZA789BCD123",
+      name: "mcp__acp__read",
+      input: {
+        abs_path: "/Users/test/project/data.json",
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "read",
+      title: "Read /Users/test/project/data.json",
+      content: [],
+    });
+  });
+
+  it("should handle mcp__acp__read with limit", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01EFG456HIJ789",
+      name: "mcp__acp__read",
+      input: {
+        abs_path: "/Users/test/project/large.txt",
+        limit: 100,
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "read",
+      title: "Read /Users/test/project/large.txt (1 - 100)",
+      content: [],
+    });
+  });
+
+  it("should handle mcp__acp__read with offset and limit", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01KLM789NOP456",
+      name: "mcp__acp__read",
+      input: {
+        abs_path: "/Users/test/project/large.txt",
+        offset: 50,
+        limit: 100,
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "read",
+      title: "Read /Users/test/project/large.txt (51 - 150)",
+      content: [],
+    });
+  });
+
+  it("should handle mcp__acp__read with only offset", () => {
+    const tool_use = {
+      type: "tool_use",
+      id: "toolu_01QRS123TUV789",
+      name: "mcp__acp__read",
+      input: {
+        abs_path: "/Users/test/project/large.txt",
+        offset: 200,
+      },
+    };
+
+    expect(extractToolInfo(tool_use)).toStrictEqual({
+      kind: "read",
+      title: "Read /Users/test/project/large.txt (from line 201)",
+      content: [],
+    });
+  });
+
   it("should handle WebFetch tool calls", () => {
     const tool_use = {
       type: "tool_use",
