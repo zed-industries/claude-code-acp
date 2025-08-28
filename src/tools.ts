@@ -158,11 +158,12 @@ export function extractToolInfo(toolUse: any): ToolInfo {
             : [],
       };
 
+    case "mcp__acp__multi-edit":
     case "MultiEdit":
+      // Display it as a normal edit, because end users don't care about
+      // the distinction between edits and multi-edits.
       return {
-        title: input?.file_path
-          ? `Multi Edit ${input.file_path}`
-          : "Multi Edit",
+        title: input?.file_path ? `Edit ${input.file_path}` : "Edit",
         kind: "edit",
         content:
           input && input.edits && input.edits.length > 0
