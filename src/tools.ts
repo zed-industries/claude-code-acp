@@ -70,7 +70,9 @@ export function extractToolInfo(toolUse: any): ToolInfo {
 
     case "Bash":
       return {
-        title: input?.command ?? "Terminal",
+        title: input?.command
+          ? "`" + input.command.replaceAll("`", "\\`") + "`"
+          : "Terminal",
         kind: "execute",
         content:
           input && input.command
