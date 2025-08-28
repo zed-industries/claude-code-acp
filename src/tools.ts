@@ -398,14 +398,59 @@ export function toolUpdateFromToolResult(
   toolResult: any,
   toolUse: any | undefined,
 ): ToolUpdate {
-  switch (toolUse?.kind) {
+  switch (toolUse?.name) {
+    case "mcp__acp__edit":
+    case "edit":
+    case "Edit": {
+      // Parse the line numbers from the tool result
+      if (toolResult.content && toolResult.content.length > 0) {
+        try {
+          const firstContent = toolResult.content[0];
+          const data = JSON.parse(firstContent.text || firstContent);
+          if (data.lineNumbers && Array.isArray(data.lineNumbers)) {
+            const locations: ToolCallLocation[] = data.lineNumbers.map(
+              (line: number) => ({
+                path: toolUse?.input?.abs_path || toolUse?.input?.file_path,
+                line: line,
+              }),
+            );
+            return { locations };
+          }
+        } catch (e) {
+          // If parsing fails, return empty object
+          return {};
+        }
+      }
+      return {};
+    }
+    case "mcp__acp__multi-edit":
+    case "multi-edit":
+    case "MultiEdit": {
+      // Parse the line numbers from the tool result
+      if (toolResult.content && toolResult.content.length > 0) {
+        try {
+          const firstContent = toolResult.content[0];
+          const data = JSON.parse(firstContent.text || firstContent);
+          if (data.lineNumbers && Array.isArray(data.lineNumbers)) {
+            const locations: ToolCallLocation[] = data.lineNumbers.map(
+              (line: number) => ({
+                path: toolUse?.input?.file_path || toolUse?.input?.abs_path,
+                line: line,
+              }),
+            );
+            return { locations };
+          }
+        } catch (e) {
+          // If parsing fails, return empty object
+          return {};
+        }
+      }
+      return {};
+    }
     case "Task":
     case "NotebookEdit":
     case "NotebookRead":
-    case "mcp__acp__edit":
     case "mcp__acp__write":
-    case "Edit":
-    case "MultiEdit":
     case "Write":
     case "TodoWrite":
     case "exit_plan_mode":

@@ -13,7 +13,7 @@ import {
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
-import { toolInfoFromToolUse } from "../tools.js";
+import { toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
@@ -562,5 +562,157 @@ describe("tool conversions", () => {
         },
       },
     ]);
+  });
+
+  it("should extract locations from edit tool results", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01ABC123",
+      name: "edit",
+      input: {
+        abs_path: "/Users/test/project/example.txt",
+        old_text: "old content",
+        new_text: "new content",
+      },
+    };
+
+    const toolResult = {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ lineNumbers: [5, 10, 15] }),
+        },
+      ],
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update.locations).toEqual([
+      { path: "/Users/test/project/example.txt", line: 5 },
+      { path: "/Users/test/project/example.txt", line: 10 },
+      { path: "/Users/test/project/example.txt", line: 15 },
+    ]);
+  });
+
+  it("should extract locations from multi-edit tool results", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01DEF456",
+      name: "multi-edit",
+      input: {
+        file_path: "/Users/test/project/config.json",
+        edits: [
+          {
+            old_string: "version: 1.0",
+            new_string: "version: 2.0",
+            replace_all: false,
+          },
+          {
+            old_string: "enabled: false",
+            new_string: "enabled: true",
+            replace_all: true,
+          },
+        ],
+      },
+    };
+
+    const toolResult = {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ lineNumbers: [2, 8, 12, 20] }),
+        },
+      ],
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update.locations).toEqual([
+      { path: "/Users/test/project/config.json", line: 2 },
+      { path: "/Users/test/project/config.json", line: 8 },
+      { path: "/Users/test/project/config.json", line: 12 },
+      { path: "/Users/test/project/config.json", line: 20 },
+    ]);
+  });
+
+  it("should handle mcp__acp__edit tool results", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01GHI789",
+      name: "mcp__acp__edit",
+      input: {
+        abs_path: "/Users/test/project/main.py",
+        old_text: "def hello():",
+        new_text: "def hello_world():",
+      },
+    };
+
+    const toolResult = {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ lineNumbers: [42] }),
+        },
+      ],
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update.locations).toEqual([
+      { path: "/Users/test/project/main.py", line: 42 },
+    ]);
+  });
+
+  it("should handle empty locations from edit tools", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01JKL012",
+      name: "edit",
+      input: {
+        abs_path: "/Users/test/project/notfound.txt",
+        old_text: "nonexistent",
+        new_text: "replacement",
+      },
+    };
+
+    const toolResult = {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ lineNumbers: [] }),
+        },
+      ],
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update.locations).toEqual([]);
+  });
+
+  it("should handle malformed tool results gracefully", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "edit",
+      input: {
+        abs_path: "/Users/test/project/test.txt",
+        old_text: "old",
+        new_text: "new",
+      },
+    };
+
+    const toolResult = {
+      content: [
+        {
+          type: "text",
+          text: "not valid json",
+        },
+      ],
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    // Should return empty object when parsing fails
+    expect(update).toEqual({});
   });
 });
