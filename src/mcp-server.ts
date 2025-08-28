@@ -298,6 +298,7 @@ File editing instructions:
     },
   );
 
+  let alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(
     "permission",
     {
@@ -324,8 +325,26 @@ File editing instructions:
           ],
         };
       }
+      if (alwaysAllowedTools[input.tool_name]) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                behavior: "allow",
+                updatedInput: input.input,
+              }),
+            },
+          ],
+        };
+      }
       let response = await agent.client.requestPermission({
         options: [
+          {
+            kind: "allow_always",
+            name: "Always Allow",
+            optionId: "allow_always",
+          },
           { kind: "allow_once", name: "Allow", optionId: "allow" },
           { kind: "reject_once", name: "Reject", optionId: "reject" },
         ],
@@ -337,8 +356,12 @@ File editing instructions:
       });
       if (
         response.outcome?.outcome == "selected" &&
-        response.outcome.optionId == "allow"
+        (response.outcome.optionId == "allow" ||
+          response.outcome.optionId == "allow_always")
       ) {
+        if (response.outcome.optionId == "allow_always") {
+          alwaysAllowedTools[input.tool_name] = true;
+        }
         return {
           content: [
             {
