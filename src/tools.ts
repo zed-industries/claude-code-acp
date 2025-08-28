@@ -135,7 +135,7 @@ export function extractToolInfo(toolUse: any): ToolInfo {
 
     case "LS":
       return {
-        title: input?.path ? `List Directory ${input.path}` : "List Directory",
+        title: input?.path ? input.path : "Current Directory",
         kind: "search",
         content: [],
       };
