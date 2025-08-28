@@ -237,21 +237,21 @@ export function extractToolInfo(toolUse: any): ToolInfo {
     case "Grep": {
       let label = "grep";
 
-      if (input.case_insensitive) {
+      if (input["-i"]) {
         label += " -i";
       }
-      if (input.line_numbers) {
+      if (input["-n"]) {
         label += " -n";
       }
 
-      if (input.after_context !== undefined) {
-        label += ` -A ${input.after_context}`;
+      if (input["-A"] !== undefined) {
+        label += ` -A ${input["-A"]}`;
       }
-      if (input.before_context !== undefined) {
-        label += ` -B ${input.before_context}`;
+      if (input["-B"] !== undefined) {
+        label += ` -B ${input["-B"]}`;
       }
-      if (input.context !== undefined) {
-        label += ` -C ${input.context}`;
+      if (input["-C"] !== undefined) {
+        label += ` -C ${input["-C"]}`;
       }
 
       if (input.output_mode) {
@@ -275,8 +275,8 @@ export function extractToolInfo(toolUse: any): ToolInfo {
         label += ` --include="${input.glob}"`;
       }
 
-      if (input.file_type) {
-        label += ` --type=${input.file_type}`;
+      if (input.type) {
+        label += ` --type=${input.type}`;
       }
 
       if (input.multiline) {
