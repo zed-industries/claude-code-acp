@@ -229,6 +229,80 @@ File editing instructions:
   );
 
   server.registerTool(
+    "multi-edit",
+    {
+      title: "Multi Edit",
+      description: `Edit a file with multiple sequential edits.`,
+      inputSchema: {
+        file_path: z
+          .string()
+          .describe("The absolute path to the file to modify"),
+        edits: z
+          .array(
+            z.object({
+              old_string: z.string().describe("The text to replace"),
+              new_string: z.string().describe("The text to replace it with"),
+              replace_all: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Replace all occurrences of old_string (default false)",
+                ),
+            }),
+          )
+          .min(1)
+          .describe(
+            "Array of edit operations to perform sequentially on the file",
+          ),
+      },
+      annotations: {
+        title: "Multi Edit file",
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+        idempotentHint: false,
+      },
+    },
+    async (input) => {
+      const session = agent.sessions[sessionId];
+      if (!session) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "The user has left the building",
+            },
+          ],
+        };
+      }
+
+      let { content } = await agent.client.readTextFile({
+        sessionId,
+        path: input.file_path,
+      });
+
+      let newContent = content;
+      for (const edit of input.edits) {
+        if (edit.replace_all) {
+          newContent = newContent.split(edit.old_string).join(edit.new_string);
+        } else {
+          newContent = newContent.replace(edit.old_string, edit.new_string);
+        }
+      }
+
+      await agent.client.writeTextFile({
+        sessionId,
+        path: input.file_path,
+        content: newContent,
+      });
+
+      return {
+        content: [],
+      };
+    },
+  );
+
+  server.registerTool(
     "permission",
     {
       title: "Permission Tool",

@@ -166,14 +166,12 @@ export function extractToolInfo(toolUse: any): ToolInfo {
         kind: "edit",
         content:
           input && input.edits && input.edits.length > 0
-            ? [
-                {
-                  type: "diff",
-                  path: input.file_path,
-                  oldText: input.edits[0].old_string || null,
-                  newText: input.edits[0].new_string,
-                },
-              ]
+            ? input.edits.map((edit: any) => ({
+                type: "diff" as const,
+                path: input.file_path,
+                oldText: edit.old_string || null,
+                newText: edit.new_string,
+              }))
             : [],
       };
 
