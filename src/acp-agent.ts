@@ -37,13 +37,16 @@ import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
 import { extractToolInfo, planEntries } from "./tools.js";
 
+type Session = {
+  query: Query;
+  input: Pushable<SDKUserMessage>;
+  cancelled: boolean;
+};
+
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
-    [key: string]: {
-      query: Query;
-      input: Pushable<SDKUserMessage>;
-    };
+    [key: string]: Session;
   };
   client: Client;
 
@@ -114,7 +117,11 @@ export class ClaudeAcpAgent implements Agent {
         stderr: (err) => console.error(err),
       },
     });
-    this.sessions[sessionId] = { query: q, input: input };
+    this.sessions[sessionId] = {
+      query: q,
+      input: input,
+      cancelled: false,
+    };
 
     return {
       sessionId,
@@ -130,11 +137,17 @@ export class ClaudeAcpAgent implements Agent {
       throw new Error("Session not found");
     }
 
+    this.sessions[params.sessionId].cancelled = false;
+
     const { query, input } = this.sessions[params.sessionId];
+
     input.push(promptToClaude(params));
     while (true) {
       let { value: message, done } = await query.next();
       if (done || !message) {
+        if (this.sessions[params.sessionId].cancelled) {
+          return { stopReason: "cancelled" };
+        }
         break;
       }
       console.error(JSON.stringify(message, null, 4));
@@ -142,6 +155,10 @@ export class ClaudeAcpAgent implements Agent {
         case "system":
           break;
         case "result": {
+          if (this.sessions[params.sessionId].cancelled) {
+            return { stopReason: "cancelled" };
+          }
+
           // todo!() how is rate-limiting handled?
           switch (message.subtype) {
             case "success": {
@@ -161,6 +178,10 @@ export class ClaudeAcpAgent implements Agent {
         }
         case "user":
         case "assistant": {
+          if (this.sessions[params.sessionId].cancelled) {
+            continue;
+          }
+
           if (
             message.message.model == "<synthetic>" &&
             message.message.content.length == 1 &&
@@ -188,6 +209,7 @@ export class ClaudeAcpAgent implements Agent {
     if (!this.sessions[params.sessionId]) {
       throw new Error("Session not found");
     }
+    this.sessions[params.sessionId].cancelled = true;
     await this.sessions[params.sessionId].query.interrupt();
   }
 }
