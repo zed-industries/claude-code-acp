@@ -324,7 +324,7 @@ export function extractToolInfo(toolUse: any): ToolInfo {
 
       return {
         title: label,
-        kind: "search",
+        kind: "fetch",
         content: [],
       };
     }
