@@ -267,21 +267,21 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
         break;
       }
       case "image":
-        if (chunk.uri) {
-          content.push({
-            type: "image",
-            source: {
-              type: "url",
-              url: chunk.uri,
-            },
-          });
-        } else {
+        if (chunk.data) {
           content.push({
             type: "image",
             source: {
               type: "base64",
               data: chunk.data,
               media_type: chunk.mimeType,
+            },
+          });
+        } else if (chunk.uri && chunk.uri.startsWith("http")) {
+          content.push({
+            type: "image",
+            source: {
+              type: "url",
+              url: chunk.uri,
             },
           });
         }
