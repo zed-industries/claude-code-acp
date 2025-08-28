@@ -11,6 +11,7 @@ import {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  RequestError,
   ToolCallContent,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
@@ -57,6 +58,18 @@ export class ClaudeAcpAgent implements Agent {
       agentCapabilities: {
         promptCapabilities: { image: true, embeddedContext: true },
       },
+      authMethods: [
+        {
+          description: "Run `claude /login` in the terminal",
+          name: "Login with Claude CLI",
+          id: "claude-login",
+        },
+        {
+          description: "Anthropic API KEY",
+          name: "Use Anthropic API Key",
+          id: "anthropic-api-key",
+        },
+      ],
     };
   }
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
@@ -131,8 +144,13 @@ export class ClaudeAcpAgent implements Agent {
         case "result": {
           // todo!() how is rate-limiting handled?
           switch (message.subtype) {
-            case "success":
+            case "success": {
+              console.error(message.result);
+              if (message.result.includes("Please run /login")) {
+                throw RequestError.authRequired();
+              }
               return { stopReason: "end_turn" };
+            }
             case "error_during_execution":
               return { stopReason: "refusal" };
             case "error_max_turns":
@@ -143,6 +161,13 @@ export class ClaudeAcpAgent implements Agent {
         }
         case "user":
         case "assistant": {
+          if (
+            message.message.model == "<synthetic>" &&
+            message.message.content.length == 1 &&
+            message.message.content[0].text.includes("Please run /login")
+          ) {
+            throw RequestError.authRequired();
+          }
           for (const notification of toAcpNotifications(
             message,
             params.sessionId,
