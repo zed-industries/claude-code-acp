@@ -16,6 +16,7 @@ interface ToolInfo {
 interface ToolUpdate {
   title?: string;
   content?: ToolCallContent[];
+  locations?: ToolCallLocation[];
 }
 
 export function toolInfoFromToolUse(toolUse: any): ToolInfo {
@@ -56,6 +57,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 },
               ]
             : [],
+        locations: input?.notebook_path ? [{ path: input.notebook_path }] : [],
       };
 
     case "NotebookEdit":
@@ -73,6 +75,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 },
               ]
             : [],
+        locations: input?.notebook_path ? [{ path: input.notebook_path }] : [],
       };
 
     case "Bash":
@@ -124,7 +127,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
         locations: [
           {
             path: input.abs_path,
-            line: input.offset,
+            line: input.offset ?? 0,
           },
         ],
         content: [],
@@ -144,6 +147,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 },
               ]
             : [],
+        locations: [{ path: input.abs_path, line: input.offset ?? 0 }],
       };
 
     case "LS":
@@ -151,6 +155,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
         title: input?.path ? input.path : "Current Directory",
         kind: "search",
         content: [],
+        locations: input?.path ? [{ path: input.path }] : [],
       };
 
     case "mcp__acp__edit":
@@ -158,11 +163,6 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
       return {
         title: input?.abs_path ? `Edit ${input.abs_path}` : "Edit",
         kind: "edit",
-        locations: [
-          {
-            path: input.abs_path,
-          },
-        ],
         content:
           input && input.abs_path
             ? [
@@ -174,6 +174,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 },
               ]
             : [],
+        locations: input?.abs_path ? [{ path: input.abs_path }] : [],
       };
 
     case "mcp__acp__multi-edit":
@@ -192,6 +193,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 newText: edit.new_string,
               }))
             : [],
+        locations: input?.file_path ? [{ path: input.file_path }] : [],
       };
 
     case "mcp__acp__write":
@@ -217,6 +219,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
         title: input?.abs_path ? `Write ${input.abs_path}` : "Write",
         kind: "edit",
         content,
+        locations: input?.abs_path ? [{ path: input.abs_path }] : [],
       };
 
     case "Write":
@@ -234,6 +237,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 },
               ]
             : [],
+        locations: input?.abs_path ? [{ path: input.abs_path }] : [],
       };
 
     case "Glob": {
@@ -248,6 +252,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
         title: label,
         kind: "search",
         content: [],
+        locations: input.path ? [{ path: input.path }] : [],
       };
     }
 
@@ -393,25 +398,49 @@ export function toolUpdateFromToolResult(
   toolResult: any,
   toolUse: any | undefined,
 ): ToolUpdate {
-  // This happens for the mcp__acp__read tool,
-  // but may also for others...
-  if (Array.isArray(toolResult.content)) {
-    return {
-      content: toolResult.content.map((content: any) => ({
-        type: "content",
-        content,
-      })),
-    };
+  switch (toolUse?.kind) {
+    case "Task":
+    case "NotebookEdit":
+    case "NotebookRead":
+    case "mcp__acp__edit":
+    case "mcp__acp__write":
+    case "Edit":
+    case "MultiEdit":
+    case "Write":
+    case "TodoWrite":
+    case "exit_plan_mode":
+    case "Bash":
+    case "BashOutput":
+    case "KillBash":
+    case "LS":
+    case "Glob":
+    case "Grep":
+    case "WebFetch":
+    case "WebSearch":
+    case "Other":
+    default: {
+      // This happens for the mcp__acp__read tool,
+      // but may also for others...
+      if (Array.isArray(toolResult.content)) {
+        return {
+          content: toolResult.content.map((content: any) => ({
+            type: "content",
+            content,
+          })),
+        };
+      } else if (typeof toolResult.content === "string") {
+        return {
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: toolResult.content },
+            },
+          ],
+        };
+      }
+      return {};
+    }
   }
-
-  return {
-    content: [
-      {
-        type: "content",
-        content: { type: "text", text: toolResult.content },
-      },
-    ],
-  };
 }
 
 type ClaudePlanEntry = {

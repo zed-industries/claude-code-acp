@@ -138,6 +138,7 @@ describe("tool conversions", () => {
       kind: "search",
       title: "Find */**.ts",
       content: [],
+      locations: [],
     });
   });
 
@@ -183,6 +184,7 @@ describe("tool conversions", () => {
       kind: "search",
       title: "/Users/benbrandt/github/claude-code-acp",
       content: [],
+      locations: [{ path: "/Users/benbrandt/github/claude-code-acp" }],
     });
   });
 
@@ -225,6 +227,7 @@ describe("tool conversions", () => {
           newText: "Hello, World!\nThis is test content.",
         },
       ],
+      locations: [{ path: "/Users/test/project/example.txt" }],
     });
   });
 
@@ -250,6 +253,7 @@ describe("tool conversions", () => {
           newText: '{"version": "1.0.0"}',
         },
       ],
+      locations: [{ path: "/Users/test/project/config.json" }],
     });
   });
 
@@ -272,6 +276,7 @@ describe("tool conversions", () => {
           content: { type: "text", text: "/Users/test/project/readme.md" },
         },
       ],
+      locations: [{ path: "/Users/test/project/readme.md", line: 0 }],
     });
   });
 
@@ -289,6 +294,7 @@ describe("tool conversions", () => {
       kind: "read",
       title: "Read /Users/test/project/data.json",
       content: [],
+      locations: [{ path: "/Users/test/project/data.json", line: 0 }],
     });
   });
 
@@ -307,6 +313,7 @@ describe("tool conversions", () => {
       kind: "read",
       title: "Read /Users/test/project/large.txt (1 - 100)",
       content: [],
+      locations: [{ path: "/Users/test/project/large.txt", line: 0 }],
     });
   });
 
@@ -326,6 +333,7 @@ describe("tool conversions", () => {
       kind: "read",
       title: "Read /Users/test/project/large.txt (51 - 150)",
       content: [],
+      locations: [{ path: "/Users/test/project/large.txt", line: 50 }],
     });
   });
 
@@ -344,6 +352,7 @@ describe("tool conversions", () => {
       kind: "read",
       title: "Read /Users/test/project/large.txt (from line 201)",
       content: [],
+      locations: [{ path: "/Users/test/project/large.txt", line: 200 }],
     });
   });
 
