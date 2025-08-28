@@ -200,7 +200,16 @@ File editing instructions:
           path: input.abs_path,
         });
 
-        let newContent = content.replace(input.old_text, input.new_text);
+        const { newContent, lineNumbers } = replaceAndCalculateLocation(
+          content,
+          [
+            {
+              oldText: input.old_text,
+              newText: input.new_text,
+              replaceAll: false,
+            },
+          ],
+        );
 
         await agent.client.writeTextFile({
           sessionId,
@@ -209,7 +218,12 @@ File editing instructions:
         });
 
         return {
-          content: [],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ lineNumbers }),
+            },
+          ],
         };
       } catch (error: any) {
         return {
@@ -277,14 +291,14 @@ File editing instructions:
         path: input.file_path,
       });
 
-      let newContent = content;
-      for (const edit of input.edits) {
-        if (edit.replace_all) {
-          newContent = newContent.split(edit.old_string).join(edit.new_string);
-        } else {
-          newContent = newContent.replace(edit.old_string, edit.new_string);
-        }
-      }
+      const { newContent, lineNumbers } = replaceAndCalculateLocation(
+        content,
+        input.edits.map((edit) => ({
+          oldText: edit.old_string,
+          newText: edit.new_string,
+          replaceAll: edit.replace_all ?? false,
+        })),
+      );
 
       await agent.client.writeTextFile({
         sessionId,
@@ -293,7 +307,12 @@ File editing instructions:
       });
 
       return {
-        content: [],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ lineNumbers }),
+          },
+        ],
       };
     },
   );
@@ -427,4 +446,98 @@ File editing instructions:
       resolve(listener);
     });
   });
+}
+
+/**
+ * Replace text in a file and calculate the line numbers where the edits occurred.
+ *
+ * @param fileContent - The full file content
+ * @param edits - Array of edit operations to apply sequentially
+ * @returns the new content and the line numbers where replacements occurred in the final content
+ */
+export function replaceAndCalculateLocation(
+  fileContent: string,
+  edits: Array<{
+    oldText: string;
+    newText: string;
+    replaceAll?: boolean;
+  }>,
+): { newContent: string; lineNumbers: number[] } {
+  let currentContent = fileContent;
+
+  // Use unique markers to track where replacements happen
+  const markerPrefix = `__REPLACE_MARKER_${Math.random().toString(36).substr(2, 9)}_`;
+  let markerCounter = 0;
+  const markers: string[] = [];
+
+  // Apply edits sequentially, inserting markers at replacement positions
+  for (const edit of edits) {
+    // Skip empty oldText
+    if (edit.oldText === "") {
+      continue;
+    }
+
+    if (edit.replaceAll) {
+      // Replace all occurrences with marker + newText
+      const parts: string[] = [];
+      let lastIndex = 0;
+      let searchIndex = 0;
+
+      while (true) {
+        const index = currentContent.indexOf(edit.oldText, searchIndex);
+        if (index === -1) break;
+
+        // Add content before the match
+        parts.push(currentContent.substring(lastIndex, index));
+
+        // Add marker and replacement
+        const marker = `${markerPrefix}${markerCounter++}__`;
+        markers.push(marker);
+        parts.push(marker + edit.newText);
+
+        lastIndex = index + edit.oldText.length;
+        searchIndex = lastIndex;
+      }
+
+      // Add remaining content
+      parts.push(currentContent.substring(lastIndex));
+      currentContent = parts.join("");
+    } else {
+      // Replace first occurrence only
+      const index = currentContent.indexOf(edit.oldText);
+      if (index !== -1) {
+        const marker = `${markerPrefix}${markerCounter++}__`;
+        markers.push(marker);
+        currentContent =
+          currentContent.substring(0, index) +
+          marker +
+          edit.newText +
+          currentContent.substring(index + edit.oldText.length);
+      }
+    }
+  }
+
+  // Find line numbers where markers appear in the content
+  const lineNumbers: number[] = [];
+  for (const marker of markers) {
+    const index = currentContent.indexOf(marker);
+    if (index !== -1) {
+      const lineNumber = Math.max(
+        0,
+        currentContent.substring(0, index).split(/\r\n|\r|\n/).length - 1,
+      );
+      lineNumbers.push(lineNumber);
+    }
+  }
+
+  // Remove all markers from the final content
+  let finalContent = currentContent;
+  for (const marker of markers) {
+    finalContent = finalContent.replace(marker, "");
+  }
+
+  // Dedupe and sort line numbers
+  const uniqueLineNumbers = [...new Set(lineNumbers)].sort();
+
+  return { newContent: finalContent, lineNumbers: uniqueLineNumbers };
 }
