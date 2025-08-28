@@ -90,7 +90,7 @@ describe("tool conversions", () => {
 
     expect(extractToolInfo(tool_use)).toStrictEqual({
       kind: "execute",
-      title: "rm README.md.rm",
+      title: "`rm README.md.rm`",
       content: [
         {
           content: {
@@ -160,7 +160,7 @@ describe("tool conversions", () => {
 
     expect(extractToolInfo(tool_use)).toStrictEqual({
       kind: "search",
-      title: "List Directory /Users/benbrandt/github/claude-code-acp",
+      title: "/Users/benbrandt/github/claude-code-acp",
       content: [],
     });
   });
@@ -364,7 +364,7 @@ describe("tool conversions", () => {
     };
 
     expect(extractToolInfo(tool_use)).toStrictEqual({
-      kind: "search",
+      kind: "fetch",
       title: '"agentclientprotocol.com"',
       content: [],
     });
