@@ -23,8 +23,8 @@
     "sdk",
     "code"
   ],
-  "author": "Your Name",
-  "license": "MIT",
+  "author": "Zed Industries",
+  "license": "Apache-2.0",
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.96",
     "@modelcontextprotocol/sdk": "^1.17.4",
