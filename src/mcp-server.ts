@@ -48,7 +48,6 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
     },
     async (input) => {
       try {
-        console.error("READ TOOL", input);
         const session = agent.sessions[sessionId];
         if (!session) {
           return {
@@ -66,7 +65,6 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
           limit: input.limit,
           line: input.offset,
         });
-        console.error("READ FILE READ", content);
 
         return {
           content: [
@@ -117,7 +115,6 @@ allow the user to conveniently review changes.`,
     },
     async (input) => {
       try {
-        console.error("WRITE TOOL", input);
         const session = agent.sessions[sessionId];
         if (!session) {
           return {
@@ -186,7 +183,6 @@ File editing instructions:
     },
     async (input) => {
       try {
-        console.error("EDIT TOOL", input);
         const session = agent.sessions[sessionId];
         if (!session) {
           return {
@@ -386,7 +382,6 @@ File editing instructions:
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
-      console.error("Error handling MCP request:", error);
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: "2.0",
@@ -405,13 +400,6 @@ File editing instructions:
       if (error) {
         reject(error);
         return;
-      }
-      const address = listener.address();
-      console.error(address);
-      if (typeof address === "object" && address && "port" in address) {
-        console.error(
-          `MCP HTTP server listening on http://127.0.0.1:${address.port}/mcp`,
-        );
       }
       resolve(listener);
     });

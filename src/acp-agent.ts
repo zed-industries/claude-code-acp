@@ -35,7 +35,11 @@ import { ContentBlock } from "@zed-industries/agent-client-protocol";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
-import { extractToolInfo, planEntries } from "./tools.js";
+import {
+  toolInfoFromToolUse,
+  planEntries,
+  toolUpdateFromToolResult,
+} from "./tools.js";
 
 type Session = {
   query: Query;
@@ -49,10 +53,12 @@ export class ClaudeAcpAgent implements Agent {
     [key: string]: Session;
   };
   client: Client;
+  toolUseCache: { [key: string]: any };
 
   constructor(client: Client) {
     this.sessions = {};
     this.client = client;
+    this.toolUseCache = {};
   }
   async initialize(params: InitializeRequest): Promise<InitializeResponse> {
     return {
@@ -103,7 +109,6 @@ export class ClaudeAcpAgent implements Agent {
         "x-acp-proxy-session-id": sessionId,
       },
     };
-    console.error(mcpServers);
 
     let q = query({
       prompt: input,
@@ -150,7 +155,6 @@ export class ClaudeAcpAgent implements Agent {
         }
         break;
       }
-      console.error(JSON.stringify(message, null, 4));
       switch (message.type) {
         case "system":
           break;
@@ -162,7 +166,6 @@ export class ClaudeAcpAgent implements Agent {
           // todo!() how is rate-limiting handled?
           switch (message.subtype) {
             case "success": {
-              console.error(message.result);
               if (message.result.includes("Please run /login")) {
                 throw RequestError.authRequired();
               }
@@ -192,8 +195,9 @@ export class ClaudeAcpAgent implements Agent {
           for (const notification of toAcpNotifications(
             message,
             params.sessionId,
+            this.toolUseCache,
           )) {
-            this.client.sessionUpdate(notification);
+            await this.client.sessionUpdate(notification);
           }
           break;
         }
@@ -201,7 +205,6 @@ export class ClaudeAcpAgent implements Agent {
           unreachable(message);
       }
     }
-
     throw new Error("Session did not end in result");
   }
 
@@ -309,6 +312,7 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 export function toAcpNotifications(
   message: SDKAssistantMessage | SDKUserMessage,
   sessionId: string,
+  toolUseCache: { [key: string]: any },
 ): SessionNotification[] {
   let chunks = message.message.content as ContentChunk[];
   let output = [];
@@ -347,31 +351,29 @@ export function toAcpNotifications(
         };
         break;
       case "tool_use":
+        toolUseCache[chunk.id] = chunk;
         if (chunk.name == "TodoWrite") {
           update = {
             sessionUpdate: "plan",
             entries: planEntries(chunk.input),
           };
-          break;
         } else {
           update = {
             toolCallId: chunk.id,
             sessionUpdate: "tool_call",
             rawInput: chunk.input,
             status: "pending",
-            ...extractToolInfo(chunk),
+            ...toolInfoFromToolUse(chunk),
           };
-          break;
         }
+        break;
 
       case "tool_result":
         update = {
           toolCallId: chunk.tool_use_id,
           sessionUpdate: "tool_call_update",
-          content: [
-            { type: "content", content: { type: "text", text: chunk.content } },
-          ],
           status: chunk.is_error ? "failed" : "completed",
+          ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
         };
         break;
 

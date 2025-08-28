@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import {
   Agent,
   Client,
@@ -13,7 +13,7 @@ import {
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
-import { extractToolInfo } from "../tools.js";
+import { toolInfoFromToolUse } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
@@ -23,10 +23,20 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
     let child: ReturnType<typeof spawn>;
 
     beforeAll(async () => {
+      let valid = spawnSync("tsc", { stdio: "inherit" });
+      if (valid.status) {
+        throw new Error("failed to compile");
+      }
       // Start the subprocess
       child = spawn("npm", ["run", "--silent", "dev"], {
         stdio: ["pipe", "pipe", "inherit"],
         env: process.env,
+      });
+      child.on("error", (error) => {
+        console.error("Error starting subprocess:", error);
+      });
+      child.on("exit", (exit) => {
+        console.error("Exited with", exit);
       });
     });
 
@@ -46,15 +56,20 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
         throw new Error("Method not implemented.");
       }
       async sessionUpdate(params: SessionNotification): Promise<void> {
-        console.error(params);
+        console.error("RECEVIED", params);
       }
       writeTextFile(
         params: WriteTextFileRequest,
       ): Promise<WriteTextFileResponse> {
         throw new Error("Method not implemented.");
       }
-      readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-        throw new Error("Method not implemented.");
+      async readTextFile(
+        params: ReadTextFileRequest,
+      ): Promise<ReadTextFileResponse> {
+        return {
+          content:
+            "This project attempts to take over the world by solving the Goldbach conjecture.",
+        };
       }
     }
 
@@ -69,10 +84,16 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
 
       let session = await connection.newSession({ cwd: "./", mcpServers: [] });
       await connection.prompt({
-        prompt: [{ type: "text", text: "Hello Claude!" }],
+        prompt: [
+          {
+            type: "text",
+            text: "What does this project do? Read the README.md file.",
+          },
+        ],
         sessionId: session.sessionId,
       });
-    });
+      console.log("DONE AWAITING");
+    }, 20000);
   },
 );
 
@@ -88,7 +109,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "execute",
       title: "`rm README.md.rm`",
       content: [
@@ -113,7 +134,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "search",
       title: "Find */**.ts",
       content: [],
@@ -133,7 +154,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "think",
       title: "Handle user's work request",
       content: [
@@ -158,7 +179,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "search",
       title: "/Users/benbrandt/github/claude-code-acp",
       content: [],
@@ -175,7 +196,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "search",
       title: 'grep ".*"',
       content: [],
@@ -193,7 +214,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "edit",
       title: "Write /Users/test/project/example.txt",
       content: [
@@ -218,7 +239,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "edit",
       title: "Write /Users/test/project/config.json",
       content: [
@@ -242,7 +263,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read File",
       content: [
@@ -264,7 +285,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/data.json",
       content: [],
@@ -282,7 +303,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (1 - 100)",
       content: [],
@@ -301,7 +322,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (51 - 150)",
       content: [],
@@ -319,7 +340,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (from line 201)",
       content: [],
@@ -338,7 +359,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "fetch",
       title: "Fetch https://agentclientprotocol.com",
       content: [
@@ -363,7 +384,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "fetch",
       title: '"agentclientprotocol.com"',
       content: [],
@@ -380,7 +401,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "execute",
       title: `Kill Process`,
       content: [],
@@ -397,7 +418,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(extractToolInfo(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "execute",
       title: `Tail Logs`,
       content: [],
@@ -482,7 +503,7 @@ describe("tool conversions", () => {
       session_id: "d056596f-e328-41e9-badd-b07122ae5227",
       uuid: "b7c3330c-de8f-4bba-ac53-68c7f76ffeb5",
     };
-    expect(toAcpNotifications(received, "test")).toStrictEqual([
+    expect(toAcpNotifications(received, "test", {})).toStrictEqual([
       {
         sessionId: "test",
         update: {

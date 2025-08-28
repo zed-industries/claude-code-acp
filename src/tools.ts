@@ -2,6 +2,7 @@ import { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import {
   PlanEntry,
   ToolCallContent,
+  ToolCallLocation,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
 
@@ -9,9 +10,15 @@ interface ToolInfo {
   title: string;
   kind: ToolKind;
   content: ToolCallContent[];
+  locations?: ToolCallLocation[];
 }
 
-export function extractToolInfo(toolUse: any): ToolInfo {
+interface ToolUpdate {
+  title?: string;
+  content?: ToolCallContent[];
+}
+
+export function toolInfoFromToolUse(toolUse: any): ToolInfo {
   const name = toolUse.name;
   const input = toolUse.input;
 
@@ -114,6 +121,12 @@ export function extractToolInfo(toolUse: any): ToolInfo {
       return {
         title: "Read " + (input.abs_path ?? "File") + limit,
         kind: "read",
+        locations: [
+          {
+            path: input.abs_path,
+            line: input.offset,
+          },
+        ],
         content: [],
       };
     }
@@ -145,6 +158,11 @@ export function extractToolInfo(toolUse: any): ToolInfo {
       return {
         title: input?.abs_path ? `Edit ${input.abs_path}` : "Edit",
         kind: "edit",
+        locations: [
+          {
+            path: input.abs_path,
+          },
+        ],
         content:
           input && input.abs_path
             ? [
@@ -369,6 +387,31 @@ export function extractToolInfo(toolUse: any): ToolInfo {
         content: [],
       };
   }
+}
+
+export function toolUpdateFromToolResult(
+  toolResult: any,
+  toolUse: any | undefined,
+): ToolUpdate {
+  // This happens for the mcp__acp__read tool,
+  // but may also for others...
+  if (Array.isArray(toolResult.content)) {
+    return {
+      content: toolResult.content.map((content: any) => ({
+        type: "content",
+        content,
+      })),
+    };
+  }
+
+  return {
+    content: [
+      {
+        type: "content",
+        content: { type: "text", text: toolResult.content },
+      },
+    ],
+  };
 }
 
 type ClaudePlanEntry = {
