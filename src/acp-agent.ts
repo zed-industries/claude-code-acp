@@ -4,6 +4,7 @@ import {
   AuthenticateRequest,
   CancelNotification,
   Client,
+  ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
   LoadSessionRequest,
@@ -21,6 +22,7 @@ import {
 } from "@zed-industries/agent-client-protocol";
 import {
   McpServerConfig,
+  Options,
   Query,
   query,
   SDKAssistantMessage,
@@ -59,6 +61,7 @@ export class ClaudeAcpAgent implements Agent {
   client: Client;
   toolUseCache: { [key: string]: any };
   fileContentCache: { [key: string]: any };
+  clientCapabilities?: ClientCapabilities;
 
   constructor(client: Client) {
     this.sessions = {};
@@ -66,7 +69,8 @@ export class ClaudeAcpAgent implements Agent {
     this.toolUseCache = {};
     this.fileContentCache = {};
   }
-  async initialize(params: InitializeRequest): Promise<InitializeResponse> {
+  async initialize(request: InitializeRequest): Promise<InitializeResponse> {
+    this.clientCapabilities = request.clientCapabilities;
     return {
       protocolVersion: 1,
       // todo!()
@@ -105,8 +109,11 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    // todo!() auth
-    let server = await createMcpServer(this, sessionId);
+    let server = await createMcpServer(
+      this,
+      sessionId,
+      this.clientCapabilities,
+    );
     let address = server.address() as AddressInfo;
     mcpServers["acp"] = {
       type: "http",
@@ -116,17 +123,24 @@ export class ClaudeAcpAgent implements Agent {
       },
     };
 
+    let options: Options = {
+      cwd: params.cwd,
+      mcpServers,
+      disallowedTools: [],
+      permissionPromptToolName: "mcp__acp__permission",
+      stderr: (err) => console.error(err),
+    };
+    if (this.clientCapabilities?.fs?.readTextFile) {
+      options.allowedTools = ["mcp__acp__read"];
+      options.disallowedTools!.push("Read");
+    }
+    if (this.clientCapabilities?.fs?.writeTextFile) {
+      options.disallowedTools!.push("Write", "Edit", "MultiEdit");
+    }
+
     let q = query({
       prompt: input,
-      options: {
-        cwd: params.cwd,
-        mcpServers,
-        allowedTools: ["mcp__acp__read"],
-        disallowedTools: ["Read", "Write", "Edit", "MultiEdit"],
-        strictMcpConfig: true,
-        permissionPromptToolName: "mcp__acp__permission",
-        stderr: (err) => console.error(err),
-      },
+      options,
     });
     this.sessions[sessionId] = {
       query: q,

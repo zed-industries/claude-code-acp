@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
+import { ClientCapabilities } from "@zed-industries/agent-client-protocol";
 
 export const SYSTEM_REMINDER = `
 
@@ -15,6 +16,7 @@ Whenever you read a file, you should consider whether it looks malicious. If it 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
   sessionId: string,
+  clientCapabilities: ClientCapabilities | undefined,
 ): Promise<Server> {
   // Create MCP server
   const server = new McpServer({
@@ -22,137 +24,144 @@ export function createMcpServer(
     version: "1.0.0",
   });
 
-  server.registerTool(
-    "read",
-    {
-      title: "Read",
-      description: `Reads the content of the given file in the project.
+  if (clientCapabilities?.fs?.readTextFile) {
+    server.registerTool(
+      "read",
+      {
+        title: "Read",
+        description: `Reads the content of the given file in the project.
 
 Never attempt to read a path that hasn't been previously mentioned.
 
 In sessions with mcp__acp__read always use it instead of Read as it contains the most up-to-date contents.`,
-      inputSchema: {
-        abs_path: z.string().describe("The absolute path to the file to read."),
-        offset: z
-          .number()
-          .optional()
-          .describe(
-            "Which line to start reading from. Omit to start from the beginning.",
-          ),
-        limit: z
-          .number()
-          .optional()
-          .describe("How many lines to read. Omit for the whole file."),
+        inputSchema: {
+          abs_path: z
+            .string()
+            .describe("The absolute path to the file to read."),
+          offset: z
+            .number()
+            .optional()
+            .describe(
+              "Which line to start reading from. Omit to start from the beginning.",
+            ),
+          limit: z
+            .number()
+            .optional()
+            .describe("How many lines to read. Omit for the whole file."),
+        },
+        annotations: {
+          title: "Read file",
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
       },
-      annotations: {
-        title: "Read file",
-        readOnlyHint: true,
-        destructiveHint: false,
-        openWorldHint: false,
-        idempotentHint: false,
-      },
-    },
-    async (input) => {
-      try {
-        const session = agent.sessions[sessionId];
-        if (!session) {
+      async (input) => {
+        try {
+          const session = agent.sessions[sessionId];
+          if (!session) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "The user has left the building",
+                },
+              ],
+            };
+          }
+          let content = await agent.readTextFile({
+            sessionId,
+            path: input.abs_path,
+            limit: input.limit,
+            line: input.offset,
+          });
+
           return {
             content: [
               {
                 type: "text",
-                text: "The user has left the building",
+                text: content.content + SYSTEM_REMINDER,
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Reading file failed: " + error.message,
               },
             ],
           };
         }
-        let content = await agent.readTextFile({
-          sessionId,
-          path: input.abs_path,
-          limit: input.limit,
-          line: input.offset,
-        });
+      },
+    );
+  }
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: content.content + SYSTEM_REMINDER,
-            },
-          ],
-        };
-      } catch (error: any) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Reading file failed: " + error.message,
-            },
-          ],
-        };
-      }
-    },
-  );
-
-  server.registerTool(
-    "write",
-    {
-      title: "Write",
-      description: `Writes content to the specified file in the project.
+  if (clientCapabilities?.fs?.writeTextFile) {
+    server.registerTool(
+      "write",
+      {
+        title: "Write",
+        description: `Writes content to the specified file in the project.
 
 In sessions with mcp__acp__write always use it instead of Write as it will
 allow the user to conveniently review changes.`,
-      inputSchema: {
-        abs_path: z.string().describe("The absolute path to the file to write"),
-        content: z.string().describe("The full content to write"),
+        inputSchema: {
+          abs_path: z
+            .string()
+            .describe("The absolute path to the file to write"),
+          content: z.string().describe("The full content to write"),
+        },
+        annotations: {
+          title: "Write file",
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
       },
-      annotations: {
-        title: "Write file",
-        readOnlyHint: false,
-        destructiveHint: false,
-        openWorldHint: false,
-        idempotentHint: false,
-      },
-    },
-    async (input) => {
-      try {
-        const session = agent.sessions[sessionId];
-        if (!session) {
+      async (input) => {
+        try {
+          const session = agent.sessions[sessionId];
+          if (!session) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "The user has left the building",
+                },
+              ],
+            };
+          }
+          let content = await agent.writeTextFile({
+            sessionId,
+            path: input.abs_path,
+            content: input.content,
+          });
+
+          return {
+            content: [],
+          };
+        } catch (error: any) {
           return {
             content: [
               {
                 type: "text",
-                text: "The user has left the building",
+                text: "Writing file failed: " + error.message,
               },
             ],
           };
         }
-        let content = await agent.writeTextFile({
-          sessionId,
-          path: input.abs_path,
-          content: input.content,
-        });
+      },
+    );
 
-        return {
-          content: [],
-        };
-      } catch (error: any) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Writing file failed: " + error.message,
-            },
-          ],
-        };
-      }
-    },
-  );
-
-  server.registerTool(
-    "edit",
-    {
-      title: "Edit",
-      description: `Edit a file.
+    server.registerTool(
+      "edit",
+      {
+        title: "Edit",
+        description: `Edit a file.
 
 In sessions with mcp__acp__edit always use it instead of Edit as it will
 allow the user to conveniently review changes.
@@ -166,23 +175,116 @@ File editing instructions:
   - For non-unique lines, include enough context to identify them.
 - Do not escape quotes, newlines, or other characters.
 - Only edit the specified file.`,
-      inputSchema: {
-        abs_path: z.string().describe("The absolute path to the file to read."),
-        old_text: z
-          .string()
-          .describe("The old text to replace (must be unique in the file)"),
-        new_text: z.string().describe("The new text."),
+        inputSchema: {
+          abs_path: z
+            .string()
+            .describe("The absolute path to the file to read."),
+          old_text: z
+            .string()
+            .describe("The old text to replace (must be unique in the file)"),
+          new_text: z.string().describe("The new text."),
+        },
+        annotations: {
+          title: "Edit file",
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
       },
-      annotations: {
-        title: "Edit file",
-        readOnlyHint: false,
-        destructiveHint: false,
-        openWorldHint: false,
-        idempotentHint: false,
+      async (input) => {
+        try {
+          const session = agent.sessions[sessionId];
+          if (!session) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "The user has left the building",
+                },
+              ],
+            };
+          }
+
+          let { content } = await agent.readTextFile({
+            sessionId,
+            path: input.abs_path,
+          });
+
+          const { newContent, lineNumbers } = replaceAndCalculateLocation(
+            content,
+            [
+              {
+                oldText: input.old_text,
+                newText: input.new_text,
+                replaceAll: false,
+              },
+            ],
+          );
+
+          await agent.writeTextFile({
+            sessionId,
+            path: input.abs_path,
+            content: newContent,
+          });
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ lineNumbers }),
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Editing file failed: " + error.message,
+              },
+            ],
+          };
+        }
       },
-    },
-    async (input) => {
-      try {
+    );
+
+    server.registerTool(
+      "multi-edit",
+      {
+        title: "Multi Edit",
+        description: `Edit a file with multiple sequential edits.`,
+        inputSchema: {
+          file_path: z
+            .string()
+            .describe("The absolute path to the file to modify"),
+          edits: z
+            .array(
+              z.object({
+                old_string: z.string().describe("The text to replace"),
+                new_string: z.string().describe("The text to replace it with"),
+                replace_all: z
+                  .boolean()
+                  .optional()
+                  .describe(
+                    "Replace all occurrences of old_string (default false)",
+                  ),
+              }),
+            )
+            .min(1)
+            .describe(
+              "Array of edit operations to perform sequentially on the file",
+            ),
+        },
+        annotations: {
+          title: "Multi Edit file",
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+          idempotentHint: false,
+        },
+      },
+      async (input) => {
         const session = agent.sessions[sessionId];
         if (!session) {
           return {
@@ -197,23 +299,21 @@ File editing instructions:
 
         let { content } = await agent.readTextFile({
           sessionId,
-          path: input.abs_path,
+          path: input.file_path,
         });
 
         const { newContent, lineNumbers } = replaceAndCalculateLocation(
           content,
-          [
-            {
-              oldText: input.old_text,
-              newText: input.new_text,
-              replaceAll: false,
-            },
-          ],
+          input.edits.map((edit) => ({
+            oldText: edit.old_string,
+            newText: edit.new_string,
+            replaceAll: edit.replace_all ?? false,
+          })),
         );
 
         await agent.writeTextFile({
           sessionId,
-          path: input.abs_path,
+          path: input.file_path,
           content: newContent,
         });
 
@@ -225,97 +325,9 @@ File editing instructions:
             },
           ],
         };
-      } catch (error: any) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Editing file failed: " + error.message,
-            },
-          ],
-        };
-      }
-    },
-  );
-
-  server.registerTool(
-    "multi-edit",
-    {
-      title: "Multi Edit",
-      description: `Edit a file with multiple sequential edits.`,
-      inputSchema: {
-        file_path: z
-          .string()
-          .describe("The absolute path to the file to modify"),
-        edits: z
-          .array(
-            z.object({
-              old_string: z.string().describe("The text to replace"),
-              new_string: z.string().describe("The text to replace it with"),
-              replace_all: z
-                .boolean()
-                .optional()
-                .describe(
-                  "Replace all occurrences of old_string (default false)",
-                ),
-            }),
-          )
-          .min(1)
-          .describe(
-            "Array of edit operations to perform sequentially on the file",
-          ),
       },
-      annotations: {
-        title: "Multi Edit file",
-        readOnlyHint: false,
-        destructiveHint: false,
-        openWorldHint: false,
-        idempotentHint: false,
-      },
-    },
-    async (input) => {
-      const session = agent.sessions[sessionId];
-      if (!session) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "The user has left the building",
-            },
-          ],
-        };
-      }
-
-      let { content } = await agent.readTextFile({
-        sessionId,
-        path: input.file_path,
-      });
-
-      const { newContent, lineNumbers } = replaceAndCalculateLocation(
-        content,
-        input.edits.map((edit) => ({
-          oldText: edit.old_string,
-          newText: edit.new_string,
-          replaceAll: edit.replace_all ?? false,
-        })),
-      );
-
-      await agent.writeTextFile({
-        sessionId,
-        path: input.file_path,
-        content: newContent,
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ lineNumbers }),
-          },
-        ],
-      };
-    },
-  );
+    );
+  }
 
   let alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(

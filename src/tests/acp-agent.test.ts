@@ -86,6 +86,16 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
         nodeToWebReadable(child.stdout!),
       );
 
+      await connection.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: {
+            readTextFile: true,
+            writeTextFile: true,
+          },
+        },
+      });
+
       let session = await connection.newSession({ cwd: "./", mcpServers: [] });
       await connection.prompt({
         prompt: [
