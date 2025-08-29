@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/acp-agent.js",
   "type": "module",
