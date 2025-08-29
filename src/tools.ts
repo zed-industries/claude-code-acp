@@ -138,10 +138,10 @@ export function toolInfoFromToolUse(
 
     case "LS":
       return {
-        title: input?.path ? input.path : "Current Directory",
+        title: `List the ${input?.path ? "`" + input.path + "`" : "current"} directory's contents`,
         kind: "search",
         content: [],
-        locations: input?.path ? [{ path: input.path }] : [],
+        locations: [],
       };
 
     case "mcp__acp__edit":
