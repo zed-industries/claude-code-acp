@@ -356,7 +356,7 @@ File editing instructions:
       }
 
       if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
-        throw new Error("todo!");
+        throw new Error("unreachable");
       }
 
       const terminal = await agent.client.createTerminal({
@@ -406,6 +406,8 @@ File editing instructions:
         return { content: [{ type: "text", text: toolOutput }] };
       }
     })
+
+    // todo! BashOutput, KillBash
   }
 
   let alwaysAllowedTools: { [key: string]: boolean } = {};
