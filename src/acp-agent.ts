@@ -5,6 +5,7 @@ import {
   CancelNotification,
   Client,
   ClientCapabilities,
+  CommandInfo,
   InitializeRequest,
   InitializeResponse,
   ListCommandsRequest,
@@ -23,6 +24,9 @@ import {
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as os from "node:os";
 import {
   McpServerConfig,
   Options,
@@ -247,24 +251,10 @@ export class ClaudeAcpAgent implements Agent {
   async listCommands(
     params: ListCommandsRequest,
   ): Promise<ListCommandsResponse> {
+    const embeddedCommands = buildEmbeddedCommands();
+    const customCommands = await buildCustomCommands();
     return {
-      commands: [
-        {
-          description: "Create a new plan",
-          name: "create_plan",
-          requiresArgument: false,
-        },
-        {
-          description: "Research the codebase",
-          name: "research_codebase",
-          requiresArgument: false,
-        },
-        {
-          description: "Run a command",
-          name: "run_command",
-          requiresArgument: true,
-        },
-      ],
+      commands: [...embeddedCommands, ...customCommands],
     };
   }
 
@@ -291,6 +281,223 @@ export class ClaudeAcpAgent implements Agent {
     this.fileContentCache[params.path] = params.content;
     return response;
   }
+}
+
+function buildEmbeddedCommands(): CommandInfo[] {
+  // Based on https://docs.anthropic.com/en/docs/claude-code/slash-commands
+  return [
+    {
+      name: "compact",
+      description: "Compact conversation with optional focus instructions",
+      requiresArgument: false,
+    },
+    {
+      name: "cost",
+      description: "Show token usage statistics",
+      requiresArgument: false,
+    },
+    {
+      name: "doctor",
+      description: "Check the health of your Claude Code installation",
+      requiresArgument: false,
+    },
+    {
+      name: "init",
+      description: "Initialize project with CLAUDE.md guide",
+      requiresArgument: false,
+    },
+    {
+      name: "pr_comments",
+      description: "View pull request comments",
+      requiresArgument: false,
+    },
+    {
+      name: "review",
+      description: "Request code review",
+      requiresArgument: false,
+    },
+  ];
+}
+
+async function buildCustomCommands(): Promise<CommandInfo[]> {
+  const commands: CommandInfo[] = [];
+
+  // Get paths to scan for custom commands
+  const projectCommandsDir = path.join(process.cwd(), ".claude", "commands");
+  const userCommandsDir = path.join(os.homedir(), ".claude", "commands");
+
+  // Scan project commands
+  const projectCommands = await scanCommandDirectory(
+    projectCommandsDir,
+    "project",
+  );
+  commands.push(...projectCommands);
+
+  // Scan user commands
+  const userCommands = await scanCommandDirectory(userCommandsDir, "user");
+  commands.push(...userCommands);
+
+  return commands;
+}
+
+async function scanCommandDirectory(
+  dirPath: string,
+  scope: "project" | "user",
+): Promise<CommandInfo[]> {
+  const commands: CommandInfo[] = [];
+
+  try {
+    // Check if directory exists
+    await fs.access(dirPath);
+
+    // Recursively scan for .md files
+    const mdFiles = await findMarkdownFiles(dirPath);
+
+    for (const filePath of mdFiles) {
+      try {
+        const content = await fs.readFile(filePath, "utf-8");
+        const relativePath = path.relative(dirPath, filePath);
+        const command = parseCommandFile(content, relativePath, scope);
+        if (command) {
+          commands.push(command);
+        }
+      } catch (error) {
+        console.error(`Error reading command file ${filePath}:`, error);
+      }
+    }
+  } catch (error) {
+    // Directory doesn't exist or can't be accessed - that's ok
+  }
+
+  return commands;
+}
+
+async function findMarkdownFiles(dir: string): Promise<string[]> {
+  const files: string[] = [];
+
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Recursively scan subdirectories
+        const subFiles = await findMarkdownFiles(fullPath);
+        files.push(...subFiles);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        files.push(fullPath);
+      }
+    }
+  } catch (error) {
+    // Error reading directory - skip it
+  }
+
+  return files;
+}
+
+export function parseCommandFile(
+  content: string,
+  relativePath: string,
+  scope: "project" | "user",
+): CommandInfo | null {
+  try {
+    // Extract command name from file path
+    const commandName = path.basename(relativePath, ".md");
+
+    // Parse frontmatter for metadata
+    const frontmatter = parseFrontmatter(content);
+
+    // Get description from frontmatter or first line of content
+    let description = frontmatter.description;
+    if (!description) {
+      // Skip frontmatter section and find first content line
+      const lines = content.split("\n");
+      let inFrontmatter = false;
+      let frontmatterEnded = false;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Track frontmatter boundaries
+        if (trimmed === "---") {
+          if (!inFrontmatter && !frontmatterEnded) {
+            inFrontmatter = true;
+            continue;
+          } else if (inFrontmatter) {
+            inFrontmatter = false;
+            frontmatterEnded = true;
+            continue;
+          }
+        }
+
+        // Skip lines inside frontmatter
+        if (inFrontmatter) {
+          continue;
+        }
+
+        // Only look for description after frontmatter (if any)
+        if (trimmed && !trimmed.startsWith("#")) {
+          description = trimmed;
+          break;
+        }
+      }
+    }
+
+    // Build scope indicator for description
+    const dirname = path.dirname(relativePath);
+    const scopeIndicator =
+      dirname === "."
+        ? `(${scope})`
+        : `(${scope}:${dirname.replace(/\//g, ":")})`;
+
+    return {
+      name: commandName,
+      description: `${description || "Custom command"} ${scopeIndicator}`,
+      requiresArgument: !!frontmatter["argument-hint"],
+    };
+  } catch (error) {
+    console.error(`Error parsing command content:`, error);
+    return null;
+  }
+}
+
+export function parseFrontmatter(content: string): Record<string, string> {
+  const frontmatter: Record<string, string> = {};
+
+  // Check if content starts with frontmatter delimiter
+  if (!content.startsWith("---")) {
+    return frontmatter;
+  }
+
+  // Find the closing delimiter
+  const lines = content.split("\n");
+  let inFrontmatter = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (i === 0 && line === "---") {
+      inFrontmatter = true;
+      continue;
+    }
+
+    if (inFrontmatter && line === "---") {
+      break;
+    }
+
+    if (inFrontmatter) {
+      // Parse key: value pairs
+      const colonIndex = line.indexOf(":");
+      if (colonIndex > 0) {
+        const key = line.substring(0, colonIndex).trim();
+        const value = line.substring(colonIndex + 1).trim();
+        frontmatter[key] = value;
+      }
+    }
+  }
+
+  return frontmatter;
 }
 
 function formatUriAsLink(uri: string): string {
