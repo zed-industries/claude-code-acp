@@ -329,6 +329,83 @@ File editing instructions:
     );
   }
 
+  function sleep(time: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, time));
+  }
+
+  server.registerTool("Bash", {
+    title: "Bash",
+    description: "Executes a bash command",
+    inputSchema: {
+      command: z.string().describe("The bash command to execute as a one-liner"),
+      timeout_ms: z.number().default(2 * 60 * 1000).describe("Optional timeout in milliseconds"),
+      run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `BashOutput` tool to retrieve the current output, or the `KillBash` command to stop it early.")
+    }
+  }, async (input) => {
+    const session = agent.sessions[sessionId];
+    if (!session) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "The user has left the building",
+          },
+        ],
+      };
+    }
+
+    if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
+      throw new Error("todo!");
+    }
+
+    const terminal = await agent.client.createTerminal({
+      command: input.command,
+      sessionId,
+      outputByteLimit: 32_000
+    });
+
+    const timeout = sleep(input.timeout_ms).then(async () => {
+      return { result: "timeout" as const, output: await terminal.currentOutput() };
+    }).finally(() => terminal.release());
+
+    if (input.run_in_background) {
+      return { content: [{ type: "text", text: `Command started in background with id: ${terminal.id}` }] };
+    } else {
+      const { result, output: { output: commandOutput, exitStatus, truncated } } = await Promise.race([
+        terminal.waitForExit().then(async (e) => ({
+          result: "finished" as const,
+          output: await terminal.currentOutput()
+        })).finally(() => terminal.release()),
+        timeout,
+      ]);
+
+      let toolOutput = "";
+
+      if (result === "timeout") {
+        toolOutput += `Timed out after ${input.timeout_ms}ms. `;
+      } else if (exitStatus?.exitCode == null) {
+        toolOutput += `Interrupted. `;
+      }
+
+      if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
+        toolOutput += `Failed with exit code ${exitStatus.exitCode}. `;
+      }
+
+      if (exitStatus?.signal != null) {
+        toolOutput += `Signal \`${exitStatus.signal}\`. `;
+      }
+
+      toolOutput += "Output:\n\n";
+      toolOutput += commandOutput;
+
+      if (truncated) {
+        toolOutput += `\n\nCommand output was too long, so it was truncated to ${output.output.length} bytes.`;
+      }
+
+      return { content: [{ type: "text", text: toolOutput }] };
+    }
+  })
+
   let alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(
     "permission",

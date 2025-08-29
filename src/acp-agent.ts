@@ -58,17 +58,18 @@ export class ClaudeAcpAgent implements Agent {
   sessions: {
     [key: string]: Session;
   };
-  client: Client;
+  client: AgentSideConnection;
   toolUseCache: { [key: string]: any };
   fileContentCache: { [key: string]: any };
   clientCapabilities?: ClientCapabilities;
 
-  constructor(client: Client) {
+  constructor(client: AgentSideConnection) {
     this.sessions = {};
     this.client = client;
     this.toolUseCache = {};
     this.fileContentCache = {};
   }
+
   async initialize(request: InitializeRequest): Promise<InitializeResponse> {
     this.clientCapabilities = request.clientCapabilities;
     return {
@@ -438,11 +439,11 @@ type ContentChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: any } // input is serde_json::Value, so use any or unknown
   | {
-      type: "tool_result";
-      content: string;
-      tool_use_id: string;
-      is_error: boolean;
-    } // content type depends on your Content definition
+    type: "tool_result";
+    content: string;
+    tool_use_id: string;
+    is_error: boolean;
+  } // content type depends on your Content definition
   | { type: "thinking"; thinking: string }
   | { type: "redacted_thinking" }
   | { type: "image"; source: ImageSource }
