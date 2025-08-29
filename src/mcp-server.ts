@@ -59,7 +59,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
             ],
           };
         }
-        let content = await agent.client.readTextFile({
+        let content = await agent.readTextFile({
           sessionId,
           path: input.abs_path,
           limit: input.limit,
@@ -126,7 +126,7 @@ allow the user to conveniently review changes.`,
             ],
           };
         }
-        let content = await agent.client.writeTextFile({
+        let content = await agent.writeTextFile({
           sessionId,
           path: input.abs_path,
           content: input.content,
@@ -195,7 +195,7 @@ File editing instructions:
           };
         }
 
-        let { content } = await agent.client.readTextFile({
+        let { content } = await agent.readTextFile({
           sessionId,
           path: input.abs_path,
         });
@@ -211,7 +211,7 @@ File editing instructions:
           ],
         );
 
-        await agent.client.writeTextFile({
+        await agent.writeTextFile({
           sessionId,
           path: input.abs_path,
           content: newContent,
@@ -286,7 +286,7 @@ File editing instructions:
         };
       }
 
-      let { content } = await agent.client.readTextFile({
+      let { content } = await agent.readTextFile({
         sessionId,
         path: input.file_path,
       });
@@ -300,7 +300,7 @@ File editing instructions:
         })),
       );
 
-      await agent.client.writeTextFile({
+      await agent.writeTextFile({
         sessionId,
         path: input.file_path,
         content: newContent,

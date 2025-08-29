@@ -56,7 +56,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
         throw new Error("Method not implemented.");
       }
       async sessionUpdate(params: SessionNotification): Promise<void> {
-        console.error("RECEVIED", params);
+        console.error("RECEVIED", JSON.stringify(params, null, 4));
       }
       writeTextFile(
         params: WriteTextFileRequest,
@@ -68,7 +68,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
       ): Promise<ReadTextFileResponse> {
         return {
           content:
-            "This project attempts to take over the world by solving the Goldbach conjecture.",
+            "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen\nSeventeen\nEighteen\nNineteen\nTwenty\n",
         };
       }
     }
@@ -87,7 +87,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
         prompt: [
           {
             type: "text",
-            text: "What does this project do? Read the README.md file.",
+            text: "Use the multi edit tool to remove all multiples of 5 from the README and replace with buzz",
           },
         ],
         sessionId: session.sessionId,
@@ -109,7 +109,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "execute",
       title: "`rm README.md.rm`",
       content: [
@@ -134,7 +134,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "search",
       title: "Find */**.ts",
       content: [],
@@ -155,7 +155,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "think",
       title: "Handle user's work request",
       content: [
@@ -180,7 +180,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "search",
       title: "/Users/benbrandt/github/claude-code-acp",
       content: [],
@@ -198,7 +198,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "search",
       title: 'grep ".*"',
       content: [],
@@ -216,7 +216,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "edit",
       title: "Write /Users/test/project/example.txt",
       content: [
@@ -242,7 +242,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "edit",
       title: "Write /Users/test/project/config.json",
       content: [
@@ -267,7 +267,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "read",
       title: "Read File",
       content: [
@@ -290,7 +290,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/data.json",
       content: [],
@@ -309,7 +309,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (1 - 100)",
       content: [],
@@ -329,7 +329,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (51 - 150)",
       content: [],
@@ -348,7 +348,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (from line 201)",
       content: [],
@@ -368,7 +368,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "fetch",
       title: "Fetch https://agentclientprotocol.com",
       content: [
@@ -393,7 +393,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "fetch",
       title: '"agentclientprotocol.com"',
       content: [],
@@ -410,7 +410,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "execute",
       title: `Kill Process`,
       content: [],
@@ -427,7 +427,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "execute",
       title: `Tail Logs`,
       content: [],
@@ -512,7 +512,7 @@ describe("tool conversions", () => {
       session_id: "d056596f-e328-41e9-badd-b07122ae5227",
       uuid: "b7c3330c-de8f-4bba-ac53-68c7f76ffeb5",
     };
-    expect(toAcpNotifications(received, "test", {})).toStrictEqual([
+    expect(toAcpNotifications(received, "test", {}, {})).toStrictEqual([
       {
         sessionId: "test",
         update: {
@@ -592,6 +592,66 @@ describe("tool conversions", () => {
       { path: "/Users/test/project/example.txt", line: 10 },
       { path: "/Users/test/project/example.txt", line: 15 },
     ]);
+  });
+
+  it("should show full diff for multi edit tool", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01DEF456",
+      name: "mcp__acp__multi-edit",
+      input: {
+        file_path: "/Users/test/project/config.json",
+        edits: [
+          {
+            old_string: 'version": 1',
+            new_string: 'version": 2',
+            replace_all: false,
+          },
+          {
+            old_string: 'enabled": false',
+            new_string: 'enabled": true',
+            replace_all: true,
+          },
+        ],
+      },
+    };
+    let fileCache: { [key: string]: string } = {
+      "/Users/test/project/config.json": JSON.stringify(
+        {
+          version: 1,
+          filler: "filler",
+          enabled: false,
+        },
+        null,
+        4,
+      ),
+    };
+
+    expect(toolInfoFromToolUse(toolUse, fileCache)).toEqual({
+      content: [
+        {
+          newText: `{
+    \"version\": 2,
+    \"filler\": \"filler\",
+    \"enabled\": true
+}`,
+          oldText: `{
+    \"version\": 1,
+    \"filler\": \"filler\",
+    \"enabled\": false
+}`,
+          path: "/Users/test/project/config.json",
+          type: "diff",
+        },
+      ],
+      kind: "edit",
+      locations: [
+        {
+          path: "/Users/test/project/config.json",
+        },
+      ],
+      title: "Edit /Users/test/project/config.json",
+    });
   });
 
   it("should extract locations from multi-edit tool results", () => {

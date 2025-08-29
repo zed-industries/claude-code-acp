@@ -11,9 +11,13 @@ import {
   NewSessionResponse,
   PromptRequest,
   PromptResponse,
+  ReadTextFileRequest,
+  ReadTextFileResponse,
   RequestError,
   ToolCallContent,
   ToolKind,
+  WriteTextFileRequest,
+  WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import {
   McpServerConfig,
@@ -54,11 +58,13 @@ export class ClaudeAcpAgent implements Agent {
   };
   client: Client;
   toolUseCache: { [key: string]: any };
+  fileContentCache: { [key: string]: any };
 
   constructor(client: Client) {
     this.sessions = {};
     this.client = client;
     this.toolUseCache = {};
+    this.fileContentCache = {};
   }
   async initialize(params: InitializeRequest): Promise<InitializeResponse> {
     return {
@@ -196,6 +202,7 @@ export class ClaudeAcpAgent implements Agent {
             message,
             params.sessionId,
             this.toolUseCache,
+            this.fileContentCache,
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -214,6 +221,24 @@ export class ClaudeAcpAgent implements Agent {
     }
     this.sessions[params.sessionId].cancelled = true;
     await this.sessions[params.sessionId].query.interrupt();
+  }
+
+  async readTextFile(
+    params: ReadTextFileRequest,
+  ): Promise<ReadTextFileResponse> {
+    let response = await this.client.readTextFile(params);
+    if (!params.limit && !params.line) {
+      this.fileContentCache[params.path] = response.content;
+    }
+    return response;
+  }
+
+  async writeTextFile(
+    params: WriteTextFileRequest,
+  ): Promise<WriteTextFileResponse> {
+    let response = await this.client.writeTextFile(params);
+    this.fileContentCache[params.path] = params.content;
+    return response;
   }
 }
 
@@ -313,6 +338,7 @@ export function toAcpNotifications(
   message: SDKAssistantMessage | SDKUserMessage,
   sessionId: string,
   toolUseCache: { [key: string]: any },
+  fileContentCache: { [key: string]: string },
 ): SessionNotification[] {
   let chunks = message.message.content as ContentChunk[];
   let output = [];
@@ -363,7 +389,7 @@ export function toAcpNotifications(
             sessionUpdate: "tool_call",
             rawInput: chunk.input,
             status: "pending",
-            ...toolInfoFromToolUse(chunk),
+            ...toolInfoFromToolUse(chunk, fileContentCache),
           };
         }
         break;

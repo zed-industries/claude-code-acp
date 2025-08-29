@@ -1,10 +1,12 @@
 import { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import {
+  Client,
   PlanEntry,
   ToolCallContent,
   ToolCallLocation,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
+import { replaceAndCalculateLocation } from "./mcp-server.js";
 
 interface ToolInfo {
   title: string;
@@ -19,7 +21,10 @@ interface ToolUpdate {
   locations?: ToolCallLocation[];
 }
 
-export function toolInfoFromToolUse(toolUse: any): ToolInfo {
+export function toolInfoFromToolUse(
+  toolUse: any,
+  cachedFileContent: { [key: string]: string },
+): ToolInfo {
   const name = toolUse.name;
   const input = toolUse.input;
 
@@ -160,6 +165,25 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
 
     case "mcp__acp__edit":
     case "Edit":
+      let oldText = input.old_text || null;
+      let newText = input.new_text;
+
+      if (input?.abs_path && input.old_text) {
+        try {
+          let oldContent = cachedFileContent[input.abs_path] || "";
+          let newContent = replaceAndCalculateLocation(oldContent, [
+            {
+              oldText: input.old_text,
+              newText: input.new_text,
+              replaceAll: false,
+            },
+          ]);
+          oldText = oldContent;
+          newText = newContent.newContent;
+        } catch (e) {
+          console.error(e);
+        }
+      }
       return {
         title: input?.abs_path ? `Edit ${input.abs_path}` : "Edit",
         kind: "edit",
@@ -169,8 +193,8 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
                 {
                   type: "diff",
                   path: input.abs_path,
-                  oldText: input.old_text || null,
-                  newText: input.new_text,
+                  oldText,
+                  newText,
                 },
               ]
             : [],
@@ -179,20 +203,52 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
 
     case "mcp__acp__multi-edit":
     case "MultiEdit":
+      let multiInput = input as {
+        file_path: string;
+        edits: {
+          old_string: string;
+          new_string: string;
+          replace_all?: boolean;
+        }[];
+      };
+      let oldTextMulti = multiInput.edits
+        .map((edit: any) => edit.old_string)
+        .join("\n");
+      let newTextMulti = multiInput.edits
+        .map((edit: any) => edit.new_string)
+        .join("\n");
+      try {
+        if (multiInput.edits && multiInput.file_path) {
+          let oldContent =
+            cachedFileContent[multiInput.file_path] ||
+            multiInput.edits.map((edit: any) => edit.oldText).join("\n");
+          let newContent = replaceAndCalculateLocation(
+            oldContent,
+            multiInput.edits.map((edit) => ({
+              oldText: edit.old_string,
+              newText: edit.new_string,
+              replaceAll: edit.replace_all,
+            })),
+          );
+          oldTextMulti = oldContent;
+          newTextMulti = newContent.newContent;
+        }
+      } catch (e) {
+        console.error(e);
+      }
       // Display it as a normal edit, because end users don't care about
       // the distinction between edits and multi-edits.
       return {
         title: input?.file_path ? `Edit ${input.file_path}` : "Edit",
         kind: "edit",
-        content:
-          input && input.edits && input.edits.length > 0
-            ? input.edits.map((edit: any) => ({
-                type: "diff" as const,
-                path: input.file_path,
-                oldText: edit.old_string || null,
-                newText: edit.new_string,
-              }))
-            : [],
+        content: [
+          {
+            type: "diff" as const,
+            path: input.file_path,
+            oldText: oldTextMulti,
+            newText: newTextMulti,
+          },
+        ],
         locations: input?.file_path ? [{ path: input.file_path }] : [],
       };
 
