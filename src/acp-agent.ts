@@ -7,6 +7,8 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  ListCommandsRequest,
+  ListCommandsResponse,
   LoadSessionRequest,
   NewSessionRequest,
   NewSessionResponse,
@@ -15,6 +17,7 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  RunCommandRequest,
   ToolCallContent,
   ToolKind,
   WriteTextFileRequest,
@@ -75,7 +78,11 @@ export class ClaudeAcpAgent implements Agent {
       protocolVersion: 1,
       // todo!()
       agentCapabilities: {
-        promptCapabilities: { image: true, embeddedContext: true },
+        promptCapabilities: {
+          image: true,
+          embeddedContext: true,
+          supportsCommands: true,
+        },
       },
       authMethods: [
         {
@@ -235,6 +242,36 @@ export class ClaudeAcpAgent implements Agent {
     }
     this.sessions[params.sessionId].cancelled = true;
     await this.sessions[params.sessionId].query.interrupt();
+  }
+
+  async listCommands(
+    params: ListCommandsRequest,
+  ): Promise<ListCommandsResponse> {
+    return {
+      commands: [
+        {
+          description: "Create a new plan",
+          name: "create_plan",
+          requiresArgument: false,
+        },
+        {
+          description: "Research the codebase",
+          name: "research_codebase",
+          requiresArgument: false,
+        },
+        {
+          description: "Run a command",
+          name: "run_command",
+          requiresArgument: true,
+        },
+      ],
+    };
+  }
+
+  async runCommand(params: RunCommandRequest): Promise<void> {
+    console.error(
+      `Running command ${params.command} with arguments ${params.args}`,
+    );
   }
 
   async readTextFile(
