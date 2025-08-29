@@ -50,18 +50,7 @@ export function toolInfoFromToolUse(
           ? `Read Notebook ${input.notebook_path}`
           : "Read Notebook",
         kind: "read",
-        content:
-          input && input.notebook_path
-            ? [
-                {
-                  type: "content",
-                  content: {
-                    type: "text",
-                    text: input.notebook_path.toString(),
-                  },
-                },
-              ]
-            : [],
+        content: [],
         locations: input?.notebook_path ? [{ path: input.notebook_path }] : [],
       };
 
@@ -90,7 +79,7 @@ export function toolInfoFromToolUse(
           : "Terminal",
         kind: "execute",
         content:
-          input && input.command
+          input && input.description
             ? [
                 {
                   type: "content",
@@ -143,15 +132,7 @@ export function toolInfoFromToolUse(
       return {
         title: "Read File",
         kind: "read",
-        content:
-          input && input.abs_path
-            ? [
-                {
-                  type: "content",
-                  content: { type: "text", text: input.abs_path.toString() },
-                },
-              ]
-            : [],
+        content: [],
         locations: [{ path: input.abs_path, line: input.offset ?? 0 }],
       };
 
@@ -503,11 +484,14 @@ export function toolUpdateFromToolResult(
       }
       return {};
     }
+
+    case "mcp__acp__write":
+    case "Write":
+      return {};
+
     case "Task":
     case "NotebookEdit":
     case "NotebookRead":
-    case "mcp__acp__write":
-    case "Write":
     case "TodoWrite":
     case "exit_plan_mode":
     case "Bash":
@@ -518,6 +502,8 @@ export function toolUpdateFromToolResult(
     case "Grep":
     case "WebFetch":
     case "WebSearch":
+    case "Read":
+    case "mcp__acp__read":
     case "Other":
     default: {
       // This happens for the mcp__acp__read tool,
