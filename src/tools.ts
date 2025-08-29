@@ -463,9 +463,20 @@ export function toolUpdateFromToolResult(
     case "WebFetch":
     case "WebSearch":
     case "Other":
+    case "mcp__acp__read":
+      if (Array.isArray(toolResult.content)) {
+        return {
+          content: toolResult.content.map((content: any) => ({
+            type: "content",
+            content: {
+              type: "text",
+              text: `\`\`\`${toolUse.input?.abs_path ?? ""}\n${content.text ?? ""}\n\`\`\``,
+            },
+          })),
+        };
+      }
+      return {};
     default: {
-      // This happens for the mcp__acp__read tool,
-      // but may also for others...
       if (Array.isArray(toolResult.content)) {
         return {
           content: toolResult.content.map((content: any) => ({
