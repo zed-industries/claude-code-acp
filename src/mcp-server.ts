@@ -400,7 +400,7 @@ File editing instructions:
         toolOutput += commandOutput;
 
         if (truncated) {
-          toolOutput += `\n\nCommand output was too long, so it was truncated to ${output.output.length} bytes.`;
+          toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
         }
 
         return { content: [{ type: "text", text: toolOutput }] };
