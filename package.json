@@ -3,6 +3,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "bin": {
+    "claude-code-acp": "./dist/acp-agent.js"
+  },
   "version": "0.1.4",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/acp-agent.js",
