@@ -15,6 +15,7 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  TerminalHandle,
   ToolCallContent,
   ToolKind,
   WriteTextFileRequest,
@@ -396,7 +397,10 @@ export function toAcpNotifications(
         break;
       case "tool_use":
         toolUseCache[chunk.id] = chunk;
-        if (chunk.name == "TodoWrite") {
+        if (chunk.name === "mcp__acp__bash") {
+          // the bash tool pushes its own tool call
+          continue;
+        } else if (chunk.name == "TodoWrite") {
           update = {
             sessionUpdate: "plan",
             entries: planEntries(chunk.input),

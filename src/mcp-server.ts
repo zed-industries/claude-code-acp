@@ -329,18 +329,14 @@ File editing instructions:
     );
   }
 
-  function sleep(time: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, time));
-  }
-
   if (agent.clientCapabilities?.terminal) {
-    server.registerTool("Bash", {
+    server.registerTool("bash", {
       title: "Bash",
       description: "Executes a bash command",
       inputSchema: {
         command: z.string().describe("The bash command to execute as a one-liner"),
         timeout_ms: z.number().default(2 * 60 * 1000).describe("Optional timeout in milliseconds"),
-        run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `BashOutput` tool to retrieve the current output, or the `KillBash` command to stop it early.")
+        // run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `BashOutput` tool to retrieve the current output, or the `KillBash` command to stop it early.")
       }
     }, async (input) => {
       const session = agent.sessions[sessionId];
@@ -355,57 +351,110 @@ File editing instructions:
         };
       }
 
-      if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
-        throw new Error("unreachable");
-      }
+      const toolId = randomUUID();
 
-      const terminal = await agent.client.createTerminal({
-        command: input.command,
+      await agent.client.sessionUpdate({
         sessionId,
-        outputByteLimit: 32_000
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: toolId,
+          title: `\`${input.command.replace(/`/g, "\\`")}\``,
+          kind: "execute",
+          status: "pending",
+          content: []
+        }
       });
 
-      const timeout = sleep(input.timeout_ms).then(async () => {
-        return { result: "timeout" as const, output: await terminal.currentOutput() };
-      }).finally(() => terminal.release());
+      try {
 
-      if (input.run_in_background) {
-        return { content: [{ type: "text", text: `Command started in background with id: ${terminal.id}` }] };
-      } else {
-        const { result, output: { output: commandOutput, exitStatus, truncated } } = await Promise.race([
-          terminal.waitForExit().then(async (e) => ({
-            result: "finished" as const,
-            output: await terminal.currentOutput()
-          })).finally(() => terminal.release()),
-          timeout,
+        if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
+          throw new Error("unreachable");
+        }
+
+        await using terminal = await agent.client.createTerminal({
+          command: input.command,
+          sessionId,
+          outputByteLimit: 32_000
+        });
+
+        await agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: toolId,
+            status: "in_progress",
+            content: [{ type: "terminal", terminalId: terminal.id }]
+          }
+        });
+
+        const { didTimeout } = await Promise.race([
+          terminal.waitForExit().then(() => ({ didTimeout: false })),
+          sleep(input.timeout_ms).then(() => ({ didTimeout: true })),
         ]);
+
+        const output = await terminal.currentOutput();
+
+        await agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: toolId,
+            status: "completed",
+          }
+        });
 
         let toolOutput = "";
 
-        if (result === "timeout") {
-          toolOutput += `Timed out after ${input.timeout_ms}ms. `;
-        } else if (exitStatus?.exitCode == null) {
-          toolOutput += `Interrupted. `;
+        if (didTimeout) {
+          toolOutput += `Command timed out after ${input.timeout_ms}ms. `;
         }
 
-        if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
-          toolOutput += `Failed with exit code ${exitStatus.exitCode}. `;
-        }
-
-        if (exitStatus?.signal != null) {
-          toolOutput += `Signal \`${exitStatus.signal}\`. `;
-        }
-
-        toolOutput += "Output:\n\n";
-        toolOutput += commandOutput;
-
-        if (truncated) {
-          toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
-        }
+        toolOutput += toolCommandOutput(output);
 
         return { content: [{ type: "text", text: toolOutput }] };
+      } catch (err) {
+        await agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: toolId,
+            status: "failed",
+          }
+        });
+        throw err;
       }
     })
+
+    function sleep(time: number): Promise<void> {
+      return new Promise((resolve) => setTimeout(resolve, time));
+    }
+
+    function toolCommandOutput(output: any): string {
+      const { exitStatus, output: commandOutput, truncated } = output;
+
+      let toolOutput = "";
+
+      if (exitStatus?.exitCode == null) {
+        toolOutput += `Interrupted. `;
+      }
+
+      if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
+        toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
+      }
+
+      if (exitStatus?.signal != null) {
+        toolOutput += `Signal \`${exitStatus.signal}\`. `;
+      }
+
+      toolOutput += "Output:\n\n";
+      toolOutput += commandOutput;
+
+      if (truncated) {
+        toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
+      }
+
+      return toolOutput;
+    }
 
     // todo! BashOutput, KillBash
   }
