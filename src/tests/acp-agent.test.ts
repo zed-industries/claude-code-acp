@@ -190,15 +190,16 @@ describe("tool conversions", () => {
       id: "toolu_01EEqsX7Eb9hpx87KAHVPTey",
       name: "LS",
       input: {
-        path: "/Users/benbrandt/github/claude-code-acp",
+        path: "/Users/test/github/claude-code-acp",
       },
     };
 
     expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "search",
-      title: "/Users/benbrandt/github/claude-code-acp",
+      title:
+        "List the `/Users/test/github/claude-code-acp` directory's contents",
       content: [],
-      locations: [{ path: "/Users/benbrandt/github/claude-code-acp" }],
+      locations: [],
     });
   });
 
@@ -284,12 +285,7 @@ describe("tool conversions", () => {
     expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "read",
       title: "Read File",
-      content: [
-        {
-          type: "content",
-          content: { type: "text", text: "/Users/test/project/readme.md" },
-        },
-      ],
+      content: [],
       locations: [{ path: "/Users/test/project/readme.md", line: 0 }],
     });
   });
