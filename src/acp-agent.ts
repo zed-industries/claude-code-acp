@@ -138,6 +138,9 @@ export class ClaudeAcpAgent implements Agent {
     if (this.clientCapabilities?.fs?.writeTextFile) {
       options.disallowedTools!.push("Write", "Edit", "MultiEdit");
     }
+    if (this.clientCapabilities?.terminal) {
+      options.disallowedTools!.push("Bash", "BashOutput", "KillBash");
+    }
 
     let q = query({
       prompt: input,
