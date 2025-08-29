@@ -253,9 +253,9 @@ export class ClaudeAcpAgent implements Agent {
   ): Promise<ListCommandsResponse> {
     const embeddedCommands = buildEmbeddedCommands();
     const customCommands = await buildCustomCommands();
-    return {
-      commands: [...embeddedCommands, ...customCommands],
-    };
+    const commands = [...embeddedCommands, ...customCommands];
+    commands.sort((a, b) => a.name.localeCompare(b.name));
+    return { commands };
   }
 
   async runCommand(params: RunCommandRequest): Promise<void> {
