@@ -6,7 +6,8 @@ import {
   ToolCallLocation,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
-import { replaceAndCalculateLocation } from "./mcp-server.js";
+import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
+import { tool } from "@anthropic-ai/claude-code";
 
 interface ToolInfo {
   title: string;
@@ -489,6 +490,43 @@ export function toolUpdateFromToolResult(
     case "Write":
       return {};
 
+    case "Read":
+    case "mcp__acp__read":
+      if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
+        return {
+          content: toolResult.content.map((content: any) => ({
+            type: "content",
+            content:
+              content.type == "text"
+                ? {
+                    type: "text",
+                    text: markdownEscape(
+                      content.text.replace(SYSTEM_REMINDER, ""),
+                    ),
+                  }
+                : content,
+          })),
+        };
+      } else if (
+        typeof toolResult.content === "string" &&
+        toolResult.content.length > 0
+      ) {
+        return {
+          content: [
+            {
+              type: "content",
+              content: {
+                type: "text",
+                text: markdownEscape(
+                  toolResult.content.replace(SYSTEM_REMINDER, ""),
+                ),
+              },
+            },
+          ],
+        };
+      }
+      return {};
+
     case "Task":
     case "NotebookEdit":
     case "NotebookRead":
@@ -502,12 +540,8 @@ export function toolUpdateFromToolResult(
     case "Grep":
     case "WebFetch":
     case "WebSearch":
-    case "Read":
-    case "mcp__acp__read":
     case "Other":
     default: {
-      // This happens for the mcp__acp__read tool,
-      // but may also for others...
       if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
         return {
           content: toolResult.content.map((content: any) => ({
@@ -523,7 +557,10 @@ export function toolUpdateFromToolResult(
           content: [
             {
               type: "content",
-              content: { type: "text", text: toolResult.content },
+              content: {
+                type: "text",
+                text: toolResult.content,
+              },
             },
           ],
         };
@@ -545,4 +582,14 @@ export function planEntries(input: { todos: ClaudePlanEntry[] }): PlanEntry[] {
     status: input.status,
     priority: "medium",
   }));
+}
+
+export function markdownEscape(text: string): string {
+  let escape = "```";
+  for (let [m] of text.matchAll(/^```+/gm)) {
+    while (m.length >= escape.length) {
+      escape += "`";
+    }
+  }
+  return escape + "\n" + text + (text.endsWith("\n") ? "" : "\n") + escape;
 }

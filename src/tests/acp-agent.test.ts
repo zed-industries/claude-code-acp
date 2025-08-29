@@ -13,7 +13,11 @@ import {
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
-import { toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
+import {
+  markdownEscape,
+  toolInfoFromToolUse,
+  toolUpdateFromToolResult,
+} from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
@@ -774,5 +778,19 @@ describe("tool conversions", () => {
 
     // Should return empty object when parsing fails
     expect(update).toEqual({});
+  });
+});
+
+describe("escape markdown", () => {
+  it("should escape markdown characters", () => {
+    let text = "Hello *world*!";
+    let escaped = markdownEscape(text);
+    expect(escaped).toEqual("```\nHello *world*!\n```");
+
+    text = "for example:\n```markdown\nHello *world*!\n```\n";
+    escaped = markdownEscape(text);
+    expect(escaped).toEqual(
+      "````\nfor example:\n```markdown\nHello *world*!\n```\n````",
+    );
   });
 });

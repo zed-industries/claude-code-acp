@@ -6,6 +6,12 @@ import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
 
+export const SYSTEM_REMINDER = `
+
+<system-reminder>
+Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
+</system-reminder>`;
+
 export function createMcpServer(
   agent: ClaudeAcpAgent,
   sessionId: string,
@@ -70,13 +76,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
           content: [
             {
               type: "text",
-              text:
-                content.content +
-                `
-
-<system-reminder>
-Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
-</system-reminder>`,
+              text: content.content + SYSTEM_REMINDER,
             },
           ],
         };
