@@ -74,6 +74,7 @@ export function toolInfoFromToolUse(
       };
 
     case "Bash":
+    case "mcp__acp__bash":
       return {
         title: input?.command
           ? "`" + input.command.replaceAll("`", "\\`") + "`"
@@ -525,6 +526,11 @@ export function toolUpdateFromToolResult(
           ],
         };
       }
+      return {};
+
+    case "mcp__acp__bash":
+      console.error("skipping");
+      // The bash tool already embeds a terminal
       return {};
 
     case "Task":

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities } from "@zed-industries/agent-client-protocol";
+import { tool } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
 
@@ -330,61 +331,62 @@ File editing instructions:
   }
 
   if (agent.clientCapabilities?.terminal) {
-    server.registerTool("bash", {
-      title: "Bash",
-      description: "Executes a bash command",
-      inputSchema: {
-        command: z.string().describe("The bash command to execute as a one-liner"),
-        timeout_ms: z.number().default(2 * 60 * 1000).describe("Optional timeout in milliseconds"),
-        // run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `BashOutput` tool to retrieve the current output, or the `KillBash` command to stop it early.")
-      }
-    }, async (input) => {
-      const session = agent.sessions[sessionId];
-      if (!session) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "The user has left the building",
-            },
-          ],
-        };
-      }
-
-      const toolId = randomUUID();
-
-      await agent.client.sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "tool_call",
-          toolCallId: toolId,
-          title: `\`${input.command.replace(/`/g, "\\`")}\``,
-          kind: "execute",
-          status: "pending",
-          content: []
+    server.registerTool(
+      "bash",
+      {
+        title: "Bash",
+        description: "Executes a bash command",
+        inputSchema: {
+          command: z
+            .string()
+            .describe("The bash command to execute as a one-liner"),
+          timeout_ms: z
+            .number()
+            .default(2 * 60 * 1000)
+            .describe("Optional timeout in milliseconds"),
+          // run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `BashOutput` tool to retrieve the current output, or the `KillBash` command to stop it early.")
+        },
+      },
+      async (input, extra) => {
+        const session = agent.sessions[sessionId];
+        if (!session) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "The user has left the building",
+              },
+            ],
+          };
         }
-      });
 
-      try {
+        const toolCallId = extra._meta?.["claudecode/toolUseId"];
 
-        if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
+        if (typeof toolCallId !== "string") {
+          throw new Error("No tool call ID found");
+        }
+
+        if (
+          !agent.clientCapabilities?.terminal ||
+          !agent.client.createTerminal
+        ) {
           throw new Error("unreachable");
         }
 
         await using terminal = await agent.client.createTerminal({
           command: input.command,
           sessionId,
-          outputByteLimit: 32_000
+          outputByteLimit: 32_000,
         });
 
         await agent.client.sessionUpdate({
           sessionId,
           update: {
             sessionUpdate: "tool_call_update",
-            toolCallId: toolId,
+            toolCallId,
             status: "in_progress",
-            content: [{ type: "terminal", terminalId: terminal.id }]
-          }
+            content: [{ type: "terminal", terminalId: terminal.id }],
+          },
         });
 
         const { didTimeout } = await Promise.race([
@@ -393,15 +395,6 @@ File editing instructions:
         ]);
 
         const output = await terminal.currentOutput();
-
-        await agent.client.sessionUpdate({
-          sessionId,
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId: toolId,
-            status: "completed",
-          }
-        });
 
         let toolOutput = "";
 
@@ -412,18 +405,8 @@ File editing instructions:
         toolOutput += toolCommandOutput(output);
 
         return { content: [{ type: "text", text: toolOutput }] };
-      } catch (err) {
-        await agent.client.sessionUpdate({
-          sessionId,
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId: toolId,
-            status: "failed",
-          }
-        });
-        throw err;
-      }
-    })
+      },
+    );
 
     function sleep(time: number): Promise<void> {
       return new Promise((resolve) => setTimeout(resolve, time));
