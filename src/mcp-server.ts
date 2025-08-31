@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
-import { ClientCapabilities } from "@zed-industries/agent-client-protocol";
+import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
 import { tool } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
@@ -344,7 +344,7 @@ File editing instructions:
             .number()
             .default(2 * 60 * 1000)
             .describe("Optional timeout in milliseconds"),
-          // run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `BashOutput` tool to retrieve the current output, or the `KillBash` command to stop it early.")
+          run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `bash-output` tool to retrieve the current output, or the `kill-bash` tool to stop it early.")
         },
       },
       async (input, extra) => {
@@ -373,7 +373,7 @@ File editing instructions:
           throw new Error("unreachable");
         }
 
-        await using terminal = await agent.client.createTerminal({
+        const handle = await agent.client.createTerminal({
           command: input.command,
           sessionId,
           outputByteLimit: 32_000,
@@ -385,9 +385,31 @@ File editing instructions:
             sessionUpdate: "tool_call_update",
             toolCallId,
             status: "in_progress",
-            content: [{ type: "terminal", terminalId: terminal.id }],
+            content: [{ type: "terminal", terminalId: handle.id }],
           },
         });
+
+        if (input.run_in_background) {
+          agent.backgroundTerminals[handle.id] = {
+            handle,
+            lastOutput: null,
+            status: "started"
+          };
+
+          sleep(input.timeout_ms).then(async () => {
+            const bgTerm = agent.backgroundTerminals[handle.id];
+            if (bgTerm.status !== "killed") {
+              bgTerm.status = "timedOut";
+            }
+            bgTerm.lastOutput = await handle.currentOutput();
+            // todo! use kill?
+            handle.release();
+          });
+
+          return { content: [{ type: "text", text: `Command started in background with id: ${handle.id}` }] };
+        }
+
+        await using terminal = handle;
 
         const { didTimeout } = await Promise.race([
           terminal.waitForExit().then(() => ({ didTimeout: false })),
@@ -395,27 +417,95 @@ File editing instructions:
         ]);
 
         const output = await terminal.currentOutput();
-
-        let toolOutput = "";
-
-        if (didTimeout) {
-          toolOutput += `Command timed out after ${input.timeout_ms}ms. `;
-        }
-
-        toolOutput += toolCommandOutput(output);
-
-        return { content: [{ type: "text", text: toolOutput }] };
+        return { content: [{ type: "text", text: toolCommandOutput("started", output) }] };
       },
     );
+
+    server.registerTool(
+      "bash-output",
+      {
+        title: "bash-output",
+        description: "Gets the new output of a background bash command.",
+        inputSchema: {
+          id: z.string().describe("The id of the bash command to kill"),
+        },
+      },
+      async (input) => {
+        const bgTerm = agent.backgroundTerminals[input.id];
+
+        if (!bgTerm) {
+          throw new Error(`Unknown shell ${input.id}`);
+        }
+
+        if (bgTerm.status === "started") {
+          const newOutput = await bgTerm.handle.currentOutput();
+          const strippedOutput = stripCommonPrefix(bgTerm.lastOutput?.output ?? "", newOutput.output);
+          bgTerm.lastOutput = newOutput;
+
+          return { content: [{ type: "text", text: toolCommandOutput(bgTerm.status, { ...newOutput, output: strippedOutput }) }] };
+        } else {
+          // todo! return only new output
+          return { content: [{ type: "text", text: toolCommandOutput(bgTerm.status, bgTerm.lastOutput) }] };
+        }
+      }
+    );
+
+    server.registerTool(
+      "kill-bash",
+      {
+        title: "kill-bash",
+        description: "Kills a background bash command by its id",
+        inputSchema: {
+          id: z.string().describe("The id of the bash command to kill"),
+        },
+      },
+      async (input) => {
+        const bgTerm = agent.backgroundTerminals[input.id];
+
+        if (!bgTerm) {
+          throw new Error(`Unknown shell ${input.id}`);
+        }
+
+        switch (bgTerm.status) {
+          case "started":
+            // todo!
+            bgTerm.status = "killed";
+            bgTerm.lastOutput = await bgTerm.handle.currentOutput();
+            await bgTerm.handle.release();
+            return { content: [{ type: "text", text: "Command killed successfully." }] };
+          case "killed":
+            return { content: [{ type: "text", text: "Command was already killed." }] };
+          case "timedOut":
+            return { content: [{ type: "text", text: "Command killed by timeout." }] };
+        }
+      }
+    );
+
+    function stripCommonPrefix(a: string, b: string): string {
+      let i = 0;
+      while (i < a.length && i < b.length && a[i] === b[i]) i++;
+      return b.slice(i);
+    }
 
     function sleep(time: number): Promise<void> {
       return new Promise((resolve) => setTimeout(resolve, time));
     }
 
-    function toolCommandOutput(output: any): string {
+    function toolCommandOutput(status: "started" | "killed" | "timedOut", output: TerminalOutputResponse): string {
       const { exitStatus, output: commandOutput, truncated } = output;
 
       let toolOutput = "";
+
+      switch (status) {
+        case "started":
+          break;
+        case "killed":
+          toolOutput += `Killed. `;
+          break;
+        case "timedOut":
+          toolOutput += `Timed out. `;
+          break;
+      }
 
       if (exitStatus?.exitCode == null) {
         toolOutput += `Interrupted. `;
@@ -438,8 +528,6 @@ File editing instructions:
 
       return toolOutput;
     }
-
-    // todo! BashOutput, KillBash
   }
 
   let alwaysAllowedTools: { [key: string]: boolean } = {};
