@@ -62,7 +62,7 @@ type BackgroundTerminal =
       lastOutput: TerminalOutputResponse | null;
     }
   | {
-      status: "killed" | "timedOut";
+      status: "aborted" | "exited" | "killed" | "timedOut";
       pendingOutput: TerminalOutputResponse;
     };
 
@@ -141,19 +141,30 @@ export class ClaudeAcpAgent implements Agent {
     let options: Options = {
       cwd: params.cwd,
       mcpServers,
-      disallowedTools: [],
       permissionPromptToolName: "mcp__acp__permission",
       stderr: (err) => console.error(err),
     };
+
+    const allowedTools = [];
+    const disallowedTools = [];
     if (this.clientCapabilities?.fs?.readTextFile) {
-      options.allowedTools = ["mcp__acp__read"];
-      options.disallowedTools!.push("Read");
+      allowedTools.push("mcp__acp__read");
+      disallowedTools.push("Read");
     }
     if (this.clientCapabilities?.fs?.writeTextFile) {
-      options.disallowedTools!.push("Write", "Edit", "MultiEdit");
+      allowedTools.push("mcp__acp__write");
+      disallowedTools.push("Write", "Edit", "MultiEdit");
     }
     if (this.clientCapabilities?.terminal) {
-      options.disallowedTools!.push("Bash", "BashOutput", "KillBash");
+      allowedTools.push("mcp__acp__BashOutput", "mcp__acp__KillBash");
+      disallowedTools.push("Bash", "BashOutput", "KillBash");
+    }
+
+    if (allowedTools.length > 0) {
+      options.allowedTools = allowedTools;
+    }
+    if (disallowedTools.length > 0) {
+      options.disallowedTools = disallowedTools;
     }
 
     let q = query({

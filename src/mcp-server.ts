@@ -397,6 +397,27 @@ File editing instructions:
           },
         });
 
+        const abortPromise = new Promise((resolve) => {
+          if (extra.signal.aborted) {
+            resolve(null);
+          } else {
+            extra.signal.addEventListener("abort", () => {
+              resolve(null);
+            });
+          }
+        });
+
+        const statusPromise = Promise.race([
+          handle.waitForExit().then(() => ({ status: "exited" as const })),
+          abortPromise.then(() => ({ status: "aborted" as const })),
+          sleep(input.timeout_ms).then(async () => {
+            if (agent.backgroundTerminals[handle.id]?.status === "started") {
+              await handle.kill();
+            }
+            return { status: "timedOut" as const };
+          }),
+        ]);
+
         if (input.run_in_background) {
           agent.backgroundTerminals[handle.id] = {
             handle,
@@ -404,22 +425,26 @@ File editing instructions:
             status: "started",
           };
 
-          sleep(input.timeout_ms).then(async () => {
+          statusPromise.then(async ({ status }) => {
             const bgTerm = agent.backgroundTerminals[handle.id];
-            if (bgTerm.status === "started") {
-              const currentOutput = await handle.currentOutput();
 
-              agent.backgroundTerminals[handle.id] = {
-                status: "timedOut",
-                pendingOutput: {
-                  ...currentOutput,
-                  output: stripCommonPrefix(
-                    bgTerm.lastOutput?.output ?? "",
-                    currentOutput.output,
-                  ),
-                },
-              };
+            if (bgTerm.status !== "started") {
+              return;
             }
+
+            const currentOutput = await handle.currentOutput();
+
+            agent.backgroundTerminals[handle.id] = {
+              status,
+              pendingOutput: {
+                ...currentOutput,
+                output: stripCommonPrefix(
+                  bgTerm.lastOutput?.output ?? "",
+                  currentOutput.output,
+                ),
+              },
+            };
+
             return handle.release();
           });
 
@@ -435,12 +460,16 @@ File editing instructions:
 
         await using terminal = handle;
 
-        const { status } = await Promise.race([
-          terminal.waitForExit().then(() => ({ status: "started" as const })),
-          sleep(input.timeout_ms).then(() => ({ status: "timedOut" as const })),
-        ]);
+        const { status } = await statusPromise;
+
+        if (status === "aborted") {
+          return {
+            content: [{ type: "text", text: "Tool cancelled by user" }],
+          };
+        }
 
         const output = await terminal.currentOutput();
+
         return {
           content: [{ type: "text", text: toolCommandOutput(status, output) }],
         };
@@ -522,6 +551,7 @@ File editing instructions:
 
         switch (bgTerm.status) {
           case "started":
+            await bgTerm.handle.kill();
             const currentOutput = await bgTerm.handle.currentOutput();
             agent.backgroundTerminals[bgTerm.handle.id] = {
               status: "killed",
@@ -538,6 +568,14 @@ File editing instructions:
             return {
               content: [{ type: "text", text: "Command killed successfully." }],
             };
+          case "aborted":
+            return {
+              content: [{ type: "text", text: "Command aborted by user." }],
+            };
+          case "exited":
+            return {
+              content: [{ type: "text", text: "Command had already exited." }],
+            };
           case "killed":
             return {
               content: [{ type: "text", text: "Command was already killed." }],
@@ -546,6 +584,10 @@ File editing instructions:
             return {
               content: [{ type: "text", text: "Command killed by timeout." }],
             };
+          default: {
+            const unreachable: never = bgTerm;
+            return unreachable;
+          }
         }
       },
     );
@@ -561,7 +603,7 @@ File editing instructions:
     }
 
     function toolCommandOutput(
-      status: "started" | "killed" | "timedOut",
+      status: "started" | "aborted" | "exited" | "killed" | "timedOut",
       output: TerminalOutputResponse,
     ): string {
       const { exitStatus, output: commandOutput, truncated } = output;
@@ -581,6 +623,13 @@ File editing instructions:
         case "timedOut":
           toolOutput += `Timed out. `;
           break;
+        case "exited":
+        case "aborted":
+          break;
+        default: {
+          const unreachable: never = status;
+          return unreachable;
+        }
       }
 
       if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
