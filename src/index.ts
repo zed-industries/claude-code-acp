@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { runAcp as runAcp } from "./acp-agent.js";
 runAcp();
 
