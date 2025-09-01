@@ -2,14 +2,12 @@ import {
   Agent,
   AgentSideConnection,
   AuthenticateRequest,
+  AvailableCommand,
   CancelNotification,
   Client,
   ClientCapabilities,
-  CommandInfo,
   InitializeRequest,
   InitializeResponse,
-  ListCommandsRequest,
-  ListCommandsResponse,
   NewSessionRequest,
   NewSessionResponse,
   PromptRequest,
@@ -93,7 +91,6 @@ export class ClaudeAcpAgent implements Agent {
           image: true,
           embeddedContext: true,
         },
-        supportsCommands: true,
       },
       authMethods: [
         {
@@ -180,12 +177,14 @@ export class ClaudeAcpAgent implements Agent {
       cancelled: false,
     };
 
+    const availableCommands = await availableSlashCommands(q);
     return {
       sessionId,
+      availableCommands,
     };
   }
 
-  async authenticate(params: AuthenticateRequest): Promise<void> {
+  async authenticate(_params: AuthenticateRequest): Promise<void> {
     throw new Error("Method not implemented.");
   }
 
@@ -269,17 +268,6 @@ export class ClaudeAcpAgent implements Agent {
     await this.sessions[params.sessionId].query.interrupt();
   }
 
-  async listCommands(
-    params: ListCommandsRequest,
-  ): Promise<ListCommandsResponse> {
-    if (!this.sessions[params.sessionId]) {
-      throw new Error("Session not found");
-    }
-
-    const commands = await slashCommands(this.sessions[params.sessionId].query);
-    return { commands };
-  }
-
   async readTextFile(
     params: ReadTextFileRequest,
   ): Promise<ReadTextFileResponse> {
@@ -299,7 +287,9 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
-async function slashCommands(query: Query): Promise<CommandInfo[]> {
+async function availableSlashCommands(
+  query: Query,
+): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
     "agents", // Modal
     "bashes", // Modal
@@ -336,14 +326,25 @@ async function slashCommands(query: Query): Promise<CommandInfo[]> {
   //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
   const commands = await (query as any).supportedCommands();
   return commands
-    .map((command: any) => ({
-      name: command.name,
-      description: command.description || "",
-      requiresArgument:
-        command.argumentHint != null && command.argumentHint != "",
-    }))
+    .map(
+      (command: {
+        name: string;
+        description: string;
+        argumentHint: string;
+      }) => {
+        const input = command.argumentHint
+          ? { hint: command.argumentHint }
+          : null;
+        return {
+          name: command.name,
+          description: command.description || "",
+          input,
+        };
+      },
+    )
     .filter(
-      (command: CommandInfo) => !UNSUPPORTED_COMMANDS.includes(command.name),
+      (command: AvailableCommand) =>
+        !UNSUPPORTED_COMMANDS.includes(command.name),
     );
 }
 
