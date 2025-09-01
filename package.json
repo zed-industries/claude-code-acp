@@ -30,7 +30,7 @@
   "author": "Zed Industries",
   "license": "Apache-2.0",
   "dependencies": {
-    "@anthropic-ai/claude-code": "^1.0.96",
+    "@anthropic-ai/claude-code": "^1.0.98",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "@types/express": "^5.0.3",
     "@zed-industries/agent-client-protocol": "file:../agent-client-protocol",
