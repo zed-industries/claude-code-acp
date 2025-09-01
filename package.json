@@ -37,7 +37,7 @@
     "@anthropic-ai/claude-code": "1.0.96",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "@types/express": "^5.0.3",
-    "@zed-industries/agent-client-protocol": "file:../agent-client-protocol",
+    "@zed-industries/agent-client-protocol": "0.2.0-alpha.4",
     "express": "^5.1.0",
     "minimist": "^1.2.8",
     "uuid": "11.1.0"
