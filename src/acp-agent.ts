@@ -4,7 +4,6 @@ import {
   AuthenticateRequest,
   AvailableCommand,
   CancelNotification,
-  Client,
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
@@ -17,8 +16,6 @@ import {
   RequestError,
   TerminalHandle,
   TerminalOutputResponse,
-  ToolCallContent,
-  ToolKind,
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
