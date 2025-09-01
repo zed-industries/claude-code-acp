@@ -5,7 +5,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
-import { ClientCapabilities } from "@zed-industries/agent-client-protocol";
+import {
+  ClientCapabilities,
+  TerminalOutputResponse,
+} from "@zed-industries/agent-client-protocol";
+import { tool } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
 
@@ -327,6 +331,324 @@ File editing instructions:
         };
       },
     );
+  }
+
+  if (agent.clientCapabilities?.terminal) {
+    server.registerTool(
+      "Bash",
+      {
+        title: "Bash",
+        description: "Executes a bash command",
+        inputSchema: {
+          command: z
+            .string()
+            .describe("The bash command to execute as a one-liner"),
+          timeout_ms: z
+            .number()
+            .default(2 * 60 * 1000)
+            .describe("Optional timeout in milliseconds"),
+          run_in_background: z
+            .boolean()
+            .default(false)
+            .describe(
+              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early.",
+            ),
+        },
+      },
+      async (input, extra) => {
+        const session = agent.sessions[sessionId];
+        if (!session) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "The user has left the building",
+              },
+            ],
+          };
+        }
+
+        const toolCallId = extra._meta?.["claudecode/toolUseId"];
+
+        if (typeof toolCallId !== "string") {
+          throw new Error("No tool call ID found");
+        }
+
+        if (
+          !agent.clientCapabilities?.terminal ||
+          !agent.client.createTerminal
+        ) {
+          throw new Error("unreachable");
+        }
+
+        const handle = await agent.client.createTerminal({
+          command: input.command,
+          sessionId,
+          outputByteLimit: 32_000,
+        });
+
+        await agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: "in_progress",
+            content: [{ type: "terminal", terminalId: handle.id }],
+          },
+        });
+
+        const abortPromise = new Promise((resolve) => {
+          if (extra.signal.aborted) {
+            resolve(null);
+          } else {
+            extra.signal.addEventListener("abort", () => {
+              resolve(null);
+            });
+          }
+        });
+
+        const statusPromise = Promise.race([
+          handle.waitForExit().then(() => ({ status: "exited" as const })),
+          abortPromise.then(() => ({ status: "aborted" as const })),
+          sleep(input.timeout_ms).then(async () => {
+            if (agent.backgroundTerminals[handle.id]?.status === "started") {
+              await handle.kill();
+            }
+            return { status: "timedOut" as const };
+          }),
+        ]);
+
+        if (input.run_in_background) {
+          agent.backgroundTerminals[handle.id] = {
+            handle,
+            lastOutput: null,
+            status: "started",
+          };
+
+          statusPromise.then(async ({ status }) => {
+            const bgTerm = agent.backgroundTerminals[handle.id];
+
+            if (bgTerm.status !== "started") {
+              return;
+            }
+
+            const currentOutput = await handle.currentOutput();
+
+            agent.backgroundTerminals[handle.id] = {
+              status,
+              pendingOutput: {
+                ...currentOutput,
+                output: stripCommonPrefix(
+                  bgTerm.lastOutput?.output ?? "",
+                  currentOutput.output,
+                ),
+              },
+            };
+
+            return handle.release();
+          });
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Command started in background with id: ${handle.id}`,
+              },
+            ],
+          };
+        }
+
+        await using terminal = handle;
+
+        const { status } = await statusPromise;
+
+        if (status === "aborted") {
+          return {
+            content: [{ type: "text", text: "Tool cancelled by user" }],
+          };
+        }
+
+        const output = await terminal.currentOutput();
+
+        return {
+          content: [{ type: "text", text: toolCommandOutput(status, output) }],
+        };
+      },
+    );
+
+    server.registerTool(
+      "BashOutput",
+      {
+        title: "BashOutput",
+        description:
+          "Returns the current output and exit status of a background bash command by its id. Includes only new output since last invocation.",
+        inputSchema: {
+          id: z
+            .string()
+            .describe(
+              "The id of the background bash command as returned by `mcp__acp__Bash`",
+            ),
+        },
+      },
+      async (input) => {
+        const bgTerm = agent.backgroundTerminals[input.id];
+
+        if (!bgTerm) {
+          throw new Error(`Unknown shell ${input.id}`);
+        }
+
+        if (bgTerm.status === "started") {
+          const newOutput = await bgTerm.handle.currentOutput();
+          const strippedOutput = stripCommonPrefix(
+            bgTerm.lastOutput?.output ?? "",
+            newOutput.output,
+          );
+          bgTerm.lastOutput = newOutput;
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: toolCommandOutput(bgTerm.status, {
+                  ...newOutput,
+                  output: strippedOutput,
+                }),
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: "text",
+                text: toolCommandOutput(bgTerm.status, bgTerm.pendingOutput),
+              },
+            ],
+          };
+        }
+      },
+    );
+
+    server.registerTool(
+      "KillBash",
+      {
+        title: "KillBash",
+        description: "Stops a background command by its id",
+        inputSchema: {
+          id: z
+            .string()
+            .describe(
+              "The id of the background bash command as returned by `mcp__acp__Bash`",
+            ),
+        },
+      },
+      async (input) => {
+        const bgTerm = agent.backgroundTerminals[input.id];
+
+        if (!bgTerm) {
+          throw new Error(`Unknown shell ${input.id}`);
+        }
+
+        switch (bgTerm.status) {
+          case "started":
+            await bgTerm.handle.kill();
+            const currentOutput = await bgTerm.handle.currentOutput();
+            agent.backgroundTerminals[bgTerm.handle.id] = {
+              status: "killed",
+              pendingOutput: {
+                ...currentOutput,
+                output: stripCommonPrefix(
+                  bgTerm.lastOutput?.output ?? "",
+                  currentOutput.output,
+                ),
+              },
+            };
+            await bgTerm.handle.release();
+
+            return {
+              content: [{ type: "text", text: "Command killed successfully." }],
+            };
+          case "aborted":
+            return {
+              content: [{ type: "text", text: "Command aborted by user." }],
+            };
+          case "exited":
+            return {
+              content: [{ type: "text", text: "Command had already exited." }],
+            };
+          case "killed":
+            return {
+              content: [{ type: "text", text: "Command was already killed." }],
+            };
+          case "timedOut":
+            return {
+              content: [{ type: "text", text: "Command killed by timeout." }],
+            };
+          default: {
+            const unreachable: never = bgTerm;
+            return unreachable;
+          }
+        }
+      },
+    );
+
+    function stripCommonPrefix(a: string, b: string): string {
+      let i = 0;
+      while (i < a.length && i < b.length && a[i] === b[i]) i++;
+      return b.slice(i);
+    }
+
+    function sleep(time: number): Promise<void> {
+      return new Promise((resolve) => setTimeout(resolve, time));
+    }
+
+    function toolCommandOutput(
+      status: "started" | "aborted" | "exited" | "killed" | "timedOut",
+      output: TerminalOutputResponse,
+    ): string {
+      const { exitStatus, output: commandOutput, truncated } = output;
+
+      let toolOutput = "";
+
+      switch (status) {
+        case "started": {
+          if (exitStatus?.exitCode == null) {
+            toolOutput += `Interrupted. `;
+          }
+          break;
+        }
+        case "killed":
+          toolOutput += `Killed. `;
+          break;
+        case "timedOut":
+          toolOutput += `Timed out. `;
+          break;
+        case "exited":
+        case "aborted":
+          break;
+        default: {
+          const unreachable: never = status;
+          return unreachable;
+        }
+      }
+
+      if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
+        toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
+      }
+
+      if (exitStatus?.signal != null) {
+        toolOutput += `Signal \`${exitStatus.signal}\`. `;
+      }
+
+      toolOutput += "Output:\n\n";
+      toolOutput += commandOutput;
+
+      if (truncated) {
+        toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
+      }
+
+      return toolOutput;
+    }
   }
 
   let alwaysAllowedTools: { [key: string]: boolean } = {};

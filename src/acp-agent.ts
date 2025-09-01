@@ -15,6 +15,8 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  TerminalHandle,
+  TerminalOutputResponse,
   ToolCallContent,
   ToolKind,
   WriteTextFileRequest,
@@ -53,22 +55,35 @@ type Session = {
   cancelled: boolean;
 };
 
+type BackgroundTerminal =
+  | {
+      handle: TerminalHandle;
+      status: "started";
+      lastOutput: TerminalOutputResponse | null;
+    }
+  | {
+      status: "aborted" | "exited" | "killed" | "timedOut";
+      pendingOutput: TerminalOutputResponse;
+    };
+
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
     [key: string]: Session;
   };
-  client: Client;
+  client: AgentSideConnection;
   toolUseCache: { [key: string]: any };
   fileContentCache: { [key: string]: any };
+  backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
 
-  constructor(client: Client) {
+  constructor(client: AgentSideConnection) {
     this.sessions = {};
     this.client = client;
     this.toolUseCache = {};
     this.fileContentCache = {};
   }
+
   async initialize(request: InitializeRequest): Promise<InitializeResponse> {
     this.clientCapabilities = request.clientCapabilities;
     return {
@@ -126,16 +141,30 @@ export class ClaudeAcpAgent implements Agent {
     let options: Options = {
       cwd: params.cwd,
       mcpServers,
-      disallowedTools: [],
       permissionPromptToolName: "mcp__acp__permission",
       stderr: (err) => console.error(err),
     };
+
+    const allowedTools = [];
+    const disallowedTools = [];
     if (this.clientCapabilities?.fs?.readTextFile) {
-      options.allowedTools = ["mcp__acp__read"];
-      options.disallowedTools!.push("Read");
+      allowedTools.push("mcp__acp__read");
+      disallowedTools.push("Read");
     }
     if (this.clientCapabilities?.fs?.writeTextFile) {
-      options.disallowedTools!.push("Write", "Edit", "MultiEdit");
+      allowedTools.push("mcp__acp__write");
+      disallowedTools.push("Write", "Edit", "MultiEdit");
+    }
+    if (this.clientCapabilities?.terminal) {
+      allowedTools.push("mcp__acp__BashOutput", "mcp__acp__KillBash");
+      disallowedTools.push("Bash", "BashOutput", "KillBash");
+    }
+
+    if (allowedTools.length > 0) {
+      options.allowedTools = allowedTools;
+    }
+    if (disallowedTools.length > 0) {
+      options.disallowedTools = disallowedTools;
     }
 
     let q = query({
