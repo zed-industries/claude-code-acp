@@ -10,7 +10,6 @@ import {
   InitializeResponse,
   ListCommandsRequest,
   ListCommandsResponse,
-  LoadSessionRequest,
   NewSessionRequest,
   NewSessionResponse,
   PromptRequest,
@@ -19,24 +18,17 @@ import {
   ReadTextFileResponse,
   RequestError,
   RunCommandRequest,
-  ToolCallContent,
-  ToolKind,
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as os from "node:os";
 import {
   McpServerConfig,
   Options,
   Query,
   query,
   SDKAssistantMessage,
-  SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-code";
-import * as readline from "node:readline";
 import { v7 as uuidv7 } from "uuid";
 import {
   nodeToWebReadable,
@@ -44,7 +36,6 @@ import {
   Pushable,
   unreachable,
 } from "./utils.js";
-import { ContentBlock } from "@zed-industries/agent-client-protocol";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
@@ -290,7 +281,7 @@ async function slashCommands(query: Query): Promise<CommandInfo[]> {
     "bashes", // Modal
     "bug", // Modal
     "clear", // Escape Codes
-    "compact", // Releases entity
+    "compact", // Not supported via SDK?
     "config", // Modal
     "context", // Escape Codes
     "cost", // Escape Codes
