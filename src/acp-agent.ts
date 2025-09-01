@@ -17,7 +17,6 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
-  RunCommandRequest,
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
@@ -250,12 +249,6 @@ export class ClaudeAcpAgent implements Agent {
     return { commands };
   }
 
-  async runCommand(params: RunCommandRequest): Promise<void> {
-    console.error(
-      `Running command ${params.command} with arguments ${params.args}`,
-    );
-  }
-
   async readTextFile(
     params: ReadTextFileRequest,
   ): Promise<ReadTextFileResponse> {
@@ -289,6 +282,7 @@ async function slashCommands(query: Query): Promise<CommandInfo[]> {
     "exit",
     "export", // Modal
     "help", // Modal
+    "hooks", // Modal
     "ide", // Modal
     "install-github-app", // Modal
     "login",
@@ -302,6 +296,7 @@ async function slashCommands(query: Query): Promise<CommandInfo[]> {
     "release-notes", // Escape Codes
     "resume",
     "status", // Not supported via SDK?
+    "statusline", // Not needed
     "terminal-setup", // Not needed
     "todos", // Escape Codes
     "vim", // Not needed
