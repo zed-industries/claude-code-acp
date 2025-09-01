@@ -5,7 +5,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
-import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
+import {
+  ClientCapabilities,
+  TerminalOutputResponse,
+} from "@zed-industries/agent-client-protocol";
 import { tool } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
@@ -332,7 +335,7 @@ File editing instructions:
 
   if (agent.clientCapabilities?.terminal) {
     server.registerTool(
-      "bash",
+      "Bash",
       {
         title: "Bash",
         description: "Executes a bash command",
@@ -344,7 +347,12 @@ File editing instructions:
             .number()
             .default(2 * 60 * 1000)
             .describe("Optional timeout in milliseconds"),
-          run_in_background: z.boolean().default(false).describe("When set to true, the command is started in the background. The tool returns an `id` that can be used with the `bash-output` tool to retrieve the current output, or the `kill-bash` tool to stop it early.")
+          run_in_background: z
+            .boolean()
+            .default(false)
+            .describe(
+              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early.",
+            ),
         },
       },
       async (input, extra) => {
@@ -393,41 +401,64 @@ File editing instructions:
           agent.backgroundTerminals[handle.id] = {
             handle,
             lastOutput: null,
-            status: "started"
+            status: "started",
           };
 
           sleep(input.timeout_ms).then(async () => {
             const bgTerm = agent.backgroundTerminals[handle.id];
-            if (bgTerm.status !== "killed") {
-              bgTerm.status = "timedOut";
+            if (bgTerm.status === "started") {
+              const currentOutput = await handle.currentOutput();
+
+              agent.backgroundTerminals[handle.id] = {
+                status: "timedOut",
+                pendingOutput: {
+                  ...currentOutput,
+                  output: stripCommonPrefix(
+                    bgTerm.lastOutput?.output ?? "",
+                    currentOutput.output,
+                  ),
+                },
+              };
             }
-            bgTerm.lastOutput = await handle.currentOutput();
-            // todo! use kill?
-            handle.release();
+            return handle.release();
           });
 
-          return { content: [{ type: "text", text: `Command started in background with id: ${handle.id}` }] };
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Command started in background with id: ${handle.id}`,
+              },
+            ],
+          };
         }
 
         await using terminal = handle;
 
-        const { didTimeout } = await Promise.race([
-          terminal.waitForExit().then(() => ({ didTimeout: false })),
-          sleep(input.timeout_ms).then(() => ({ didTimeout: true })),
+        const { status } = await Promise.race([
+          terminal.waitForExit().then(() => ({ status: "started" as const })),
+          sleep(input.timeout_ms).then(() => ({ status: "timedOut" as const })),
         ]);
 
         const output = await terminal.currentOutput();
-        return { content: [{ type: "text", text: toolCommandOutput("started", output) }] };
+        return {
+          content: [{ type: "text", text: toolCommandOutput(status, output) }],
+        };
       },
     );
 
     server.registerTool(
-      "bash-output",
+      "BashOutput",
       {
-        title: "bash-output",
-        description: "Gets the new output of a background bash command.",
+        title: "BashOutput",
+        description:
+          "Returns the current output and exit status of a background bash command by its id. Includes only new output since last invocation.",
         inputSchema: {
-          id: z.string().describe("The id of the bash command to kill"),
+          id: z
+            .string()
+            .describe(
+              "The id of the background bash command as returned by `mcp__acp__Bash`",
+            ),
         },
       },
       async (input) => {
@@ -439,24 +470,47 @@ File editing instructions:
 
         if (bgTerm.status === "started") {
           const newOutput = await bgTerm.handle.currentOutput();
-          const strippedOutput = stripCommonPrefix(bgTerm.lastOutput?.output ?? "", newOutput.output);
+          const strippedOutput = stripCommonPrefix(
+            bgTerm.lastOutput?.output ?? "",
+            newOutput.output,
+          );
           bgTerm.lastOutput = newOutput;
 
-          return { content: [{ type: "text", text: toolCommandOutput(bgTerm.status, { ...newOutput, output: strippedOutput }) }] };
+          return {
+            content: [
+              {
+                type: "text",
+                text: toolCommandOutput(bgTerm.status, {
+                  ...newOutput,
+                  output: strippedOutput,
+                }),
+              },
+            ],
+          };
         } else {
-          // todo! return only new output
-          return { content: [{ type: "text", text: toolCommandOutput(bgTerm.status, bgTerm.lastOutput) }] };
+          return {
+            content: [
+              {
+                type: "text",
+                text: toolCommandOutput(bgTerm.status, bgTerm.pendingOutput),
+              },
+            ],
+          };
         }
-      }
+      },
     );
 
     server.registerTool(
-      "kill-bash",
+      "KillBash",
       {
-        title: "kill-bash",
-        description: "Kills a background bash command by its id",
+        title: "KillBash",
+        description: "Stops a background command by its id",
         inputSchema: {
-          id: z.string().describe("The id of the bash command to kill"),
+          id: z
+            .string()
+            .describe(
+              "The id of the background bash command as returned by `mcp__acp__Bash`",
+            ),
         },
       },
       async (input) => {
@@ -468,17 +522,32 @@ File editing instructions:
 
         switch (bgTerm.status) {
           case "started":
-            // todo!
-            bgTerm.status = "killed";
-            bgTerm.lastOutput = await bgTerm.handle.currentOutput();
+            const currentOutput = await bgTerm.handle.currentOutput();
+            agent.backgroundTerminals[bgTerm.handle.id] = {
+              status: "killed",
+              pendingOutput: {
+                ...currentOutput,
+                output: stripCommonPrefix(
+                  bgTerm.lastOutput?.output ?? "",
+                  currentOutput.output,
+                ),
+              },
+            };
             await bgTerm.handle.release();
-            return { content: [{ type: "text", text: "Command killed successfully." }] };
+
+            return {
+              content: [{ type: "text", text: "Command killed successfully." }],
+            };
           case "killed":
-            return { content: [{ type: "text", text: "Command was already killed." }] };
+            return {
+              content: [{ type: "text", text: "Command was already killed." }],
+            };
           case "timedOut":
-            return { content: [{ type: "text", text: "Command killed by timeout." }] };
+            return {
+              content: [{ type: "text", text: "Command killed by timeout." }],
+            };
         }
-      }
+      },
     );
 
     function stripCommonPrefix(a: string, b: string): string {
@@ -491,24 +560,27 @@ File editing instructions:
       return new Promise((resolve) => setTimeout(resolve, time));
     }
 
-    function toolCommandOutput(status: "started" | "killed" | "timedOut", output: TerminalOutputResponse): string {
+    function toolCommandOutput(
+      status: "started" | "killed" | "timedOut",
+      output: TerminalOutputResponse,
+    ): string {
       const { exitStatus, output: commandOutput, truncated } = output;
 
       let toolOutput = "";
 
       switch (status) {
-        case "started":
+        case "started": {
+          if (exitStatus?.exitCode == null) {
+            toolOutput += `Interrupted. `;
+          }
           break;
+        }
         case "killed":
           toolOutput += `Killed. `;
           break;
         case "timedOut":
           toolOutput += `Timed out. `;
           break;
-      }
-
-      if (exitStatus?.exitCode == null) {
-        toolOutput += `Interrupted. `;
       }
 
       if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {

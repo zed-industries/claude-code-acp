@@ -55,15 +55,16 @@ type Session = {
   cancelled: boolean;
 };
 
-
-type BackgroundTerminal = {
-  handle: TerminalHandle,
-  status: "started",
-  lastOutput: TerminalOutputResponse | null,
-} | {
-  status: "killed" | "timedOut",
-  lastOutput: TerminalOutputResponse,
-};
+type BackgroundTerminal =
+  | {
+      handle: TerminalHandle;
+      status: "started";
+      lastOutput: TerminalOutputResponse | null;
+    }
+  | {
+      status: "killed" | "timedOut";
+      pendingOutput: TerminalOutputResponse;
+    };
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -455,11 +456,11 @@ type ContentChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: any } // input is serde_json::Value, so use any or unknown
   | {
-    type: "tool_result";
-    content: string;
-    tool_use_id: string;
-    is_error: boolean;
-  } // content type depends on your Content definition
+      type: "tool_result";
+      content: string;
+      tool_use_id: string;
+      is_error: boolean;
+    } // content type depends on your Content definition
   | { type: "thinking"; thinking: string }
   | { type: "redacted_thinking" }
   | { type: "image"; source: ImageSource }

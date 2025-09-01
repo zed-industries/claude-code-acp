@@ -74,7 +74,7 @@ export function toolInfoFromToolUse(
       };
 
     case "Bash":
-    case "mcp__acp__bash":
+    case "mcp__acp__Bash":
       return {
         title: input?.command
           ? "`" + input.command.replaceAll("`", "\\`") + "`"
@@ -92,6 +92,7 @@ export function toolInfoFromToolUse(
       };
 
     case "BashOutput":
+    case "mcp__acp__BashOutput":
       return {
         title: "Tail Logs",
         kind: "execute",
@@ -99,6 +100,7 @@ export function toolInfoFromToolUse(
       };
 
     case "KillBash":
+    case "mcp__acp__KillBash":
       return {
         title: "Kill Process",
         kind: "execute",
@@ -528,8 +530,7 @@ export function toolUpdateFromToolResult(
       }
       return {};
 
-    case "mcp__acp__bash":
-      console.error("skipping");
+    case "mcp__acp__Bash":
       // The bash tool already embeds a terminal
       return {};
 
