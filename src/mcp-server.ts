@@ -701,6 +701,7 @@ function toolCommandOutput(
 
   switch (status) {
     case "started": {
+      console.error({ exitStatus });
       if (exitStatus && (exitStatus.exitCode ?? null) === null) {
         toolOutput += `Interrupted. `;
       }
