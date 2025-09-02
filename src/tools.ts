@@ -1,13 +1,11 @@
-import { ContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import {
-  Client,
   PlanEntry,
   ToolCallContent,
   ToolCallLocation,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
 import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
-import { tool } from "@anthropic-ai/claude-code";
+
 
 interface ToolInfo {
   title: string;
@@ -37,11 +35,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.prompt
             ? [
-                {
-                  type: "content",
-                  content: { type: "text", text: input.prompt },
-                },
-              ]
+              {
+                type: "content",
+                content: { type: "text", text: input.prompt },
+              },
+            ]
             : [],
       };
 
@@ -60,11 +58,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.new_source
             ? [
-                {
-                  type: "content",
-                  content: { type: "text", text: input.new_source },
-                },
-              ]
+              {
+                type: "content",
+                content: { type: "text", text: input.new_source },
+              },
+            ]
             : [],
         locations: input?.notebook_path ? [{ path: input.notebook_path }] : [],
       };
@@ -77,11 +75,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.description
             ? [
-                {
-                  type: "content",
-                  content: { type: "text", text: input.description },
-                },
-              ]
+              {
+                type: "content",
+                content: { type: "text", text: input.description },
+              },
+            ]
             : [],
       };
 
@@ -168,20 +166,20 @@ export function toolInfoFromToolUse(
         content:
           input && path
             ? [
-                {
-                  type: "diff",
-                  path,
-                  oldText,
-                  newText,
-                },
-              ]
+              {
+                type: "diff",
+                path,
+                oldText,
+                newText,
+              },
+            ]
             : [],
         locations: path ? [{ path, line }] : [],
       };
     }
 
     case "mcp__acp__multi-edit":
-    case "MultiEdit":
+    case "MultiEdit": {
       const multiInput = input as {
         file_path: string;
         edits: {
@@ -226,8 +224,8 @@ export function toolInfoFromToolUse(
         ],
         locations: input?.file_path ? [{ path: input.file_path }] : [],
       };
-
-    case "mcp__acp__write":
+    }
+    case "mcp__acp__write": {
       let content: ToolCallContent[] = [];
       if (input && input.abs_path) {
         content = [
@@ -252,6 +250,7 @@ export function toolInfoFromToolUse(
         content,
         locations: input?.abs_path ? [{ path: input.abs_path }] : [],
       };
+    }
 
     case "Write":
       return {
@@ -260,13 +259,13 @@ export function toolInfoFromToolUse(
         content:
           input && input.file_path
             ? [
-                {
-                  type: "diff",
-                  path: input.file_path,
-                  oldText: null,
-                  newText: input.content,
-                },
-              ]
+              {
+                type: "diff",
+                path: input.file_path,
+                oldText: null,
+                newText: input.content,
+              },
+            ]
             : [],
         locations: input?.file_path ? [{ path: input.file_path }] : [],
       };
@@ -356,11 +355,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.prompt
             ? [
-                {
-                  type: "content",
-                  content: { type: "text", text: input.prompt },
-                },
-              ]
+              {
+                type: "content",
+                content: { type: "text", text: input.prompt },
+              },
+            ]
             : [],
       };
 
@@ -483,11 +482,11 @@ export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefin
           content: toolResult.content.map((content: any) => ({
             type: "content",
             content:
-              content.type == "text"
+              content.type === "text"
                 ? {
-                    type: "text",
-                    text: markdownEscape(content.text.replace(SYSTEM_REMINDER, "")),
-                  }
+                  type: "text",
+                  text: markdownEscape(content.text.replace(SYSTEM_REMINDER, "")),
+                }
                 : content,
           })),
         };

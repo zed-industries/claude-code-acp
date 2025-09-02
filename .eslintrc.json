@@ -22,6 +22,7 @@
       }
     ],
     "no-console": "off",
+    "no-constant-condition": "off",
     "prefer-const": "error",
     "no-var": "error",
     "eqeqeq": ["error", "always"],

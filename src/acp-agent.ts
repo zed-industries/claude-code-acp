@@ -45,14 +45,14 @@ type Session = {
 
 type BackgroundTerminal =
   | {
-      handle: TerminalHandle;
-      status: "started";
-      lastOutput: TerminalOutputResponse | null;
-    }
+    handle: TerminalHandle;
+    status: "started";
+    lastOutput: TerminalOutputResponse | null;
+  }
   | {
-      status: "aborted" | "exited" | "killed" | "timedOut";
-      pendingOutput: TerminalOutputResponse;
-    };
+    status: "aborted" | "exited" | "killed" | "timedOut";
+    pendingOutput: TerminalOutputResponse;
+  };
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -224,8 +224,8 @@ export class ClaudeAcpAgent implements Agent {
           }
 
           if (
-            message.message.model == "<synthetic>" &&
-            message.message.content.length == 1 &&
+            message.message.model === "<synthetic>" &&
+            message.message.content.length === 1 &&
             message.message.content[0].text.includes("Please run /login")
           ) {
             throw RequestError.authRequired();
@@ -473,7 +473,7 @@ export function toAcpNotifications(
         break;
       case "tool_use":
         toolUseCache[chunk.id] = chunk;
-        if (chunk.name == "TodoWrite") {
+        if (chunk.name === "TodoWrite") {
           update = {
             sessionUpdate: "plan",
             entries: planEntries(chunk.input),
@@ -532,11 +532,11 @@ type ContentChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: any } // input is serde_json::Value, so use any or unknown
   | {
-      type: "tool_result";
-      content: string;
-      tool_use_id: string;
-      is_error: boolean;
-    } // content type depends on your Content definition
+    type: "tool_result";
+    content: string;
+    tool_use_id: string;
+    is_error: boolean;
+  } // content type depends on your Content definition
   | { type: "thinking"; thinking: string }
   | { type: "redacted_thinking" }
   | { type: "image"; source: ImageSource }

@@ -1,13 +1,13 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
-import { tool } from "@anthropic-ai/claude-code";
-import { sleep } from "./utils.js";
+
+import { sleep, unreachable } from "./utils.js";
 
 export const SYSTEM_REMINDER = `
 
@@ -128,7 +128,7 @@ allow the user to conveniently review changes.`,
               ],
             };
           }
-          const content = await agent.writeTextFile({
+          await agent.writeTextFile({
             sessionId,
             path: input.abs_path,
             content: input.content,
@@ -514,7 +514,7 @@ File editing instructions:
         }
 
         switch (bgTerm.status) {
-          case "started":
+          case "started": {
             await bgTerm.handle.kill();
             const currentOutput = await bgTerm.handle.currentOutput();
             agent.backgroundTerminals[bgTerm.handle.id] = {
@@ -529,6 +529,7 @@ File editing instructions:
             return {
               content: [{ type: "text", text: "Command killed successfully." }],
             };
+          }
           case "aborted":
             return {
               content: [{ type: "text", text: "Command aborted by user." }],
@@ -546,68 +547,11 @@ File editing instructions:
               content: [{ type: "text", text: "Command killed by timeout." }],
             };
           default: {
-            const unreachable: never = bgTerm;
-            return unreachable;
+            return unreachable(bgTerm);
           }
         }
       }
     );
-
-    function stripCommonPrefix(a: string, b: string): string {
-      let i = 0;
-      while (i < a.length && i < b.length && a[i] === b[i]) {
-        i++;
-      }
-      return b.slice(i);
-    }
-
-    function toolCommandOutput(
-      status: "started" | "aborted" | "exited" | "killed" | "timedOut",
-      output: TerminalOutputResponse
-    ): string {
-      const { exitStatus, output: commandOutput, truncated } = output;
-
-      let toolOutput = "";
-
-      switch (status) {
-        case "started": {
-          if (exitStatus?.exitCode == null) {
-            toolOutput += `Interrupted. `;
-          }
-          break;
-        }
-        case "killed":
-          toolOutput += `Killed. `;
-          break;
-        case "timedOut":
-          toolOutput += `Timed out. `;
-          break;
-        case "exited":
-        case "aborted":
-          break;
-        default: {
-          const unreachable: never = status;
-          return unreachable;
-        }
-      }
-
-      if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
-        toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
-      }
-
-      if (exitStatus?.signal != null) {
-        toolOutput += `Signal \`${exitStatus.signal}\`. `;
-      }
-
-      toolOutput += "Output:\n\n";
-      toolOutput += commandOutput;
-
-      if (truncated) {
-        toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
-      }
-
-      return toolOutput;
-    }
   }
 
   const alwaysAllowedTools: { [key: string]: boolean } = {};
@@ -667,10 +611,10 @@ File editing instructions:
         },
       });
       if (
-        response.outcome?.outcome == "selected" &&
-        (response.outcome.optionId == "allow" || response.outcome.optionId == "allow_always")
+        response.outcome?.outcome === "selected" &&
+        (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
       ) {
-        if (response.outcome.optionId == "allow_always") {
+        if (response.outcome.optionId === "allow_always") {
           alwaysAllowedTools[input.tool_name] = true;
         }
         return {
@@ -738,6 +682,65 @@ File editing instructions:
     });
   });
 }
+
+function stripCommonPrefix(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) {
+    i++;
+  }
+  return b.slice(i);
+}
+
+function toolCommandOutput(
+  status: "started" | "aborted" | "exited" | "killed" | "timedOut",
+  output: TerminalOutputResponse
+): string {
+  const { exitStatus, output: commandOutput, truncated } = output;
+
+  let toolOutput = "";
+
+  switch (status) {
+    case "started": {
+      if (exitStatus && (exitStatus.exitCode ?? null) === null) {
+        toolOutput += `Interrupted. `;
+      }
+      break;
+    }
+    case "killed":
+      toolOutput += `Killed. `;
+      break;
+    case "timedOut":
+      toolOutput += `Timed out. `;
+      break;
+    case "exited":
+    case "aborted":
+      break;
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
+  }
+
+  if (exitStatus) {
+    if (typeof exitStatus.exitCode === "number" && exitStatus.exitCode !== 0) {
+      toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
+    }
+
+    if (typeof exitStatus.signal === "string") {
+      toolOutput += `Signal \`${exitStatus.signal}\`. `;
+    }
+  }
+
+  toolOutput += "Output:\n\n";
+  toolOutput += commandOutput;
+
+  if (truncated) {
+    toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
+  }
+
+  return toolOutput;
+}
+
 
 /**
  * Replace text in a file and calculate the line numbers where the edits occurred.
