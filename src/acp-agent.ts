@@ -31,21 +31,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
-import {
-  nodeToWebReadable,
-  nodeToWebWritable,
-  Pushable,
-  sleep,
-  unreachable,
-} from "./utils.js";
+import { nodeToWebReadable, nodeToWebWritable, Pushable, sleep, unreachable } from "./utils.js";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
-import {
-  toolInfoFromToolUse,
-  planEntries,
-  toolUpdateFromToolResult,
-} from "./tools.js";
+import { toolInfoFromToolUse, planEntries, toolUpdateFromToolResult } from "./tools.js";
 
 type Session = {
   query: Query;
@@ -108,8 +98,8 @@ export class ClaudeAcpAgent implements Agent {
     };
   }
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
-    let sessionId = uuidv7();
-    let input = new Pushable<SDKUserMessage>();
+    const sessionId = uuidv7();
+    const input = new Pushable<SDKUserMessage>();
 
     const mcpServers: Record<string, McpServerConfig> = {};
     if (Array.isArray(params.mcpServers)) {
@@ -125,12 +115,8 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    let server = await createMcpServer(
-      this,
-      sessionId,
-      this.clientCapabilities,
-    );
-    let address = server.address() as AddressInfo;
+    const server = await createMcpServer(this, sessionId, this.clientCapabilities);
+    const address = server.address() as AddressInfo;
     mcpServers["acp"] = {
       type: "http",
       url: "http://127.0.0.1:" + address.port + "/mcp",
@@ -139,7 +125,7 @@ export class ClaudeAcpAgent implements Agent {
       },
     };
 
-    let options: Options = {
+    const options: Options = {
       cwd: params.cwd,
       mcpServers,
       permissionPromptToolName: "mcp__acp__permission",
@@ -200,7 +186,7 @@ export class ClaudeAcpAgent implements Agent {
 
     input.push(promptToClaude(params));
     while (true) {
-      let { value: message, done } = await query.next();
+      const { value: message, done } = await query.next();
       if (done || !message) {
         if (this.sessions[params.sessionId].cancelled) {
           return { stopReason: "cancelled" };
@@ -248,7 +234,7 @@ export class ClaudeAcpAgent implements Agent {
             message,
             params.sessionId,
             this.toolUseCache,
-            this.fileContentCache,
+            this.fileContentCache
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -269,28 +255,22 @@ export class ClaudeAcpAgent implements Agent {
     await this.sessions[params.sessionId].query.interrupt();
   }
 
-  async readTextFile(
-    params: ReadTextFileRequest,
-  ): Promise<ReadTextFileResponse> {
-    let response = await this.client.readTextFile(params);
+  async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
+    const response = await this.client.readTextFile(params);
     if (!params.limit && !params.line) {
       this.fileContentCache[params.path] = response.content;
     }
     return response;
   }
 
-  async writeTextFile(
-    params: WriteTextFileRequest,
-  ): Promise<WriteTextFileResponse> {
-    let response = await this.client.writeTextFile(params);
+  async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
+    const response = await this.client.writeTextFile(params);
     this.fileContentCache[params.path] = params.content;
     return response;
   }
 }
 
-async function availableSlashCommands(
-  query: Query,
-): Promise<AvailableCommand[]> {
+async function availableSlashCommands(query: Query): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
     "add-dir",
     "agents", // Modal
@@ -342,28 +322,17 @@ async function availableSlashCommands(
   ]);
 
   return commands
-    .map(
-      (command: {
-        name: string;
-        description: string;
-        argumentHint: string;
-      }) => {
-        const input = command.argumentHint
-          ? { hint: command.argumentHint }
-          : null;
-        return {
-          name: command.name,
-          description: command.description || "",
-          input,
-        };
-      },
-    )
+    .map((command: { name: string; description: string; argumentHint: string }) => {
+      const input = command.argumentHint ? { hint: command.argumentHint } : null;
+      return {
+        name: command.name,
+        description: command.description || "",
+        input,
+      };
+    })
     .filter(
       (command: AvailableCommand) =>
-        !(
-          command.name.match(/\(MCP\)/) ||
-          UNSUPPORTED_COMMANDS.includes(command.name)
-        ),
+        !(command.name.match(/\(MCP\)/) || UNSUPPORTED_COMMANDS.includes(command.name))
     );
 }
 
@@ -465,10 +434,10 @@ export function toAcpNotifications(
   toolUseCache: {
     [key: string]: { type: "tool_use"; id: string; name: string; input: any };
   },
-  fileContentCache: { [key: string]: string },
+  fileContentCache: { [key: string]: string }
 ): SessionNotification[] {
-  let chunks = message.message.content as ContentChunk[];
-  let output = [];
+  const chunks = message.message.content as ContentChunk[];
+  const output = [];
   // Only handle the first chunk for streaming; extend as needed for batching
   for (const chunk of chunks) {
     let update: SessionNotification["update"] | null = null;
@@ -488,8 +457,7 @@ export function toAcpNotifications(
           content: {
             type: "image",
             data: chunk.source.type === "base64" ? chunk.source.data : "",
-            mimeType:
-              chunk.source.type === "base64" ? chunk.source.media_type : "",
+            mimeType: chunk.source.type === "base64" ? chunk.source.media_type : "",
             uri: chunk.source.type === "url" ? chunk.source.url : undefined,
           },
         };
@@ -525,7 +493,7 @@ export function toAcpNotifications(
         const toolUse = toolUseCache[chunk.tool_use_id];
         if (!toolUse) {
           console.error(
-            `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`,
+            `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`
           );
           break;
         }
@@ -556,7 +524,7 @@ export function runAcp() {
   new AgentSideConnection(
     (client) => new ClaudeAcpAgent(client),
     nodeToWebWritable(process.stdout),
-    nodeToWebReadable(process.stdin),
+    nodeToWebReadable(process.stdin)
   );
 }
 

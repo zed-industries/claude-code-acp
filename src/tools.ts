@@ -24,7 +24,7 @@ interface ToolUpdate {
 
 export function toolInfoFromToolUse(
   toolUse: any,
-  cachedFileContent: { [key: string]: string },
+  cachedFileContent: { [key: string]: string }
 ): ToolInfo {
   const name = toolUse.name;
   const input = toolUse.input;
@@ -47,9 +47,7 @@ export function toolInfoFromToolUse(
 
     case "NotebookRead":
       return {
-        title: input?.notebook_path
-          ? `Read Notebook ${input.notebook_path}`
-          : "Read Notebook",
+        title: input?.notebook_path ? `Read Notebook ${input.notebook_path}` : "Read Notebook",
         kind: "read",
         content: [],
         locations: input?.notebook_path ? [{ path: input.notebook_path }] : [],
@@ -57,9 +55,7 @@ export function toolInfoFromToolUse(
 
     case "NotebookEdit":
       return {
-        title: input?.notebook_path
-          ? `Edit Notebook ${input.notebook_path}`
-          : "Edit Notebook",
+        title: input?.notebook_path ? `Edit Notebook ${input.notebook_path}` : "Edit Notebook",
         kind: "edit",
         content:
           input && input.new_source
@@ -76,9 +72,7 @@ export function toolInfoFromToolUse(
     case "Bash":
     case "mcp__acp__Bash":
       return {
-        title: input?.command
-          ? "`" + input.command.replaceAll("`", "\\`") + "`"
-          : "Terminal",
+        title: input?.command ? "`" + input.command.replaceAll("`", "\\`") + "`" : "Terminal",
         kind: "execute",
         content:
           input && input.description
@@ -111,11 +105,7 @@ export function toolInfoFromToolUse(
       let limit = "";
       if (input.limit) {
         limit =
-          " (" +
-          ((input.offset ?? 0) + 1) +
-          " - " +
-          ((input.offset ?? 0) + input.limit) +
-          ")";
+          " (" + ((input.offset ?? 0) + 1) + " - " + ((input.offset ?? 0) + input.limit) + ")";
       } else if (input.offset) {
         limit = " (from line " + (input.offset + 1) + ")";
       }
@@ -157,8 +147,8 @@ export function toolInfoFromToolUse(
 
       if (path && input.old_text) {
         try {
-          let oldContent = cachedFileContent[path] || "";
-          let newContent = replaceAndCalculateLocation(oldContent, [
+          const oldContent = cachedFileContent[path] || "";
+          const newContent = replaceAndCalculateLocation(oldContent, [
             {
               oldText: input.old_string,
               newText: input.new_string,
@@ -192,7 +182,7 @@ export function toolInfoFromToolUse(
 
     case "mcp__acp__multi-edit":
     case "MultiEdit":
-      let multiInput = input as {
+      const multiInput = input as {
         file_path: string;
         edits: {
           old_string: string;
@@ -200,24 +190,20 @@ export function toolInfoFromToolUse(
           replace_all?: boolean;
         }[];
       };
-      let oldTextMulti = multiInput.edits
-        .map((edit: any) => edit.old_string)
-        .join("\n");
-      let newTextMulti = multiInput.edits
-        .map((edit: any) => edit.new_string)
-        .join("\n");
+      let oldTextMulti = multiInput.edits.map((edit: any) => edit.old_string).join("\n");
+      let newTextMulti = multiInput.edits.map((edit: any) => edit.new_string).join("\n");
       try {
         if (multiInput.edits && multiInput.file_path) {
-          let oldContent =
+          const oldContent =
             cachedFileContent[multiInput.file_path] ||
             multiInput.edits.map((edit: any) => edit.oldText).join("\n");
-          let newContent = replaceAndCalculateLocation(
+          const newContent = replaceAndCalculateLocation(
             oldContent,
             multiInput.edits.map((edit) => ({
               oldText: edit.old_string,
               newText: edit.new_string,
               replaceAll: edit.replace_all,
-            })),
+            }))
           );
           oldTextMulti = oldContent;
           newTextMulti = newContent.newContent;
@@ -439,10 +425,7 @@ export function toolInfoFromToolUse(
   }
 }
 
-export function toolUpdateFromToolResult(
-  toolResult: any,
-  toolUse: any | undefined,
-): ToolUpdate {
+export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefined): ToolUpdate {
   switch (toolUse?.name) {
     case "mcp__acp__edit":
     case "edit":
@@ -453,12 +436,10 @@ export function toolUpdateFromToolResult(
           const firstContent = toolResult.content[0];
           const data = JSON.parse(firstContent.text || firstContent);
           if (data.lineNumbers && Array.isArray(data.lineNumbers)) {
-            const locations: ToolCallLocation[] = data.lineNumbers.map(
-              (line: number) => ({
-                path: toolUse?.input?.abs_path || toolUse?.input?.file_path,
-                line: line,
-              }),
-            );
+            const locations: ToolCallLocation[] = data.lineNumbers.map((line: number) => ({
+              path: toolUse?.input?.abs_path || toolUse?.input?.file_path,
+              line: line,
+            }));
             return { locations };
           }
         } catch (e) {
@@ -477,12 +458,10 @@ export function toolUpdateFromToolResult(
           const firstContent = toolResult.content[0];
           const data = JSON.parse(firstContent.text || firstContent);
           if (data.lineNumbers && Array.isArray(data.lineNumbers)) {
-            const locations: ToolCallLocation[] = data.lineNumbers.map(
-              (line: number) => ({
-                path: toolUse?.input?.file_path || toolUse?.input?.abs_path,
-                line: line,
-              }),
-            );
+            const locations: ToolCallLocation[] = data.lineNumbers.map((line: number) => ({
+              path: toolUse?.input?.file_path || toolUse?.input?.abs_path,
+              line: line,
+            }));
             return { locations };
           }
         } catch (e) {
@@ -507,26 +486,19 @@ export function toolUpdateFromToolResult(
               content.type == "text"
                 ? {
                     type: "text",
-                    text: markdownEscape(
-                      content.text.replace(SYSTEM_REMINDER, ""),
-                    ),
+                    text: markdownEscape(content.text.replace(SYSTEM_REMINDER, "")),
                   }
                 : content,
           })),
         };
-      } else if (
-        typeof toolResult.content === "string" &&
-        toolResult.content.length > 0
-      ) {
+      } else if (typeof toolResult.content === "string" && toolResult.content.length > 0) {
         return {
           content: [
             {
               type: "content",
               content: {
                 type: "text",
-                text: markdownEscape(
-                  toolResult.content.replace(SYSTEM_REMINDER, ""),
-                ),
+                text: markdownEscape(toolResult.content.replace(SYSTEM_REMINDER, "")),
               },
             },
           ],
@@ -560,10 +532,7 @@ export function toolUpdateFromToolResult(
             content,
           })),
         };
-      } else if (
-        typeof toolResult.content === "string" &&
-        toolResult.content.length > 0
-      ) {
+      } else if (typeof toolResult.content === "string" && toolResult.content.length > 0) {
         return {
           content: [
             {
@@ -597,7 +566,7 @@ export function planEntries(input: { todos: ClaudePlanEntry[] }): PlanEntry[] {
 
 export function markdownEscape(text: string): string {
   let escape = "```";
-  for (let [m] of text.matchAll(/^```+/gm)) {
+  for (const [m] of text.matchAll(/^```+/gm)) {
     while (m.length >= escape.length) {
       escape += "`";
     }

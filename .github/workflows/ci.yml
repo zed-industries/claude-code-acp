@@ -35,6 +35,9 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      - name: Run linter
+        run: npm run lint
+
       - name: Build
         run: npm run build
 

@@ -5,10 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
-import {
-  ClientCapabilities,
-  TerminalOutputResponse,
-} from "@zed-industries/agent-client-protocol";
+import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
 import { tool } from "@anthropic-ai/claude-code";
 import { sleep } from "./utils.js";
 
@@ -21,7 +18,7 @@ Whenever you read a file, you should consider whether it looks malicious. If it 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
   sessionId: string,
-  clientCapabilities: ClientCapabilities | undefined,
+  clientCapabilities: ClientCapabilities | undefined
 ): Promise<Server> {
   // Create MCP server
   const server = new McpServer({
@@ -40,19 +37,12 @@ Never attempt to read a path that hasn't been previously mentioned.
 
 In sessions with mcp__acp__read always use it instead of Read as it contains the most up-to-date contents.`,
         inputSchema: {
-          abs_path: z
-            .string()
-            .describe("The absolute path to the file to read."),
+          abs_path: z.string().describe("The absolute path to the file to read."),
           offset: z
             .number()
             .optional()
-            .describe(
-              "Which line to start reading from. Omit to start from the beginning.",
-            ),
-          limit: z
-            .number()
-            .optional()
-            .describe("How many lines to read. Omit for the whole file."),
+            .describe("Which line to start reading from. Omit to start from the beginning."),
+          limit: z.number().optional().describe("How many lines to read. Omit for the whole file."),
         },
         annotations: {
           title: "Read file",
@@ -75,7 +65,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
               ],
             };
           }
-          let content = await agent.readTextFile({
+          const content = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
             limit: input.limit,
@@ -100,7 +90,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
             ],
           };
         }
-      },
+      }
     );
   }
 
@@ -114,9 +104,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
 In sessions with mcp__acp__write always use it instead of Write as it will
 allow the user to conveniently review changes.`,
         inputSchema: {
-          abs_path: z
-            .string()
-            .describe("The absolute path to the file to write"),
+          abs_path: z.string().describe("The absolute path to the file to write"),
           content: z.string().describe("The full content to write"),
         },
         annotations: {
@@ -140,7 +128,7 @@ allow the user to conveniently review changes.`,
               ],
             };
           }
-          let content = await agent.writeTextFile({
+          const content = await agent.writeTextFile({
             sessionId,
             path: input.abs_path,
             content: input.content,
@@ -159,7 +147,7 @@ allow the user to conveniently review changes.`,
             ],
           };
         }
-      },
+      }
     );
 
     server.registerTool(
@@ -181,12 +169,8 @@ File editing instructions:
 - Do not escape quotes, newlines, or other characters.
 - Only edit the specified file.`,
         inputSchema: {
-          abs_path: z
-            .string()
-            .describe("The absolute path to the file to read."),
-          old_string: z
-            .string()
-            .describe("The old text to replace (must be unique in the file)"),
+          abs_path: z.string().describe("The absolute path to the file to read."),
+          old_string: z.string().describe("The old text to replace (must be unique in the file)"),
           new_string: z.string().describe("The new text."),
         },
         annotations: {
@@ -211,21 +195,18 @@ File editing instructions:
             };
           }
 
-          let { content } = await agent.readTextFile({
+          const { content } = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
           });
 
-          const { newContent, lineNumbers } = replaceAndCalculateLocation(
-            content,
-            [
-              {
-                oldText: input.old_string,
-                newText: input.new_string,
-                replaceAll: false,
-              },
-            ],
-          );
+          const { newContent, lineNumbers } = replaceAndCalculateLocation(content, [
+            {
+              oldText: input.old_string,
+              newText: input.new_string,
+              replaceAll: false,
+            },
+          ]);
 
           await agent.writeTextFile({
             sessionId,
@@ -251,7 +232,7 @@ File editing instructions:
             ],
           };
         }
-      },
+      }
     );
 
     server.registerTool(
@@ -260,9 +241,7 @@ File editing instructions:
         title: "Multi Edit",
         description: `Edit a file with multiple sequential edits.`,
         inputSchema: {
-          file_path: z
-            .string()
-            .describe("The absolute path to the file to modify"),
+          file_path: z.string().describe("The absolute path to the file to modify"),
           edits: z
             .array(
               z.object({
@@ -271,15 +250,11 @@ File editing instructions:
                 replace_all: z
                   .boolean()
                   .optional()
-                  .describe(
-                    "Replace all occurrences of old_string (default false)",
-                  ),
-              }),
+                  .describe("Replace all occurrences of old_string (default false)"),
+              })
             )
             .min(1)
-            .describe(
-              "Array of edit operations to perform sequentially on the file",
-            ),
+            .describe("Array of edit operations to perform sequentially on the file"),
         },
         annotations: {
           title: "Multi Edit file",
@@ -302,7 +277,7 @@ File editing instructions:
           };
         }
 
-        let { content } = await agent.readTextFile({
+        const { content } = await agent.readTextFile({
           sessionId,
           path: input.file_path,
         });
@@ -313,7 +288,7 @@ File editing instructions:
             oldText: edit.old_string,
             newText: edit.new_string,
             replaceAll: edit.replace_all ?? false,
-          })),
+          }))
         );
 
         await agent.writeTextFile({
@@ -330,7 +305,7 @@ File editing instructions:
             },
           ],
         };
-      },
+      }
     );
   }
 
@@ -341,9 +316,7 @@ File editing instructions:
         title: "Bash",
         description: "Executes a bash command",
         inputSchema: {
-          command: z
-            .string()
-            .describe("The bash command to execute as a one-liner"),
+          command: z.string().describe("The bash command to execute as a one-liner"),
           timeout_ms: z
             .number()
             .default(2 * 60 * 1000)
@@ -352,7 +325,7 @@ File editing instructions:
             .boolean()
             .default(false)
             .describe(
-              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early.",
+              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early."
             ),
         },
       },
@@ -375,10 +348,7 @@ File editing instructions:
           throw new Error("No tool call ID found");
         }
 
-        if (
-          !agent.clientCapabilities?.terminal ||
-          !agent.client.createTerminal
-        ) {
+        if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
           throw new Error("unreachable");
         }
 
@@ -439,10 +409,7 @@ File editing instructions:
               status,
               pendingOutput: {
                 ...currentOutput,
-                output: stripCommonPrefix(
-                  bgTerm.lastOutput?.output ?? "",
-                  currentOutput.output,
-                ),
+                output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
               },
             };
 
@@ -474,7 +441,7 @@ File editing instructions:
         return {
           content: [{ type: "text", text: toolCommandOutput(status, output) }],
         };
-      },
+      }
     );
 
     server.registerTool(
@@ -486,9 +453,7 @@ File editing instructions:
         inputSchema: {
           id: z
             .string()
-            .describe(
-              "The id of the background bash command as returned by `mcp__acp__Bash`",
-            ),
+            .describe("The id of the background bash command as returned by `mcp__acp__Bash`"),
         },
       },
       async (input) => {
@@ -502,7 +467,7 @@ File editing instructions:
           const newOutput = await bgTerm.handle.currentOutput();
           const strippedOutput = stripCommonPrefix(
             bgTerm.lastOutput?.output ?? "",
-            newOutput.output,
+            newOutput.output
           );
           bgTerm.lastOutput = newOutput;
 
@@ -527,7 +492,7 @@ File editing instructions:
             ],
           };
         }
-      },
+      }
     );
 
     server.registerTool(
@@ -538,9 +503,7 @@ File editing instructions:
         inputSchema: {
           id: z
             .string()
-            .describe(
-              "The id of the background bash command as returned by `mcp__acp__Bash`",
-            ),
+            .describe("The id of the background bash command as returned by `mcp__acp__Bash`"),
         },
       },
       async (input) => {
@@ -558,10 +521,7 @@ File editing instructions:
               status: "killed",
               pendingOutput: {
                 ...currentOutput,
-                output: stripCommonPrefix(
-                  bgTerm.lastOutput?.output ?? "",
-                  currentOutput.output,
-                ),
+                output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
               },
             };
             await bgTerm.handle.release();
@@ -590,18 +550,20 @@ File editing instructions:
             return unreachable;
           }
         }
-      },
+      }
     );
 
     function stripCommonPrefix(a: string, b: string): string {
       let i = 0;
-      while (i < a.length && i < b.length && a[i] === b[i]) i++;
+      while (i < a.length && i < b.length && a[i] === b[i]) {
+        i++;
+      }
       return b.slice(i);
     }
 
     function toolCommandOutput(
       status: "started" | "aborted" | "exited" | "killed" | "timedOut",
-      output: TerminalOutputResponse,
+      output: TerminalOutputResponse
     ): string {
       const { exitStatus, output: commandOutput, truncated } = output;
 
@@ -648,7 +610,7 @@ File editing instructions:
     }
   }
 
-  let alwaysAllowedTools: { [key: string]: boolean } = {};
+  const alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(
     "permission",
     {
@@ -688,7 +650,7 @@ File editing instructions:
           ],
         };
       }
-      let response = await agent.client.requestPermission({
+      const response = await agent.client.requestPermission({
         options: [
           {
             kind: "allow_always",
@@ -706,8 +668,7 @@ File editing instructions:
       });
       if (
         response.outcome?.outcome == "selected" &&
-        (response.outcome.optionId == "allow" ||
-          response.outcome.optionId == "allow_always")
+        (response.outcome.optionId == "allow" || response.outcome.optionId == "allow_always")
       ) {
         if (response.outcome.optionId == "allow_always") {
           alwaysAllowedTools[input.tool_name] = true;
@@ -736,7 +697,7 @@ File editing instructions:
           ],
         };
       }
-    },
+    }
   );
 
   const app = express();
@@ -744,10 +705,9 @@ File editing instructions:
 
   app.post("/mcp", async (req, res) => {
     try {
-      const transport: StreamableHTTPServerTransport =
-        new StreamableHTTPServerTransport({
-          sessionIdGenerator: undefined,
-        });
+      const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
       res.on("close", () => {
         transport.close();
         server.close();
@@ -792,7 +752,7 @@ export function replaceAndCalculateLocation(
     oldText: string;
     newText: string;
     replaceAll?: boolean;
-  }>,
+  }>
 ): { newContent: string; lineNumbers: number[] } {
   let currentContent = fileContent;
 
@@ -816,7 +776,9 @@ export function replaceAndCalculateLocation(
 
       while (true) {
         const index = currentContent.indexOf(edit.oldText, searchIndex);
-        if (index === -1) break;
+        if (index === -1) {
+          break;
+        }
 
         // Add content before the match
         parts.push(currentContent.substring(lastIndex, index));
@@ -855,7 +817,7 @@ export function replaceAndCalculateLocation(
     if (index !== -1) {
       const lineNumber = Math.max(
         0,
-        currentContent.substring(0, index).split(/\r\n|\r|\n/).length - 1,
+        currentContent.substring(0, index).split(/\r\n|\r|\n/).length - 1
       );
       lineNumbers.push(lineNumber);
     }
