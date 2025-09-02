@@ -379,13 +379,13 @@ File editing instructions:
         });
 
         const statusPromise = Promise.race([
-          handle.waitForExit().then(() => ({ status: "exited" as const })),
-          abortPromise.then(() => ({ status: "aborted" as const })),
+          handle.waitForExit().then((exitStatus) => ({ status: "exited" as const, exitStatus })),
+          abortPromise.then(() => ({ status: "aborted" as const, exitStatus: null })),
           sleep(input.timeout_ms).then(async () => {
             if (agent.backgroundTerminals[handle.id]?.status === "started") {
               await handle.kill();
             }
-            return { status: "timedOut" as const };
+            return { status: "timedOut" as const, exitStatus: null };
           }),
         ]);
 
@@ -396,7 +396,7 @@ File editing instructions:
             status: "started",
           };
 
-          statusPromise.then(async ({ status }) => {
+          statusPromise.then(async ({ status, exitStatus }) => {
             const bgTerm = agent.backgroundTerminals[handle.id];
 
             if (bgTerm.status !== "started") {
@@ -410,6 +410,7 @@ File editing instructions:
               pendingOutput: {
                 ...currentOutput,
                 output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
+                exitStatus: exitStatus ?? currentOutput.exitStatus,
               },
             };
 
@@ -700,10 +701,10 @@ function toolCommandOutput(
   let toolOutput = "";
 
   switch (status) {
-    case "started": {
-      console.error({ exitStatus });
+    case "started":
+    case "exited": {
       if (exitStatus && (exitStatus.exitCode ?? null) === null) {
-        toolOutput += `Interrupted. `;
+        toolOutput += `Interrupted by the user. `;
       }
       break;
     }
@@ -713,7 +714,6 @@ function toolCommandOutput(
     case "timedOut":
       toolOutput += `Timed out. `;
       break;
-    case "exited":
     case "aborted":
       break;
     default: {
@@ -723,16 +723,19 @@ function toolCommandOutput(
   }
 
   if (exitStatus) {
-    if (typeof exitStatus.exitCode === "number" && exitStatus.exitCode !== 0) {
-      toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
+    if (typeof exitStatus.exitCode === "number") {
+      toolOutput += `Exited with code ${exitStatus.exitCode}.`;
     }
 
     if (typeof exitStatus.signal === "string") {
       toolOutput += `Signal \`${exitStatus.signal}\`. `;
     }
+
+    toolOutput += "Final output:\n\n";
+  } else {
+    toolOutput += "New output:\n\n";
   }
 
-  toolOutput += "Output:\n\n";
   toolOutput += commandOutput;
 
   if (truncated) {
