@@ -440,14 +440,16 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 export function toAcpNotifications(
   message: SDKAssistantMessage | SDKUserMessage,
   sessionId: string,
-  toolUseCache: { [key: string]: any },
+  toolUseCache: {
+    [key: string]: { type: "tool_use"; id: string; name: string; input: any };
+  },
   fileContentCache: { [key: string]: string },
 ): SessionNotification[] {
   let chunks = message.message.content as ContentChunk[];
   let output = [];
   // Only handle the first chunk for streaming; extend as needed for batching
   for (const chunk of chunks) {
-    let update: SessionNotification["update"];
+    let update: SessionNotification["update"] | null = null;
     switch (chunk.type) {
       case "text":
         update = {
@@ -497,19 +499,32 @@ export function toAcpNotifications(
         }
         break;
 
-      case "tool_result":
-        update = {
-          toolCallId: chunk.tool_use_id,
-          sessionUpdate: "tool_call_update",
-          status: chunk.is_error ? "failed" : "completed",
-          ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
-        };
+      case "tool_result": {
+        const toolUse = toolUseCache[chunk.tool_use_id];
+        if (!toolUse) {
+          console.error(
+            `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`,
+          );
+          break;
+        }
+
+        if (toolUse.name !== "TodoWrite") {
+          update = {
+            toolCallId: chunk.tool_use_id,
+            sessionUpdate: "tool_call_update",
+            status: chunk.is_error ? "failed" : "completed",
+            ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
+          };
+        }
         break;
+      }
 
       default:
         throw new Error("unhandled chunk type: " + chunk.type);
     }
-    output.push({ sessionId, update });
+    if (update) {
+      output.push({ sessionId, update });
+    }
   }
 
   return output;
