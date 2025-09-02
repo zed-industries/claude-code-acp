@@ -54,14 +54,18 @@ type BackgroundTerminal =
       pendingOutput: TerminalOutputResponse;
     };
 
+type ToolUseCache = {
+  [key: string]: { type: "tool_use"; id: string; name: string; input: any };
+};
+
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
     [key: string]: Session;
   };
   client: AgentSideConnection;
-  toolUseCache: { [key: string]: any };
-  fileContentCache: { [key: string]: any };
+  toolUseCache: ToolUseCache;
+  fileContentCache: { [key: string]: string };
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
 
@@ -431,9 +435,7 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 export function toAcpNotifications(
   message: SDKAssistantMessage | SDKUserMessage,
   sessionId: string,
-  toolUseCache: {
-    [key: string]: { type: "tool_use"; id: string; name: string; input: any };
-  },
+  toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
 ): SessionNotification[] {
   const chunks = message.message.content as ContentChunk[];
@@ -530,7 +532,7 @@ export function runAcp() {
 
 type ContentChunk =
   | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: any } // input is serde_json::Value, so use any or unknown
+  | { type: "tool_use"; id: string; name: string; input: any }
   | {
       type: "tool_result";
       content: string;
