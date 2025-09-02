@@ -77,3 +77,7 @@ export function nodeToWebReadable(
 export function unreachable(value: never): never {
   throw new Error(`Unexpected case: ${value}`);
 }
+
+export function sleep(time: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, time));
+}

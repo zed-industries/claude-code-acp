@@ -27,11 +27,15 @@ import {
   SDKAssistantMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-code";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import {
   nodeToWebReadable,
   nodeToWebWritable,
   Pushable,
+  sleep,
   unreachable,
 } from "./utils.js";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
@@ -320,8 +324,20 @@ async function availableSlashCommands(
     "vim", // Not needed
   ];
 
-  //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
-  const commands = await (query as any).supportedCommands();
+  const commands = await Promise.race([
+    //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
+    (query as any).supportedCommands(),
+    sleep(5000).then(() => {
+      if (
+        fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
+        !fs.existsSync(path.resolve(os.homedir(), ".claude.json"))
+      ) {
+        throw RequestError.authRequired();
+      }
+      throw new Error("can't load supported slash commands");
+    }),
+  ]);
+
   return commands
     .map(
       (command: {

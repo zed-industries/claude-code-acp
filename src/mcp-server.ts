@@ -10,6 +10,7 @@ import {
   TerminalOutputResponse,
 } from "@zed-industries/agent-client-protocol";
 import { tool } from "@anthropic-ai/claude-code";
+import { sleep } from "./utils.js";
 
 export const SYSTEM_REMINDER = `
 
@@ -596,10 +597,6 @@ File editing instructions:
       let i = 0;
       while (i < a.length && i < b.length && a[i] === b[i]) i++;
       return b.slice(i);
-    }
-
-    function sleep(time: number): Promise<void> {
-      return new Promise((resolve) => setTimeout(resolve, time));
     }
 
     function toolCommandOutput(
