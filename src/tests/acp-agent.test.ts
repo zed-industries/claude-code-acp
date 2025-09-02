@@ -309,7 +309,7 @@ describe("tool conversions", () => {
       id: "toolu_01ABC123XYZ789",
       name: "Write",
       input: {
-        abs_path: "/Users/test/project/example.txt",
+        file_path: "/Users/test/project/example.txt",
         content: "Hello, World!\nThis is test content.",
       },
     };
@@ -361,7 +361,7 @@ describe("tool conversions", () => {
       id: "toolu_01MNO456PQR789",
       name: "Read",
       input: {
-        abs_path: "/Users/test/project/readme.md",
+        file_path: "/Users/test/project/readme.md",
       },
     };
 
@@ -664,8 +664,8 @@ describe("tool conversions", () => {
       name: "edit",
       input: {
         abs_path: "/Users/test/project/example.txt",
-        old_text: "old content",
-        new_text: "new content",
+        old_string: "old content",
+        new_string: "new content",
       },
     };
 
@@ -795,8 +795,8 @@ describe("tool conversions", () => {
       name: "mcp__acp__edit",
       input: {
         abs_path: "/Users/test/project/main.py",
-        old_text: "def hello():",
-        new_text: "def hello_world():",
+        old_string: "def hello():",
+        new_string: "def hello_world():",
       },
     };
 
@@ -823,8 +823,8 @@ describe("tool conversions", () => {
       name: "edit",
       input: {
         abs_path: "/Users/test/project/notfound.txt",
-        old_text: "nonexistent",
-        new_text: "replacement",
+        old_string: "nonexistent",
+        new_string: "replacement",
       },
     };
 
@@ -849,8 +849,8 @@ describe("tool conversions", () => {
       name: "edit",
       input: {
         abs_path: "/Users/test/project/test.txt",
-        old_text: "old",
-        new_text: "new",
+        old_string: "old",
+        new_string: "new",
       },
     };
 
