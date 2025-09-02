@@ -4,13 +4,9 @@ import { replaceAndCalculateLocation } from "../mcp-server.js";
 describe("replaceAndCalculateLocation", () => {
   it("should replace first occurrence and return correct line number", () => {
     const content = "line 1\nline 2 with text\nline 3 with text\nline 4";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
-    expect(result.newContent).toBe(
-      "line 1\nline 2 with replaced\nline 3 with text\nline 4",
-    );
+    expect(result.newContent).toBe("line 1\nline 2 with replaced\nline 3 with text\nline 4");
     expect(result.lineNumbers).toEqual([1]); // Line 2 (0-based indexing)
   });
 
@@ -20,9 +16,7 @@ describe("replaceAndCalculateLocation", () => {
       { oldText: "text", newText: "replaced", replaceAll: true },
     ]);
 
-    expect(result.newContent).toBe(
-      "line 1\nline 2 with replaced\nline 3 with replaced\nline 4",
-    );
+    expect(result.newContent).toBe("line 1\nline 2 with replaced\nline 3 with replaced\nline 4");
     expect(result.lineNumbers).toEqual([1, 2]); // Lines 2 and 3 (0-based)
   });
 
@@ -54,9 +48,7 @@ describe("replaceAndCalculateLocation", () => {
       { oldText: "text", newText: "replaced", replaceAll: true },
     ]);
 
-    expect(result.newContent).toBe(
-      "line 1\rline 2 with replaced\rline 3 with replaced\rline 4",
-    );
+    expect(result.newContent).toBe("line 1\rline 2 with replaced\rline 3 with replaced\rline 4");
     expect(result.lineNumbers).toEqual([1, 2]);
   });
 
@@ -66,17 +58,13 @@ describe("replaceAndCalculateLocation", () => {
       { oldText: "text", newText: "replaced", replaceAll: true },
     ]);
 
-    expect(result.newContent).toBe(
-      "line 1\nline 2 with replaced\r\nline 3 with replaced\rline 4",
-    );
+    expect(result.newContent).toBe("line 1\nline 2 with replaced\r\nline 3 with replaced\rline 4");
     expect(result.lineNumbers).toEqual([1, 2]);
   });
 
   it("should handle text at the beginning of file", () => {
     const content = "text at start\nline 2\nline 3";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe("replaced at start\nline 2\nline 3");
     expect(result.lineNumbers).toEqual([0]); // First line (0-based)
@@ -84,9 +72,7 @@ describe("replaceAndCalculateLocation", () => {
 
   it("should handle text at the end of file", () => {
     const content = "line 1\nline 2\nlast line with text";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe("line 1\nline 2\nlast line with replaced");
     expect(result.lineNumbers).toEqual([2]); // Last line (0-based)
@@ -98,17 +84,13 @@ describe("replaceAndCalculateLocation", () => {
       { oldText: "text", newText: "replaced", replaceAll: true },
     ]);
 
-    expect(result.newContent).toBe(
-      "line 1\nreplaced replaced replaced\nline 3",
-    );
+    expect(result.newContent).toBe("line 1\nreplaced replaced replaced\nline 3");
     expect(result.lineNumbers).toEqual([1]); // All on line 2 (0-based), deduplicated
   });
 
   it("should handle empty file content", () => {
     const content = "";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe("");
     expect(result.lineNumbers).toEqual([]);
@@ -117,9 +99,7 @@ describe("replaceAndCalculateLocation", () => {
   it("should handle empty search text", () => {
     // Test with replaceAll false (default)
     const content1 = "line 1\nline 2\nline 3";
-    const result1 = replaceAndCalculateLocation(content1, [
-      { oldText: "", newText: "replaced" },
-    ]);
+    const result1 = replaceAndCalculateLocation(content1, [{ oldText: "", newText: "replaced" }]);
     expect(result1.newContent).toBe(content1);
     expect(result1.lineNumbers).toEqual([]);
 
@@ -142,9 +122,7 @@ describe("replaceAndCalculateLocation", () => {
 
   it("should handle single line content", () => {
     const content = "single line with text here";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe("single line with replaced here");
     expect(result.lineNumbers).toEqual([0]); // Line 1 (0-based)
@@ -183,9 +161,7 @@ describe("replaceAndCalculateLocation", () => {
   it("should handle very long lines", () => {
     const longLine = "a".repeat(10000) + "text" + "b".repeat(10000);
     const content = `line 1\n${longLine}\nline 3`;
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe(
       `line 1\n${"a".repeat(10000)}replaced${"b".repeat(10000)}\nline 3`,
@@ -198,9 +174,7 @@ describe("replaceAndCalculateLocation", () => {
     lines[500] = "line with text";
     const content = lines.join("\n");
 
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.lineNumbers).toEqual([500]);
     expect(result.newContent).includes("line with replaced");
@@ -224,9 +198,7 @@ describe("replaceAndCalculateLocation", () => {
     const result1 = replaceAndCalculateLocation(content, [
       { oldText: "short", newText: "very very long text" },
     ]);
-    expect(result1.newContent).toBe(
-      "very very long text\nmedium line\nlong line here",
-    );
+    expect(result1.newContent).toBe("very very long text\nmedium line\nlong line here");
     expect(result1.lineNumbers).toEqual([0]);
 
     // Replacing with shorter text
@@ -260,9 +232,7 @@ describe("replaceAndCalculateLocation", () => {
 
   it("should handle replacement at exact end of line", () => {
     const content = "line ends with text\nnext line";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "text", newText: "replaced" },
-    ]);
+    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe("line ends with replaced\nnext line");
     expect(result.lineNumbers).toEqual([0]);
@@ -302,9 +272,7 @@ describe("replaceAndCalculateLocation", () => {
     // - All "foo" occurrences (lines 1, 3, 5 in original)
     // - First "bar" occurrence (line 1 after first edit)
     // - "line 3" (line 2 after previous edits)
-    expect(result.newContent).toBe(
-      "line 1\nFOO BAR\nLINE THREE\nFOO baz\nline 5\nbar FOO\nline 7",
-    );
+    expect(result.newContent).toBe("line 1\nFOO BAR\nLINE THREE\nFOO baz\nline 5\nbar FOO\nline 7");
 
     // Line numbers reflect position in final content, deduplicated and sorted
     expect(result.lineNumbers).toEqual([
@@ -326,9 +294,7 @@ describe("replaceAndCalculateLocation", () => {
     // First edit replaces first "hello" only
     // Second edit replaces all "world" in the modified content
     // Third edit replaces remaining "hello"s in the modified content
-    expect(result.newContent).toBe(
-      "hi earth\ngreetings greetings\nearth greetings earth",
-    );
+    expect(result.newContent).toBe("hi earth\ngreetings greetings\nearth greetings earth");
 
     // Line numbers reflect position in final content, deduplicated and sorted
     expect(result.lineNumbers).toEqual([
@@ -340,17 +306,14 @@ describe("replaceAndCalculateLocation", () => {
 
   it("should handle complex scenarios with marker-like text", () => {
     // Test that our marker approach doesn't get confused by similar text
-    const content =
-      "line 1\n__MARKER__text\nline 3\n__REPLACE_MARKER_abc__\nline 5";
+    const content = "line 1\n__MARKER__text\nline 3\n__REPLACE_MARKER_abc__\nline 5";
     const result = replaceAndCalculateLocation(content, [
       { oldText: "__MARKER__", newText: "REPLACED", replaceAll: true },
       { oldText: "text", newText: "content" },
       { oldText: "__REPLACE_MARKER_abc__", newText: "DONE" },
     ]);
 
-    expect(result.newContent).toBe(
-      "line 1\nREPLACEDcontent\nline 3\nDONE\nline 5",
-    );
+    expect(result.newContent).toBe("line 1\nREPLACEDcontent\nline 3\nDONE\nline 5");
 
     // Line numbers should be correct even with marker-like text
     expect(result.lineNumbers).toEqual([

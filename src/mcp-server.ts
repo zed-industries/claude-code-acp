@@ -1,16 +1,13 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
-import {
-  ClientCapabilities,
-  TerminalOutputResponse,
-} from "@zed-industries/agent-client-protocol";
-import { tool } from "@anthropic-ai/claude-code";
-import { sleep } from "./utils.js";
+import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
+
+import { sleep, unreachable } from "./utils.js";
 
 export const SYSTEM_REMINDER = `
 
@@ -40,19 +37,12 @@ Never attempt to read a path that hasn't been previously mentioned.
 
 In sessions with mcp__acp__read always use it instead of Read as it contains the most up-to-date contents.`,
         inputSchema: {
-          abs_path: z
-            .string()
-            .describe("The absolute path to the file to read."),
+          abs_path: z.string().describe("The absolute path to the file to read."),
           offset: z
             .number()
             .optional()
-            .describe(
-              "Which line to start reading from. Omit to start from the beginning.",
-            ),
-          limit: z
-            .number()
-            .optional()
-            .describe("How many lines to read. Omit for the whole file."),
+            .describe("Which line to start reading from. Omit to start from the beginning."),
+          limit: z.number().optional().describe("How many lines to read. Omit for the whole file."),
         },
         annotations: {
           title: "Read file",
@@ -75,7 +65,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
               ],
             };
           }
-          let content = await agent.readTextFile({
+          const content = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
             limit: input.limit,
@@ -114,9 +104,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
 In sessions with mcp__acp__write always use it instead of Write as it will
 allow the user to conveniently review changes.`,
         inputSchema: {
-          abs_path: z
-            .string()
-            .describe("The absolute path to the file to write"),
+          abs_path: z.string().describe("The absolute path to the file to write"),
           content: z.string().describe("The full content to write"),
         },
         annotations: {
@@ -140,7 +128,7 @@ allow the user to conveniently review changes.`,
               ],
             };
           }
-          let content = await agent.writeTextFile({
+          await agent.writeTextFile({
             sessionId,
             path: input.abs_path,
             content: input.content,
@@ -181,12 +169,8 @@ File editing instructions:
 - Do not escape quotes, newlines, or other characters.
 - Only edit the specified file.`,
         inputSchema: {
-          abs_path: z
-            .string()
-            .describe("The absolute path to the file to read."),
-          old_string: z
-            .string()
-            .describe("The old text to replace (must be unique in the file)"),
+          abs_path: z.string().describe("The absolute path to the file to read."),
+          old_string: z.string().describe("The old text to replace (must be unique in the file)"),
           new_string: z.string().describe("The new text."),
         },
         annotations: {
@@ -211,21 +195,18 @@ File editing instructions:
             };
           }
 
-          let { content } = await agent.readTextFile({
+          const { content } = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
           });
 
-          const { newContent, lineNumbers } = replaceAndCalculateLocation(
-            content,
-            [
-              {
-                oldText: input.old_string,
-                newText: input.new_string,
-                replaceAll: false,
-              },
-            ],
-          );
+          const { newContent, lineNumbers } = replaceAndCalculateLocation(content, [
+            {
+              oldText: input.old_string,
+              newText: input.new_string,
+              replaceAll: false,
+            },
+          ]);
 
           await agent.writeTextFile({
             sessionId,
@@ -260,9 +241,7 @@ File editing instructions:
         title: "Multi Edit",
         description: `Edit a file with multiple sequential edits.`,
         inputSchema: {
-          file_path: z
-            .string()
-            .describe("The absolute path to the file to modify"),
+          file_path: z.string().describe("The absolute path to the file to modify"),
           edits: z
             .array(
               z.object({
@@ -271,15 +250,11 @@ File editing instructions:
                 replace_all: z
                   .boolean()
                   .optional()
-                  .describe(
-                    "Replace all occurrences of old_string (default false)",
-                  ),
+                  .describe("Replace all occurrences of old_string (default false)"),
               }),
             )
             .min(1)
-            .describe(
-              "Array of edit operations to perform sequentially on the file",
-            ),
+            .describe("Array of edit operations to perform sequentially on the file"),
         },
         annotations: {
           title: "Multi Edit file",
@@ -302,7 +277,7 @@ File editing instructions:
           };
         }
 
-        let { content } = await agent.readTextFile({
+        const { content } = await agent.readTextFile({
           sessionId,
           path: input.file_path,
         });
@@ -341,9 +316,7 @@ File editing instructions:
         title: "Bash",
         description: "Executes a bash command",
         inputSchema: {
-          command: z
-            .string()
-            .describe("The bash command to execute as a one-liner"),
+          command: z.string().describe("The bash command to execute as a one-liner"),
           timeout_ms: z
             .number()
             .default(2 * 60 * 1000)
@@ -375,10 +348,7 @@ File editing instructions:
           throw new Error("No tool call ID found");
         }
 
-        if (
-          !agent.clientCapabilities?.terminal ||
-          !agent.client.createTerminal
-        ) {
+        if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
           throw new Error("unreachable");
         }
 
@@ -439,10 +409,7 @@ File editing instructions:
               status,
               pendingOutput: {
                 ...currentOutput,
-                output: stripCommonPrefix(
-                  bgTerm.lastOutput?.output ?? "",
-                  currentOutput.output,
-                ),
+                output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
               },
             };
 
@@ -486,9 +453,7 @@ File editing instructions:
         inputSchema: {
           id: z
             .string()
-            .describe(
-              "The id of the background bash command as returned by `mcp__acp__Bash`",
-            ),
+            .describe("The id of the background bash command as returned by `mcp__acp__Bash`"),
         },
       },
       async (input) => {
@@ -538,9 +503,7 @@ File editing instructions:
         inputSchema: {
           id: z
             .string()
-            .describe(
-              "The id of the background bash command as returned by `mcp__acp__Bash`",
-            ),
+            .describe("The id of the background bash command as returned by `mcp__acp__Bash`"),
         },
       },
       async (input) => {
@@ -551,17 +514,14 @@ File editing instructions:
         }
 
         switch (bgTerm.status) {
-          case "started":
+          case "started": {
             await bgTerm.handle.kill();
             const currentOutput = await bgTerm.handle.currentOutput();
             agent.backgroundTerminals[bgTerm.handle.id] = {
               status: "killed",
               pendingOutput: {
                 ...currentOutput,
-                output: stripCommonPrefix(
-                  bgTerm.lastOutput?.output ?? "",
-                  currentOutput.output,
-                ),
+                output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
               },
             };
             await bgTerm.handle.release();
@@ -569,6 +529,7 @@ File editing instructions:
             return {
               content: [{ type: "text", text: "Command killed successfully." }],
             };
+          }
           case "aborted":
             return {
               content: [{ type: "text", text: "Command aborted by user." }],
@@ -586,69 +547,14 @@ File editing instructions:
               content: [{ type: "text", text: "Command killed by timeout." }],
             };
           default: {
-            const unreachable: never = bgTerm;
-            return unreachable;
+            return unreachable(bgTerm);
           }
         }
       },
     );
-
-    function stripCommonPrefix(a: string, b: string): string {
-      let i = 0;
-      while (i < a.length && i < b.length && a[i] === b[i]) i++;
-      return b.slice(i);
-    }
-
-    function toolCommandOutput(
-      status: "started" | "aborted" | "exited" | "killed" | "timedOut",
-      output: TerminalOutputResponse,
-    ): string {
-      const { exitStatus, output: commandOutput, truncated } = output;
-
-      let toolOutput = "";
-
-      switch (status) {
-        case "started": {
-          if (exitStatus?.exitCode == null) {
-            toolOutput += `Interrupted. `;
-          }
-          break;
-        }
-        case "killed":
-          toolOutput += `Killed. `;
-          break;
-        case "timedOut":
-          toolOutput += `Timed out. `;
-          break;
-        case "exited":
-        case "aborted":
-          break;
-        default: {
-          const unreachable: never = status;
-          return unreachable;
-        }
-      }
-
-      if (exitStatus?.exitCode != null && exitStatus.exitCode !== 0) {
-        toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
-      }
-
-      if (exitStatus?.signal != null) {
-        toolOutput += `Signal \`${exitStatus.signal}\`. `;
-      }
-
-      toolOutput += "Output:\n\n";
-      toolOutput += commandOutput;
-
-      if (truncated) {
-        toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
-      }
-
-      return toolOutput;
-    }
   }
 
-  let alwaysAllowedTools: { [key: string]: boolean } = {};
+  const alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(
     "permission",
     {
@@ -688,7 +594,7 @@ File editing instructions:
           ],
         };
       }
-      let response = await agent.client.requestPermission({
+      const response = await agent.client.requestPermission({
         options: [
           {
             kind: "allow_always",
@@ -705,11 +611,10 @@ File editing instructions:
         },
       });
       if (
-        response.outcome?.outcome == "selected" &&
-        (response.outcome.optionId == "allow" ||
-          response.outcome.optionId == "allow_always")
+        response.outcome?.outcome === "selected" &&
+        (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
       ) {
-        if (response.outcome.optionId == "allow_always") {
+        if (response.outcome.optionId === "allow_always") {
           alwaysAllowedTools[input.tool_name] = true;
         }
         return {
@@ -744,10 +649,9 @@ File editing instructions:
 
   app.post("/mcp", async (req, res) => {
     try {
-      const transport: StreamableHTTPServerTransport =
-        new StreamableHTTPServerTransport({
-          sessionIdGenerator: undefined,
-        });
+      const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
       res.on("close", () => {
         transport.close();
         server.close();
@@ -760,7 +664,7 @@ File editing instructions:
           jsonrpc: "2.0",
           error: {
             code: -32603,
-            message: "Internal server error",
+            message: `Internal server error: ${error}`,
           },
           id: null,
         });
@@ -777,6 +681,64 @@ File editing instructions:
       resolve(listener);
     });
   });
+}
+
+function stripCommonPrefix(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) {
+    i++;
+  }
+  return b.slice(i);
+}
+
+function toolCommandOutput(
+  status: "started" | "aborted" | "exited" | "killed" | "timedOut",
+  output: TerminalOutputResponse,
+): string {
+  const { exitStatus, output: commandOutput, truncated } = output;
+
+  let toolOutput = "";
+
+  switch (status) {
+    case "started": {
+      if (exitStatus && (exitStatus.exitCode ?? null) === null) {
+        toolOutput += `Interrupted. `;
+      }
+      break;
+    }
+    case "killed":
+      toolOutput += `Killed. `;
+      break;
+    case "timedOut":
+      toolOutput += `Timed out. `;
+      break;
+    case "exited":
+    case "aborted":
+      break;
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
+  }
+
+  if (exitStatus) {
+    if (typeof exitStatus.exitCode === "number" && exitStatus.exitCode !== 0) {
+      toolOutput += `Failed with exit code ${exitStatus.exitCode}.`;
+    }
+
+    if (typeof exitStatus.signal === "string") {
+      toolOutput += `Signal \`${exitStatus.signal}\`. `;
+    }
+  }
+
+  toolOutput += "Output:\n\n";
+  toolOutput += commandOutput;
+
+  if (truncated) {
+    toolOutput += `\n\nCommand output was too long, so it was truncated to ${commandOutput.length} bytes.`;
+  }
+
+  return toolOutput;
 }
 
 /**
@@ -816,7 +778,9 @@ export function replaceAndCalculateLocation(
 
       while (true) {
         const index = currentContent.indexOf(edit.oldText, searchIndex);
-        if (index === -1) break;
+        if (index === -1) {
+          break;
+        }
 
         // Add content before the match
         parts.push(currentContent.substring(lastIndex, index));

@@ -14,185 +14,168 @@ import {
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
-import {
-  markdownEscape,
-  toolInfoFromToolUse,
-  toolUpdateFromToolResult,
-} from "../tools.js";
+import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
-describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
-  "ACP subprocess integration",
-  () => {
-    let child: ReturnType<typeof spawn>;
+describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
+  let child: ReturnType<typeof spawn>;
 
-    beforeAll(async () => {
-      let valid = spawnSync("tsc", { stdio: "inherit" });
-      if (valid.status) {
-        throw new Error("failed to compile");
-      }
-      // Start the subprocess
-      child = spawn("npm", ["run", "--silent", "dev"], {
-        stdio: ["pipe", "pipe", "inherit"],
-        env: process.env,
-      });
-      child.on("error", (error) => {
-        console.error("Error starting subprocess:", error);
-      });
-      child.on("exit", (exit) => {
-        console.error("Exited with", exit);
-      });
+  beforeAll(async () => {
+    const valid = spawnSync("tsc", { stdio: "inherit" });
+    if (valid.status) {
+      throw new Error("failed to compile");
+    }
+    // Start the subprocess
+    child = spawn("npm", ["run", "--silent", "dev"], {
+      stdio: ["pipe", "pipe", "inherit"],
+      env: process.env,
     });
-
-    afterAll(() => {
-      child.kill();
+    child.on("error", (error) => {
+      console.error("Error starting subprocess:", error);
     });
+    child.on("exit", (exit) => {
+      console.error("Exited with", exit);
+    });
+  });
 
-    class TestClient implements Client {
-      agent: Agent;
-      files: Map<string, string> = new Map();
-      receivedText: string = "";
+  afterAll(() => {
+    child.kill();
+  });
 
-      constructor(agent: Agent) {
-        this.agent = agent;
-      }
+  class TestClient implements Client {
+    agent: Agent;
+    files: Map<string, string> = new Map();
+    receivedText: string = "";
 
-      takeReceivedText() {
-        const text = this.receivedText;
-        this.receivedText = "";
-        return text;
-      }
+    constructor(agent: Agent) {
+      this.agent = agent;
+    }
 
-      async requestPermission(
-        params: RequestPermissionRequest,
-      ): Promise<RequestPermissionResponse> {
-        const optionId = params.options.find(
-          (p) => p.kind === "allow_once",
-        )!.optionId;
+    takeReceivedText() {
+      const text = this.receivedText;
+      this.receivedText = "";
+      return text;
+    }
 
-        return { outcome: { outcome: "selected", optionId } };
-      }
+    async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+      const optionId = params.options.find((p) => p.kind === "allow_once")!.optionId;
 
-      async sessionUpdate(params: SessionNotification): Promise<void> {
-        console.error("RECEIVED", JSON.stringify(params, null, 4));
+      return { outcome: { outcome: "selected", optionId } };
+    }
 
-        if (
-          params.update.sessionUpdate === "agent_message_chunk" &&
-          params.update.content.type === "text"
-        ) {
-          this.receivedText += params.update.content.text;
-        }
-      }
+    async sessionUpdate(params: SessionNotification): Promise<void> {
+      console.error("RECEIVED", JSON.stringify(params, null, 4));
 
-      async writeTextFile(
-        params: WriteTextFileRequest,
-      ): Promise<WriteTextFileResponse> {
-        this.files.set(params.path, params.content);
-        return null;
-      }
-
-      async readTextFile(
-        params: ReadTextFileRequest,
-      ): Promise<ReadTextFileResponse> {
-        const content = this.files.get(params.path) ?? "";
-        return {
-          content,
-        };
+      if (
+        params.update.sessionUpdate === "agent_message_chunk" &&
+        params.update.content.type === "text"
+      ) {
+        this.receivedText += params.update.content.text;
       }
     }
 
-    async function setupTestSession(cwd: string): Promise<{
-      client: TestClient;
-      connection: ClientSideConnection;
-      newSessionResponse: NewSessionResponse;
-    }> {
-      let client;
-      const connection = new ClientSideConnection(
-        (agent) => {
-          client = new TestClient(agent);
-          return client;
-        },
-        nodeToWebWritable(child.stdin!),
-        nodeToWebReadable(child.stdout!),
-      );
-
-      await connection.initialize({
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: {
-            readTextFile: true,
-            writeTextFile: true,
-          },
-        },
-      });
-
-      const newSessionResponse = await connection.newSession({
-        cwd,
-        mcpServers: [],
-      });
-
-      return { client: client!, connection, newSessionResponse };
+    async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
+      this.files.set(params.path, params.content);
+      return null;
     }
 
-    it("should connect to the ACP subprocess", async () => {
-      const { client, connection, newSessionResponse } =
-        await setupTestSession("./");
+    async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
+      const content = this.files.get(params.path) ?? "";
+      return {
+        content,
+      };
+    }
+  }
 
-      await connection.prompt({
-        prompt: [
-          {
-            type: "text",
-            text: "Hello",
-          },
-        ],
-        sessionId: newSessionResponse.sessionId,
-      });
+  async function setupTestSession(cwd: string): Promise<{
+    client: TestClient;
+    connection: ClientSideConnection;
+    newSessionResponse: NewSessionResponse;
+  }> {
+    let client;
+    const connection = new ClientSideConnection(
+      (agent) => {
+        client = new TestClient(agent);
+        return client;
+      },
+      nodeToWebWritable(child.stdin!),
+      nodeToWebReadable(child.stdout!),
+    );
 
-      expect(client.takeReceivedText()).not.toEqual("");
-    }, 30000);
+    await connection.initialize({
+      protocolVersion: 1,
+      clientCapabilities: {
+        fs: {
+          readTextFile: true,
+          writeTextFile: true,
+        },
+      },
+    });
 
-    it("should include available commands", async () => {
-      const { client, connection, newSessionResponse } =
-        await setupTestSession(__dirname);
+    const newSessionResponse = await connection.newSession({
+      cwd,
+      mcpServers: [],
+    });
 
-      expect(newSessionResponse.availableCommands).toContainEqual({
-        name: "quick-math",
-        description: "10 * 3 = 30 (project)",
-        input: null,
-      });
-      expect(newSessionResponse.availableCommands).toContainEqual({
-        name: "say-hello",
-        description: "Say hello (project)",
-        input: { hint: "[name]" },
-      });
+    return { client: client!, connection, newSessionResponse };
+  }
 
-      await connection.prompt({
-        prompt: [
-          {
-            type: "text",
-            text: "/quick-math",
-          },
-        ],
-        sessionId: newSessionResponse.sessionId,
-      });
+  it("should connect to the ACP subprocess", async () => {
+    const { client, connection, newSessionResponse } = await setupTestSession("./");
 
-      expect(client.takeReceivedText()).toContain("30");
+    await connection.prompt({
+      prompt: [
+        {
+          type: "text",
+          text: "Hello",
+        },
+      ],
+      sessionId: newSessionResponse.sessionId,
+    });
 
-      await connection.prompt({
-        prompt: [
-          {
-            type: "text",
-            text: "/say-hello GPT-5",
-          },
-        ],
-        sessionId: newSessionResponse.sessionId,
-      });
+    expect(client.takeReceivedText()).not.toEqual("");
+  }, 30000);
 
-      expect(client.takeReceivedText()).toContain("Hello GPT-5");
-    }, 30000);
-  },
-);
+  it("should include available commands", async () => {
+    const { client, connection, newSessionResponse } = await setupTestSession(__dirname);
+
+    expect(newSessionResponse.availableCommands).toContainEqual({
+      name: "quick-math",
+      description: "10 * 3 = 30 (project)",
+      input: null,
+    });
+    expect(newSessionResponse.availableCommands).toContainEqual({
+      name: "say-hello",
+      description: "Say hello (project)",
+      input: { hint: "[name]" },
+    });
+
+    await connection.prompt({
+      prompt: [
+        {
+          type: "text",
+          text: "/quick-math",
+        },
+      ],
+      sessionId: newSessionResponse.sessionId,
+    });
+
+    expect(client.takeReceivedText()).toContain("30");
+
+    await connection.prompt({
+      prompt: [
+        {
+          type: "text",
+          text: "/say-hello GPT-5",
+        },
+      ],
+      sessionId: newSessionResponse.sessionId,
+    });
+
+    expect(client.takeReceivedText()).toContain("Hello GPT-5");
+  }, 30000);
+});
 
 describe("tool conversions", () => {
   it("should handle Bash nicely", () => {
@@ -279,8 +262,7 @@ describe("tool conversions", () => {
 
     expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "search",
-      title:
-        "List the `/Users/test/github/claude-code-acp` directory's contents",
+      title: "List the `/Users/test/github/claude-code-acp` directory's contents",
       content: [],
       locations: [],
     });
@@ -494,7 +476,7 @@ describe("tool conversions", () => {
   });
 
   it("should handle KillBash entries", () => {
-    let tool_use = {
+    const tool_use = {
       type: "tool_use",
       id: "toolu_01PhLms5fuvmdjy2bb6dfUKT",
       name: "KillBash",
@@ -511,7 +493,7 @@ describe("tool conversions", () => {
   });
 
   it("should handle BashOutput entries", () => {
-    let tool_use = {
+    const tool_use = {
       type: "tool_use",
       id: "toolu_01SJUWPtj1QspgANgtpqGPuN",
       name: "BashOutput",
@@ -568,8 +550,7 @@ describe("tool conversions", () => {
                   activeForm: "Adding concurrent access tests",
                 },
                 {
-                  content:
-                    "Add tests for Each function with various data types",
+                  content: "Add tests for Each function with various data types",
                   status: "pending",
                   activeForm: "Adding Each function tests",
                 },
@@ -708,7 +689,7 @@ describe("tool conversions", () => {
         ],
       },
     };
-    let fileCache: { [key: string]: string } = {
+    const fileCache: { [key: string]: string } = {
       "/Users/test/project/config.json": JSON.stringify(
         {
           version: 1,
@@ -724,14 +705,14 @@ describe("tool conversions", () => {
       content: [
         {
           newText: `{
-    \"version\": 2,
-    \"filler\": \"filler\",
-    \"enabled\": true
+    "version": 2,
+    "filler": "filler",
+    "enabled": true
 }`,
           oldText: `{
-    \"version\": 1,
-    \"filler\": \"filler\",
-    \"enabled\": false
+    "version": 1,
+    "filler": "filler",
+    "enabled": false
 }`,
           path: "/Users/test/project/config.json",
           type: "diff",
@@ -811,9 +792,7 @@ describe("tool conversions", () => {
 
     const update = toolUpdateFromToolResult(toolResult, toolUse);
 
-    expect(update.locations).toEqual([
-      { path: "/Users/test/project/main.py", line: 42 },
-    ]);
+    expect(update.locations).toEqual([{ path: "/Users/test/project/main.py", line: 42 }]);
   });
 
   it("should handle empty locations from edit tools", () => {
@@ -878,8 +857,6 @@ describe("escape markdown", () => {
 
     text = "for example:\n```markdown\nHello *world*!\n```\n";
     escaped = markdownEscape(text);
-    expect(escaped).toEqual(
-      "````\nfor example:\n```markdown\nHello *world*!\n```\n````",
-    );
+    expect(escaped).toEqual("````\nfor example:\n```markdown\nHello *world*!\n```\n````");
   });
 });
