@@ -315,6 +315,7 @@ export function toolInfoFromToolUse(
             label += " -c";
             break;
           case "Content":
+          default:
             break;
         }
       }

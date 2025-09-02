@@ -6,8 +6,14 @@
     "sourceType": "module",
     "project": "./tsconfig.json"
   },
-  "plugins": ["@typescript-eslint"],
-  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended", "prettier"],
+  "plugins": [
+    "@typescript-eslint"
+  ],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "prettier"
+  ],
   "env": {
     "node": true,
     "es2020": true
@@ -23,10 +29,21 @@
     ],
     "no-console": "off",
     "no-constant-condition": "off",
+    "default-case": "error",
     "prefer-const": "error",
     "no-var": "error",
-    "eqeqeq": ["error", "always"],
-    "curly": ["error", "all"]
+    "eqeqeq": [
+      "error",
+      "always"
+    ],
+    "curly": [
+      "error",
+      "all"
+    ]
   },
-  "ignorePatterns": ["dist", "node_modules", "*.js"]
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    "*.js"
+  ]
 }
