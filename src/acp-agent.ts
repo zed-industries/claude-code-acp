@@ -164,7 +164,7 @@ export class ClaudeAcpAgent implements Agent {
       options.disallowedTools = disallowedTools;
     }
 
-    let q = query({
+    const q = query({
       prompt: input,
       options,
     });

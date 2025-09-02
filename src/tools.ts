@@ -137,7 +137,7 @@ export function toolInfoFromToolUse(
         title: "Read File",
         kind: "read",
         content: [],
-        locations: [{ path: input.abs_path, line: input.offset ?? 0 }],
+        locations: [{ path: input.file_path, line: input.offset ?? 0 }],
       };
 
     case "LS":
@@ -149,42 +149,46 @@ export function toolInfoFromToolUse(
       };
 
     case "mcp__acp__edit":
-    case "Edit":
-      let oldText = input.old_text || null;
-      let newText = input.new_text;
+    case "Edit": {
+      const path = input?.abs_path ?? input?.file_path;
+      let oldText = input.old_string ?? null;
+      let newText = input.new_string ?? "";
+      let line = null;
 
-      if (input?.abs_path && input.old_text) {
+      if (path && input.old_text) {
         try {
-          let oldContent = cachedFileContent[input.abs_path] || "";
+          let oldContent = cachedFileContent[path] || "";
           let newContent = replaceAndCalculateLocation(oldContent, [
             {
-              oldText: input.old_text,
-              newText: input.new_text,
+              oldText: input.old_string,
+              newText: input.new_string,
               replaceAll: false,
             },
           ]);
           oldText = oldContent;
           newText = newContent.newContent;
+          line = newContent.lineNumbers[0];
         } catch (e) {
           console.error(e);
         }
       }
       return {
-        title: input?.abs_path ? `Edit ${input.abs_path}` : "Edit",
+        title: path ? `Edit ${path}` : "Edit",
         kind: "edit",
         content:
-          input && input.abs_path
+          input && path
             ? [
                 {
                   type: "diff",
-                  path: input.abs_path,
+                  path,
                   oldText,
                   newText,
                 },
               ]
             : [],
-        locations: input?.abs_path ? [{ path: input.abs_path }] : [],
+        locations: path ? [{ path, line }] : [],
       };
+    }
 
     case "mcp__acp__multi-edit":
     case "MultiEdit":
@@ -265,20 +269,20 @@ export function toolInfoFromToolUse(
 
     case "Write":
       return {
-        title: input?.abs_path ? `Write ${input.abs_path}` : "Write",
+        title: input?.file_path ? `Write ${input.file_path}` : "Write",
         kind: "edit",
         content:
-          input && input.abs_path
+          input && input.file_path
             ? [
                 {
                   type: "diff",
-                  path: input.abs_path,
+                  path: input.file_path,
                   oldText: null,
                   newText: input.content,
                 },
               ]
             : [],
-        locations: input?.abs_path ? [{ path: input.abs_path }] : [],
+        locations: input?.file_path ? [{ path: input.file_path }] : [],
       };
 
     case "Glob": {

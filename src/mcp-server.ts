@@ -171,9 +171,9 @@ In sessions with mcp__acp__edit always use it instead of Edit as it will
 allow the user to conveniently review changes.
 
 File editing instructions:
-- The \`old_text\` param must match existing file content, including indentation.
-- The \`old_text\` param must come from the actual file, not an outline.
-- The \`old_text\` section must not be empty.
+- The \`old_string\` param must match existing file content, including indentation.
+- The \`old_string\` param must come from the actual file, not an outline.
+- The \`old_string\` section must not be empty.
 - Be minimal with replacements:
   - For unique lines, include only those lines.
   - For non-unique lines, include enough context to identify them.
@@ -183,10 +183,10 @@ File editing instructions:
           abs_path: z
             .string()
             .describe("The absolute path to the file to read."),
-          old_text: z
+          old_string: z
             .string()
             .describe("The old text to replace (must be unique in the file)"),
-          new_text: z.string().describe("The new text."),
+          new_string: z.string().describe("The new text."),
         },
         annotations: {
           title: "Edit file",
@@ -219,8 +219,8 @@ File editing instructions:
             content,
             [
               {
-                oldText: input.old_text,
-                newText: input.new_text,
+                oldText: input.old_string,
+                newText: input.new_string,
                 replaceAll: false,
               },
             ],
