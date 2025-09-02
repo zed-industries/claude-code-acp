@@ -4,6 +4,7 @@ import {
   Agent,
   Client,
   ClientSideConnection,
+  NewSessionResponse,
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestPermissionRequest,
@@ -50,37 +51,67 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
 
     class TestClient implements Client {
       agent: Agent;
+      files: Map<string, string> = new Map();
+      receivedText: string = "";
 
       constructor(agent: Agent) {
         this.agent = agent;
       }
-      requestPermission(
+
+      takeReceivedText() {
+        const text = this.receivedText;
+        this.receivedText = "";
+        return text;
+      }
+
+      async requestPermission(
         params: RequestPermissionRequest,
       ): Promise<RequestPermissionResponse> {
-        throw new Error("Method not implemented.");
+        const optionId = params.options.find(
+          (p) => p.kind === "allow_once",
+        )!.optionId;
+
+        return { outcome: { outcome: "selected", optionId } };
       }
+
       async sessionUpdate(params: SessionNotification): Promise<void> {
-        console.error("RECEVIED", JSON.stringify(params, null, 4));
+        console.error("RECEIVED", JSON.stringify(params, null, 4));
+
+        if (
+          params.update.sessionUpdate === "agent_message_chunk" &&
+          params.update.content.type === "text"
+        ) {
+          this.receivedText += params.update.content.text;
+        }
       }
-      writeTextFile(
+
+      async writeTextFile(
         params: WriteTextFileRequest,
       ): Promise<WriteTextFileResponse> {
-        throw new Error("Method not implemented.");
+        this.files.set(params.path, params.content);
+        return null;
       }
+
       async readTextFile(
         params: ReadTextFileRequest,
       ): Promise<ReadTextFileResponse> {
+        const content = this.files.get(params.path) ?? "";
         return {
-          content:
-            "One\nTwo\nThree\nFour\nFive\nSix\nSeven\nEight\nNine\nTen\nEleven\nTwelve\nThirteen\nFourteen\nFifteen\nSixteen\nSeventeen\nEighteen\nNineteen\nTwenty\n",
+          content,
         };
       }
     }
 
-    it("should connect to the ACP subprocess", async () => {
+    async function setupTestSession(cwd: string): Promise<{
+      client: TestClient;
+      connection: ClientSideConnection;
+      newSessionResponse: NewSessionResponse;
+    }> {
+      let client;
       const connection = new ClientSideConnection(
         (agent) => {
-          return new TestClient(agent);
+          client = new TestClient(agent);
+          return client;
         },
         nodeToWebWritable(child.stdin!),
         nodeToWebReadable(child.stdout!),
@@ -96,18 +127,70 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
         },
       });
 
-      let session = await connection.newSession({ cwd: "./", mcpServers: [] });
+      const newSessionResponse = await connection.newSession({
+        cwd,
+        mcpServers: [],
+      });
+
+      return { client: client!, connection, newSessionResponse };
+    }
+
+    it("should connect to the ACP subprocess", async () => {
+      const { client, connection, newSessionResponse } =
+        await setupTestSession("./");
+
       await connection.prompt({
         prompt: [
           {
             type: "text",
-            text: "Use the multi edit tool to remove all multiples of 5 from the README and replace with buzz",
+            text: "Hello",
           },
         ],
-        sessionId: session.sessionId,
+        sessionId: newSessionResponse.sessionId,
       });
-      console.log("DONE AWAITING");
-    }, 20000);
+
+      expect(client.takeReceivedText()).not.toEqual("");
+    }, 30000);
+
+    it("should include available commands", async () => {
+      const { client, connection, newSessionResponse } =
+        await setupTestSession(__dirname);
+
+      expect(newSessionResponse.availableCommands).toContainEqual({
+        name: "quick-math",
+        description: "10 * 3 = 30 (project)",
+        input: null,
+      });
+      expect(newSessionResponse.availableCommands).toContainEqual({
+        name: "say-hello",
+        description: "Say hello (project)",
+        input: { hint: "[name]" },
+      });
+
+      await connection.prompt({
+        prompt: [
+          {
+            type: "text",
+            text: "/quick-math",
+          },
+        ],
+        sessionId: newSessionResponse.sessionId,
+      });
+
+      expect(client.takeReceivedText()).toContain("30");
+
+      await connection.prompt({
+        prompt: [
+          {
+            type: "text",
+            text: "/say-hello GPT-5",
+          },
+        ],
+        sessionId: newSessionResponse.sessionId,
+      });
+
+      expect(client.takeReceivedText()).toContain("Hello GPT-5");
+    }, 30000);
   },
 );
 

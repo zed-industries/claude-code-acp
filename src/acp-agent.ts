@@ -2,12 +2,11 @@ import {
   Agent,
   AgentSideConnection,
   AuthenticateRequest,
+  AvailableCommand,
   CancelNotification,
-  Client,
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
-  LoadSessionRequest,
   NewSessionRequest,
   NewSessionResponse,
   PromptRequest,
@@ -17,8 +16,6 @@ import {
   RequestError,
   TerminalHandle,
   TerminalOutputResponse,
-  ToolCallContent,
-  ToolKind,
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@zed-industries/agent-client-protocol";
@@ -28,10 +25,8 @@ import {
   Query,
   query,
   SDKAssistantMessage,
-  SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-code";
-import * as readline from "node:readline";
 import { v7 as uuidv7 } from "uuid";
 import {
   nodeToWebReadable,
@@ -39,7 +34,6 @@ import {
   Pushable,
   unreachable,
 } from "./utils.js";
-import { ContentBlock } from "@zed-industries/agent-client-protocol";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
@@ -90,7 +84,10 @@ export class ClaudeAcpAgent implements Agent {
       protocolVersion: 1,
       // todo!()
       agentCapabilities: {
-        promptCapabilities: { image: true, embeddedContext: true },
+        promptCapabilities: {
+          image: true,
+          embeddedContext: true,
+        },
       },
       authMethods: [
         {
@@ -177,12 +174,14 @@ export class ClaudeAcpAgent implements Agent {
       cancelled: false,
     };
 
+    const availableCommands = await availableSlashCommands(q);
     return {
       sessionId,
+      availableCommands,
     };
   }
 
-  async authenticate(params: AuthenticateRequest): Promise<void> {
+  async authenticate(_params: AuthenticateRequest): Promise<void> {
     throw new Error("Method not implemented.");
   }
 
@@ -283,6 +282,67 @@ export class ClaudeAcpAgent implements Agent {
     this.fileContentCache[params.path] = params.content;
     return response;
   }
+}
+
+async function availableSlashCommands(
+  query: Query,
+): Promise<AvailableCommand[]> {
+  const UNSUPPORTED_COMMANDS = [
+    "agents", // Modal
+    "bashes", // Modal
+    "bug", // Modal
+    "clear", // Escape Codes
+    "compact", // Not supported via SDK?
+    "config", // Modal
+    "context", // Escape Codes
+    "cost", // Escape Codes
+    "doctor", // Escape Codes
+    "exit",
+    "export", // Modal
+    "help", // Modal
+    "hooks", // Modal
+    "ide", // Modal
+    "install-github-app", // Modal
+    "login",
+    "logout",
+    "mcp",
+    "migrate-installer", // Modal
+    "model", // Not supported via SDK?
+    "output-style", // Modal
+    "output-style:new", // Modal
+    "permissions", // Modal
+    "release-notes", // Escape Codes
+    "resume",
+    "status", // Not supported via SDK?
+    "statusline", // Not needed
+    "terminal-setup", // Not needed
+    "todos", // Escape Codes
+    "vim", // Not needed
+  ];
+
+  //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
+  const commands = await (query as any).supportedCommands();
+  return commands
+    .map(
+      (command: {
+        name: string;
+        description: string;
+        argumentHint: string;
+      }) => {
+        const input = command.argumentHint
+          ? { hint: command.argumentHint }
+          : null;
+        return {
+          name: command.name,
+          description: command.description || "",
+          input,
+        };
+      },
+    )
+    .filter(
+      (command: AvailableCommand) =>
+        !UNSUPPORTED_COMMANDS.includes(command.name),
+    );
 }
 
 function formatUriAsLink(uri: string): string {
