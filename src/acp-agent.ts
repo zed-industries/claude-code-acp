@@ -292,6 +292,7 @@ async function availableSlashCommands(
   query: Query,
 ): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
+    "add-dir",
     "agents", // Modal
     "bashes", // Modal
     "bug", // Modal
@@ -309,12 +310,14 @@ async function availableSlashCommands(
     "install-github-app", // Modal
     "login",
     "logout",
+    "memory",
     "mcp",
     "migrate-installer", // Modal
     "model", // Not supported via SDK?
     "output-style", // Modal
     "output-style:new", // Modal
     "permissions", // Modal
+    "privacy-settings",
     "release-notes", // Escape Codes
     "resume",
     "status", // Not supported via SDK?
@@ -357,7 +360,10 @@ async function availableSlashCommands(
     )
     .filter(
       (command: AvailableCommand) =>
-        !UNSUPPORTED_COMMANDS.includes(command.name),
+        !(
+          command.name.match(/\(MCP\)/) ||
+          UNSUPPORTED_COMMANDS.includes(command.name)
+        ),
     );
 }
 
