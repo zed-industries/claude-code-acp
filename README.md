@@ -30,7 +30,9 @@ https://github.com/user-attachments/assets/ddce66c7-79ac-47a3-ad59-4a6a3ca74903
 
 ### Other clients
 
-Setup instructions for other clients are coming soon.
+Setup instructions for other clients are coming soon. Feel free to [submit a PR](https://github.com/zed-industries/claude-code-acp/pulls) to add yours!
+
+#### Installation
 
 Install the adapter from `npm`: 
 
