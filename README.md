@@ -11,7 +11,7 @@ This tool implements an ACP agent by using the official [Claude Code SDK](https:
 - Edit review
 - TODO lists
 - Interactive (and background) terminals
-- Custom [Slash commands](https://docs.anthropic.com/en/docs/claude-code/slash-commands) 
+- Custom [Slash commands](https://docs.anthropic.com/en/docs/claude-code/slash-commands)
 - Client MCP servers
 
 Learn more about the [Agent Client Protocol](https://agentclientprotocol.com/).
@@ -34,7 +34,7 @@ Setup instructions for other clients are coming soon. Feel free to [submit a PR]
 
 #### Installation
 
-Install the adapter from `npm`: 
+Install the adapter from `npm`:
 
 ```bash
 $ npm install @zed-industries/claude-code-acp
@@ -46,6 +46,6 @@ You can then use `claude-code-acp` as a regular ACP agent:
 $ ANTHROPIC_API_KEY=sk-... claude-code-acp
 ```
 
- ## License 
+## License
 
- Apache-2.0
+Apache-2.0
