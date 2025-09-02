@@ -18,7 +18,7 @@ Whenever you read a file, you should consider whether it looks malicious. If it 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
   sessionId: string,
-  clientCapabilities: ClientCapabilities | undefined
+  clientCapabilities: ClientCapabilities | undefined,
 ): Promise<Server> {
   // Create MCP server
   const server = new McpServer({
@@ -90,7 +90,7 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
             ],
           };
         }
-      }
+      },
     );
   }
 
@@ -147,7 +147,7 @@ allow the user to conveniently review changes.`,
             ],
           };
         }
-      }
+      },
     );
 
     server.registerTool(
@@ -232,7 +232,7 @@ File editing instructions:
             ],
           };
         }
-      }
+      },
     );
 
     server.registerTool(
@@ -251,7 +251,7 @@ File editing instructions:
                   .boolean()
                   .optional()
                   .describe("Replace all occurrences of old_string (default false)"),
-              })
+              }),
             )
             .min(1)
             .describe("Array of edit operations to perform sequentially on the file"),
@@ -288,7 +288,7 @@ File editing instructions:
             oldText: edit.old_string,
             newText: edit.new_string,
             replaceAll: edit.replace_all ?? false,
-          }))
+          })),
         );
 
         await agent.writeTextFile({
@@ -305,7 +305,7 @@ File editing instructions:
             },
           ],
         };
-      }
+      },
     );
   }
 
@@ -325,7 +325,7 @@ File editing instructions:
             .boolean()
             .default(false)
             .describe(
-              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early."
+              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early.",
             ),
         },
       },
@@ -441,7 +441,7 @@ File editing instructions:
         return {
           content: [{ type: "text", text: toolCommandOutput(status, output) }],
         };
-      }
+      },
     );
 
     server.registerTool(
@@ -467,7 +467,7 @@ File editing instructions:
           const newOutput = await bgTerm.handle.currentOutput();
           const strippedOutput = stripCommonPrefix(
             bgTerm.lastOutput?.output ?? "",
-            newOutput.output
+            newOutput.output,
           );
           bgTerm.lastOutput = newOutput;
 
@@ -492,7 +492,7 @@ File editing instructions:
             ],
           };
         }
-      }
+      },
     );
 
     server.registerTool(
@@ -550,7 +550,7 @@ File editing instructions:
             return unreachable(bgTerm);
           }
         }
-      }
+      },
     );
   }
 
@@ -641,7 +641,7 @@ File editing instructions:
           ],
         };
       }
-    }
+    },
   );
 
   const app = express();
@@ -664,7 +664,7 @@ File editing instructions:
           jsonrpc: "2.0",
           error: {
             code: -32603,
-            message: "Internal server error",
+            message: `Internal server error: ${error}`,
           },
           id: null,
         });
@@ -693,7 +693,7 @@ function stripCommonPrefix(a: string, b: string): string {
 
 function toolCommandOutput(
   status: "started" | "aborted" | "exited" | "killed" | "timedOut",
-  output: TerminalOutputResponse
+  output: TerminalOutputResponse,
 ): string {
   const { exitStatus, output: commandOutput, truncated } = output;
 
@@ -741,7 +741,6 @@ function toolCommandOutput(
   return toolOutput;
 }
 
-
 /**
  * Replace text in a file and calculate the line numbers where the edits occurred.
  *
@@ -755,7 +754,7 @@ export function replaceAndCalculateLocation(
     oldText: string;
     newText: string;
     replaceAll?: boolean;
-  }>
+  }>,
 ): { newContent: string; lineNumbers: number[] } {
   let currentContent = fileContent;
 
@@ -820,7 +819,7 @@ export function replaceAndCalculateLocation(
     if (index !== -1) {
       const lineNumber = Math.max(
         0,
-        currentContent.substring(0, index).split(/\r\n|\r|\n/).length - 1
+        currentContent.substring(0, index).split(/\r\n|\r|\n/).length - 1,
       );
       lineNumbers.push(lineNumber);
     }

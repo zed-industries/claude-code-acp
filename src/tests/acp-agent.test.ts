@@ -100,7 +100,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
         return client;
       },
       nodeToWebWritable(child.stdin!),
-      nodeToWebReadable(child.stdout!)
+      nodeToWebReadable(child.stdout!),
     );
 
     await connection.initialize({
@@ -697,7 +697,7 @@ describe("tool conversions", () => {
           enabled: false,
         },
         null,
-        4
+        4,
       ),
     };
 

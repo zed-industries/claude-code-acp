@@ -37,7 +37,7 @@ describe("replaceAndCalculateLocation", () => {
     ]);
 
     expect(result.newContent).toBe(
-      "line 1\r\nline 2 with replaced\r\nline 3 with replaced\r\nline 4"
+      "line 1\r\nline 2 with replaced\r\nline 3 with replaced\r\nline 4",
     );
     expect(result.lineNumbers).toEqual([1, 2]);
   });
@@ -164,7 +164,7 @@ describe("replaceAndCalculateLocation", () => {
     const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
 
     expect(result.newContent).toBe(
-      `line 1\n${"a".repeat(10000)}replaced${"b".repeat(10000)}\nline 3`
+      `line 1\n${"a".repeat(10000)}replaced${"b".repeat(10000)}\nline 3`,
     );
     expect(result.lineNumbers).toEqual([1]);
   });

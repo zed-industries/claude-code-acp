@@ -6,7 +6,6 @@ import {
 } from "@zed-industries/agent-client-protocol";
 import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
 
-
 interface ToolInfo {
   title: string;
   kind: ToolKind;
@@ -22,7 +21,7 @@ interface ToolUpdate {
 
 export function toolInfoFromToolUse(
   toolUse: any,
-  cachedFileContent: { [key: string]: string }
+  cachedFileContent: { [key: string]: string },
 ): ToolInfo {
   const name = toolUse.name;
   const input = toolUse.input;
@@ -35,11 +34,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.prompt
             ? [
-              {
-                type: "content",
-                content: { type: "text", text: input.prompt },
-              },
-            ]
+                {
+                  type: "content",
+                  content: { type: "text", text: input.prompt },
+                },
+              ]
             : [],
       };
 
@@ -58,11 +57,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.new_source
             ? [
-              {
-                type: "content",
-                content: { type: "text", text: input.new_source },
-              },
-            ]
+                {
+                  type: "content",
+                  content: { type: "text", text: input.new_source },
+                },
+              ]
             : [],
         locations: input?.notebook_path ? [{ path: input.notebook_path }] : [],
       };
@@ -75,11 +74,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.description
             ? [
-              {
-                type: "content",
-                content: { type: "text", text: input.description },
-              },
-            ]
+                {
+                  type: "content",
+                  content: { type: "text", text: input.description },
+                },
+              ]
             : [],
       };
 
@@ -166,13 +165,13 @@ export function toolInfoFromToolUse(
         content:
           input && path
             ? [
-              {
-                type: "diff",
-                path,
-                oldText,
-                newText,
-              },
-            ]
+                {
+                  type: "diff",
+                  path,
+                  oldText,
+                  newText,
+                },
+              ]
             : [],
         locations: path ? [{ path, line }] : [],
       };
@@ -201,7 +200,7 @@ export function toolInfoFromToolUse(
               oldText: edit.old_string,
               newText: edit.new_string,
               replaceAll: edit.replace_all,
-            }))
+            })),
           );
           oldTextMulti = oldContent;
           newTextMulti = newContent.newContent;
@@ -259,13 +258,13 @@ export function toolInfoFromToolUse(
         content:
           input && input.file_path
             ? [
-              {
-                type: "diff",
-                path: input.file_path,
-                oldText: null,
-                newText: input.content,
-              },
-            ]
+                {
+                  type: "diff",
+                  path: input.file_path,
+                  oldText: null,
+                  newText: input.content,
+                },
+              ]
             : [],
         locations: input?.file_path ? [{ path: input.file_path }] : [],
       };
@@ -356,11 +355,11 @@ export function toolInfoFromToolUse(
         content:
           input && input.prompt
             ? [
-              {
-                type: "content",
-                content: { type: "text", text: input.prompt },
-              },
-            ]
+                {
+                  type: "content",
+                  content: { type: "text", text: input.prompt },
+                },
+              ]
             : [],
       };
 
@@ -442,7 +441,8 @@ export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefin
             }));
             return { locations };
           }
-        } catch (e) {
+        } catch (error) {
+          console.error(`Error parsing edit tool result: ${error}`);
           // If parsing fails, return empty object
           return {};
         }
@@ -464,7 +464,9 @@ export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefin
             }));
             return { locations };
           }
-        } catch (e) {
+        } catch (error) {
+          console.error(`Error parsing edit tool result: ${error}`);
+
           // If parsing fails, return empty object
           return {};
         }
@@ -485,9 +487,9 @@ export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefin
             content:
               content.type === "text"
                 ? {
-                  type: "text",
-                  text: markdownEscape(content.text.replace(SYSTEM_REMINDER, "")),
-                }
+                    type: "text",
+                    text: markdownEscape(content.text.replace(SYSTEM_REMINDER, "")),
+                  }
                 : content,
           })),
         };

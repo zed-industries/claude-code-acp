@@ -45,14 +45,14 @@ type Session = {
 
 type BackgroundTerminal =
   | {
-    handle: TerminalHandle;
-    status: "started";
-    lastOutput: TerminalOutputResponse | null;
-  }
+      handle: TerminalHandle;
+      status: "started";
+      lastOutput: TerminalOutputResponse | null;
+    }
   | {
-    status: "aborted" | "exited" | "killed" | "timedOut";
-    pendingOutput: TerminalOutputResponse;
-  };
+      status: "aborted" | "exited" | "killed" | "timedOut";
+      pendingOutput: TerminalOutputResponse;
+    };
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -234,7 +234,7 @@ export class ClaudeAcpAgent implements Agent {
             message,
             params.sessionId,
             this.toolUseCache,
-            this.fileContentCache
+            this.fileContentCache,
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -332,7 +332,7 @@ async function availableSlashCommands(query: Query): Promise<AvailableCommand[]>
     })
     .filter(
       (command: AvailableCommand) =>
-        !(command.name.match(/\(MCP\)/) || UNSUPPORTED_COMMANDS.includes(command.name))
+        !(command.name.match(/\(MCP\)/) || UNSUPPORTED_COMMANDS.includes(command.name)),
     );
 }
 
@@ -434,7 +434,7 @@ export function toAcpNotifications(
   toolUseCache: {
     [key: string]: { type: "tool_use"; id: string; name: string; input: any };
   },
-  fileContentCache: { [key: string]: string }
+  fileContentCache: { [key: string]: string },
 ): SessionNotification[] {
   const chunks = message.message.content as ContentChunk[];
   const output = [];
@@ -493,7 +493,7 @@ export function toAcpNotifications(
         const toolUse = toolUseCache[chunk.tool_use_id];
         if (!toolUse) {
           console.error(
-            `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`
+            `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`,
           );
           break;
         }
@@ -524,7 +524,7 @@ export function runAcp() {
   new AgentSideConnection(
     (client) => new ClaudeAcpAgent(client),
     nodeToWebWritable(process.stdout),
-    nodeToWebReadable(process.stdin)
+    nodeToWebReadable(process.stdin),
   );
 }
 
@@ -532,11 +532,11 @@ type ContentChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: any } // input is serde_json::Value, so use any or unknown
   | {
-    type: "tool_result";
-    content: string;
-    tool_use_id: string;
-    is_error: boolean;
-  } // content type depends on your Content definition
+      type: "tool_result";
+      content: string;
+      tool_use_id: string;
+      is_error: boolean;
+    } // content type depends on your Content definition
   | { type: "thinking"; thinking: string }
   | { type: "redacted_thinking" }
   | { type: "image"; source: ImageSource }
