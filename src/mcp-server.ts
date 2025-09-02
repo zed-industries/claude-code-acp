@@ -110,8 +110,8 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
         title: "Write",
         description: `Writes content to the specified file in the project.
 
-  In sessions with mcp__acp__write always use it instead of Write as it will
-  allow the user to conveniently review changes.`,
+In sessions with mcp__acp__write always use it instead of Write as it will
+allow the user to conveniently review changes.`,
         inputSchema: {
           abs_path: z
             .string()
