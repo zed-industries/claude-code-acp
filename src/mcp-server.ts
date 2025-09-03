@@ -167,7 +167,8 @@ File editing instructions:
   - For unique lines, include only those lines.
   - For non-unique lines, include enough context to identify them.
 - Do not escape quotes, newlines, or other characters.
-- Only edit the specified file.`,
+- Only edit the specified file.
+- If the \`old_string\` value isn't found in the file, the edit won't be applied. The tool will fail and must be retried.`,
         inputSchema: {
           abs_path: z.string().describe("The absolute path to the file to read."),
           old_string: z.string().describe("The old text to replace (must be unique in the file)"),
@@ -182,56 +183,45 @@ File editing instructions:
         },
       },
       async (input) => {
-        try {
-          const session = agent.sessions[sessionId];
-          if (!session) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: "The user has left the building",
-                },
-              ],
-            };
-          }
-
-          const { content } = await agent.readTextFile({
-            sessionId,
-            path: input.abs_path,
-          });
-
-          const { newContent, lineNumbers } = replaceAndCalculateLocation(content, [
-            {
-              oldText: input.old_string,
-              newText: input.new_string,
-              replaceAll: false,
-            },
-          ]);
-
-          await agent.writeTextFile({
-            sessionId,
-            path: input.abs_path,
-            content: newContent,
-          });
-
+        const session = agent.sessions[sessionId];
+        if (!session) {
           return {
             content: [
               {
                 type: "text",
-                text: JSON.stringify({ lineNumbers }),
-              },
-            ],
-          };
-        } catch (error: any) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Editing file failed: " + error.message,
+                text: "The user has left the building",
               },
             ],
           };
         }
+
+        const { content } = await agent.readTextFile({
+          sessionId,
+          path: input.abs_path,
+        });
+
+        const { newContent, lineNumbers } = replaceAndCalculateLocation(content, [
+          {
+            oldText: input.old_string,
+            newText: input.new_string,
+            replaceAll: false,
+          },
+        ]);
+
+        await agent.writeTextFile({
+          sessionId,
+          path: input.abs_path,
+          content: newContent,
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ lineNumbers }),
+            },
+          ],
+        };
       },
     );
 
@@ -239,7 +229,20 @@ File editing instructions:
       "multi-edit",
       {
         title: "Multi Edit",
-        description: `Edit a file with multiple sequential edits.`,
+        description: `Edit a file with multiple sequential edits.
+
+In sessions with mcp__acp__multi-edit always use it instead of MultiEdit as it will
+allow the user to conveniently review changes.
+
+File editing instructions:
+- The \`old_string\` param must match existing file content, including indentation.
+- The \`old_string\` param must come from the actual file, not an outline.
+- The \`old_string\` section must not be empty.
+- Be minimal with replacements:
+  - For unique lines, include only those lines.
+  - For non-unique lines, include enough context to identify them, unless you're using \`replace_all\`
+- Do not escape quotes, newlines, or other characters.
+- If any of the provided \`old_string\` values aren't found in the file, no edits will be applied. The tool will fail and must be retried.`,
         inputSchema: {
           file_path: z.string().describe("The absolute path to the file to modify"),
           edits: z
@@ -771,7 +774,7 @@ export function replaceAndCalculateLocation(
   for (const edit of edits) {
     // Skip empty oldText
     if (edit.oldText === "") {
-      continue;
+      throw new Error(`The provided \`old_string\` is empty. No edits were applied.`);
     }
 
     if (edit.replaceAll) {
@@ -783,6 +786,11 @@ export function replaceAndCalculateLocation(
       while (true) {
         const index = currentContent.indexOf(edit.oldText, searchIndex);
         if (index === -1) {
+          if (searchIndex === 0) {
+            throw new Error(
+              `The provided \`old_string\` does not appear in the file: "${edit.oldText}". No edits were applied.`,
+            );
+          }
           break;
         }
 
@@ -804,7 +812,11 @@ export function replaceAndCalculateLocation(
     } else {
       // Replace first occurrence only
       const index = currentContent.indexOf(edit.oldText);
-      if (index !== -1) {
+      if (index === -1) {
+        throw new Error(
+          `The provided \`old_string\` does not appear in the file: "${edit.oldText}". No edits were applied.`,
+        );
+      } else {
         const marker = `${markerPrefix}${markerCounter++}__`;
         markers.push(marker);
         currentContent =

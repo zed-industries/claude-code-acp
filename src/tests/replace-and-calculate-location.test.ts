@@ -22,12 +22,9 @@ describe("replaceAndCalculateLocation", () => {
 
   it("should return empty line numbers array when no match found", () => {
     const content = "line 1\nline 2\nline 3";
-    const result = replaceAndCalculateLocation(content, [
-      { oldText: "notfound", newText: "replaced" },
-    ]);
-
-    expect(result.newContent).toBe(content);
-    expect(result.lineNumbers).toEqual([]);
+    expect(() => {
+      replaceAndCalculateLocation(content, [{ oldText: "notfound", newText: "replaced" }]);
+    }).toThrow('The provided `old_string` does not appear in the file: "notfound"');
   });
 
   it("should handle Windows line endings (CRLF)", () => {
@@ -89,35 +86,31 @@ describe("replaceAndCalculateLocation", () => {
   });
 
   it("should handle empty file content", () => {
-    const content = "";
-    const result = replaceAndCalculateLocation(content, [{ oldText: "text", newText: "replaced" }]);
-
-    expect(result.newContent).toBe("");
-    expect(result.lineNumbers).toEqual([]);
+    expect(() => {
+      replaceAndCalculateLocation("", [{ oldText: "text", newText: "replaced" }]);
+    }).toThrowError(
+      'The provided `old_string` does not appear in the file: "text". No edits were applied.',
+    );
   });
 
   it("should handle empty search text", () => {
     // Test with replaceAll false (default)
     const content1 = "line 1\nline 2\nline 3";
-    const result1 = replaceAndCalculateLocation(content1, [{ oldText: "", newText: "replaced" }]);
-    expect(result1.newContent).toBe(content1);
-    expect(result1.lineNumbers).toEqual([]);
+    expect(() => {
+      replaceAndCalculateLocation(content1, [{ oldText: "", newText: "replaced" }]);
+    }).toThrowError("The provided `old_string` is empty. No edits were applied.");
 
     // Test with replaceAll true on single line
     const content2 = "abc";
-    const result2 = replaceAndCalculateLocation(content2, [
-      { oldText: "", newText: "X", replaceAll: true },
-    ]);
-    expect(result2.newContent).toBe(content2);
-    expect(result2.lineNumbers).toEqual([]);
+    expect(() => {
+      replaceAndCalculateLocation(content2, [{ oldText: "", newText: "X", replaceAll: true }]);
+    }).toThrowError("The provided `old_string` is empty. No edits were applied.");
 
     // Test with replaceAll true on multiline content
     const content3 = "ab\ncd";
-    const result3 = replaceAndCalculateLocation(content3, [
-      { oldText: "", newText: "X", replaceAll: true },
-    ]);
-    expect(result3.newContent).toBe(content3);
-    expect(result3.lineNumbers).toEqual([]);
+    expect(() => {
+      replaceAndCalculateLocation(content3, [{ oldText: "", newText: "X", replaceAll: true }]);
+    }).toThrowError("The provided `old_string` is empty. No edits were applied.");
   });
 
   it("should handle single line content", () => {
