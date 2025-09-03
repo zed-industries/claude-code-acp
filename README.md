@@ -6,7 +6,7 @@ This tool implements an ACP agent by using the official [Claude Code SDK](https:
 
 - Context @-mentions
 - Images
-- Tool calls
+- Tool calls (with permission requests)
 - Following
 - Edit review
 - TODO lists
