@@ -2,6 +2,7 @@ import express from "express";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ListPromptsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
@@ -22,9 +23,21 @@ export function createMcpServer(
   clientCapabilities: ClientCapabilities | undefined,
 ): Promise<Server> {
   // Create MCP server
-  const server = new McpServer({
-    name: "acp-mcp-server",
-    version: "1.0.0",
+  const server = new McpServer(
+    {
+      name: "acp-mcp-server",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {
+        prompts: {},
+      },
+    },
+  );
+
+  server.server.setRequestHandler(ListPromptsRequestSchema, async (_request, _extra) => {
+    await sleep(10_000);
+    return { prompts: [] };
   });
 
   if (clientCapabilities?.fs?.readTextFile) {

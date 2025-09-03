@@ -31,7 +31,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
-import { nodeToWebReadable, nodeToWebWritable, Pushable, sleep, unreachable } from "./utils.js";
+import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
 import { createMcpServer } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
@@ -102,6 +102,13 @@ export class ClaudeAcpAgent implements Agent {
     };
   }
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
+    if (
+      fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
+      !fs.existsSync(path.resolve(os.homedir(), ".claude.json"))
+    ) {
+      throw RequestError.authRequired();
+    }
+
     const sessionId = uuidv7();
     const input = new Pushable<SDKUserMessage>();
 
@@ -171,10 +178,18 @@ export class ClaudeAcpAgent implements Agent {
       cancelled: false,
     };
 
-    const availableCommands = await availableSlashCommands(q);
+    getAvailableSlashCommands(q).then((availableCommands) => {
+      this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands,
+        },
+      });
+    });
+
     return {
       sessionId,
-      availableCommands,
     };
   }
 
@@ -277,7 +292,7 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
-async function availableSlashCommands(query: Query): Promise<AvailableCommand[]> {
+async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
     "add-dir",
     "agents", // Modal
@@ -313,22 +328,8 @@ async function availableSlashCommands(query: Query): Promise<AvailableCommand[]>
     "todos", // Escape Codes
     "vim", // Not needed
   ];
-
-  const commands = await Promise.race([
-    //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
-    (query as any).supportedCommands(),
-    sleep(10000).then(() => {
-      if (
-        fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
-        !fs.existsSync(path.resolve(os.homedir(), ".claude.json"))
-      ) {
-        throw RequestError.authRequired();
-      }
-      throw new Error(
-        "Failed to intialize Claude Code.\n\nThis may be caused by incorrect MCP server configuration, try disabling them.",
-      );
-    }),
-  ]);
+  //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
+  const commands = await (query as any).supportedCommands();
 
   return commands
     .map((command: { name: string; description: string; argumentHint: string }) => {
