@@ -16,7 +16,7 @@ import {
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
-import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
+// Removed SDK dependency - using direct command spawning
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -510,7 +510,7 @@ describe("tool conversions", () => {
   });
 
   it("should handle plan entries", () => {
-    const received: SDKAssistantMessage = {
+    const received: any = {
       type: "assistant",
       message: {
         id: "msg_017eNosJgww7F5qD4a8BcAcx",
