@@ -692,6 +692,11 @@ describe("tool conversions", () => {
       locations: [
         {
           path: "/Users/test/project/config.json",
+          line: 1,
+        },
+        {
+          path: "/Users/test/project/config.json",
+          line: 3,
         },
       ],
       title: "Edit /Users/test/project/config.json",
