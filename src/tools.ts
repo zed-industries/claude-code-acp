@@ -140,21 +140,21 @@ export function toolInfoFromToolUse(
       const path = input?.abs_path ?? input?.file_path;
       let oldText = input.old_string ?? null;
       let newText = input.new_string ?? "";
-      let line = null;
+      let affectedLines: number[] = [];
 
-      if (path && input.old_text) {
+      if (path && oldText) {
         try {
           const oldContent = cachedFileContent[path] || "";
           const newContent = replaceAndCalculateLocation(oldContent, [
             {
-              oldText: input.old_string,
-              newText: input.new_string,
+              oldText,
+              newText,
               replaceAll: false,
             },
           ]);
           oldText = oldContent;
           newText = newContent.newContent;
-          line = newContent.lineNumbers[0];
+          affectedLines = newContent.lineNumbers;
         } catch (e) {
           console.error(e);
         }
@@ -173,7 +173,11 @@ export function toolInfoFromToolUse(
                 },
               ]
             : [],
-        locations: path ? [{ path, line }] : [],
+        locations: path
+          ? affectedLines.length > 0
+            ? affectedLines.map((line) => ({ line, path }))
+            : [{ path }]
+          : [],
       };
     }
 
@@ -189,6 +193,7 @@ export function toolInfoFromToolUse(
       };
       let oldTextMulti = multiInput.edits.map((edit: any) => edit.old_string).join("\n");
       let newTextMulti = multiInput.edits.map((edit: any) => edit.new_string).join("\n");
+      let affectedLines: number[] = [];
       try {
         if (multiInput.edits && multiInput.file_path) {
           const oldContent =
@@ -204,6 +209,7 @@ export function toolInfoFromToolUse(
           );
           oldTextMulti = oldContent;
           newTextMulti = newContent.newContent;
+          affectedLines = newContent.lineNumbers;
         }
       } catch (e) {
         console.error(e);
@@ -221,7 +227,11 @@ export function toolInfoFromToolUse(
             newText: newTextMulti,
           },
         ],
-        locations: input?.file_path ? [{ path: input.file_path }] : [],
+        locations: input?.file_path
+          ? affectedLines.length > 0
+            ? affectedLines.map((line) => ({ line, path: input.file_path }))
+            : [{ path: input.file_path }]
+          : [],
       };
     }
     case "mcp__acp__write": {
