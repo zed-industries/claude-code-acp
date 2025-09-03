@@ -61,6 +61,8 @@ type Session = {
   cancelled: boolean;
   conversationHistory: ConversationMessage[];
   pendingPermissions: { [toolCallId: string]: boolean }; // Track granted permissions
+  mcpServerUrl: string; // Store ACP MCP server URL
+  userMcpServers: any[]; // Store user's MCP servers
 };
 
 type BackgroundTerminal =
@@ -147,8 +149,15 @@ export class ClaudeAcpAgent implements Agent {
 
     const server = await createMcpServer(this, sessionId, this.clientCapabilities);
     const address = server.address() as AddressInfo;
-    mcpEnvVars['MCP_ACP_URL'] = `http://127.0.0.1:${address.port}/mcp`;
-    mcpEnvVars['MCP_ACP_SESSION_ID'] = sessionId;
+    
+    // Configure the ACP MCP server for Claude CLI
+    const acpMcpConfig = {
+      type: "http",
+      url: `http://127.0.0.1:${address.port}/mcp`,
+      headers: {
+        "x-acp-proxy-session-id": sessionId
+      }
+    };
 
     this.sessions[sessionId] = {
       mcpEnvVars,
@@ -156,6 +165,8 @@ export class ClaudeAcpAgent implements Agent {
       cancelled: false,
       conversationHistory: [],
       pendingPermissions: {},
+      mcpServerUrl: `http://127.0.0.1:${address.port}/mcp`,
+      userMcpServers: params.mcpServers || [],
     };
 
     const availableCommands = await this.getAvailableCommands();
@@ -207,8 +218,56 @@ export class ClaudeAcpAgent implements Agent {
       '--input-format=stream-json',
       '--output-format=stream-json',
       '--verbose'
-      // Allow all tools but handle file operations via ACP to prevent conflicts
     ];
+
+    // Add allowed/disallowed tools based on client capabilities
+    const allowedTools = [];
+    const disallowedTools = [];
+    
+    if (this.clientCapabilities?.fs?.readTextFile) {
+      allowedTools.push("mcp__acp__read");
+      disallowedTools.push("Read");
+    }
+    if (this.clientCapabilities?.fs?.writeTextFile) {
+      allowedTools.push("mcp__acp__write");
+      disallowedTools.push("Write", "Edit", "MultiEdit", "NotebookEdit");
+    }
+    if (this.clientCapabilities?.terminal) {
+      allowedTools.push("mcp__acp__BashOutput", "mcp__acp__KillBash");
+      disallowedTools.push("Bash", "BashOutput", "KillBash");
+    }
+
+    if (allowedTools.length > 0) {
+      claudeArgs.push('--allowed-tools', allowedTools.join(','));
+    }
+    if (disallowedTools.length > 0) {
+      claudeArgs.push('--disallowed-tools', disallowedTools.join(','));
+    }
+
+    // Add MCP servers configuration  
+    const mcpServers: any = { 
+      acp: {
+        type: "http",
+        url: session.mcpServerUrl,
+        headers: {
+          "x-acp-proxy-session-id": params.sessionId
+        }
+      }
+    };
+    
+    // Also add any user-provided MCP servers from session creation
+    if (Array.isArray(session.userMcpServers)) {
+      for (const server of session.userMcpServers) {
+        mcpServers[server.name] = {
+          type: "stdio",
+          command: server.command,
+          args: server.args,
+          env: server.env ? Object.fromEntries(server.env.map((e: any) => [e.name, e.value])) : undefined
+        };
+      }
+    }
+    
+    claudeArgs.push('--mcp-config', JSON.stringify({ mcpServers }));
 
     // Prepare environment
     const claudeEnv = {
@@ -399,56 +458,6 @@ export class ClaudeAcpAgent implements Agent {
     ];
   }
 
-  private requiresPermission(toolName: string, input: any): boolean {
-    // Define which tools require user permission
-    const sensitiveTools = [
-      'Write',
-      'Edit', 
-      'MultiEdit',
-      'Bash',
-      'mcp__acp__write',
-      'mcp__acp__edit',
-      'mcp__acp__multi-edit',
-      'mcp__acp__Bash'
-    ];
-    return sensitiveTools.includes(toolName);
-  }
-
-  private createPermissionOptions(toolName: string, input: any): PermissionOption[] {
-    // Create appropriate permission options based on the tool
-    const baseOptions: PermissionOption[] = [
-      {
-        optionId: "allow_once",
-        name: "Allow once",
-        kind: "allow_once"
-      },
-      {
-        optionId: "reject_once", 
-        name: "Reject",
-        kind: "reject_once"
-      }
-    ];
-
-    // For file operations, add allow always option
-    if (['Write', 'Edit', 'MultiEdit', 'mcp__acp__write', 'mcp__acp__edit', 'mcp__acp__multi-edit'].includes(toolName)) {
-      baseOptions.splice(1, 0, {
-        optionId: "allow_always",
-        name: "Allow always for file operations", 
-        kind: "allow_always"
-      });
-    }
-
-    // For bash operations, add allow always option
-    if (['Bash', 'mcp__acp__Bash'].includes(toolName)) {
-      baseOptions.splice(1, 0, {
-        optionId: "allow_always",
-        name: "Allow always for terminal commands",
-        kind: "allow_always" 
-      });
-    }
-
-    return baseOptions;
-  }
 
   private async toAcpNotificationsWithPermissions(
     message: any,
@@ -507,113 +516,15 @@ export class ClaudeAcpAgent implements Agent {
               entries: planEntries(chunk.input),
             };
           } else {
-            // Check if this tool requires permission
-            const requiresPermission = this.requiresPermission(chunk.name, chunk.input);
-            console.error(`Tool ${chunk.name} requires permission: ${requiresPermission}`);
-            
-            // First, send the tool call notification
-            const toolCallUpdate = {
+            // With --disallowed-tools, Claude will use ACP tool variants (mcp__acp__*) 
+            // These are handled by the MCP server and don't need special interception
+            update = {
               toolCallId: chunk.id,
               sessionUpdate: "tool_call" as const,
               rawInput: chunk.input,
               status: "pending" as const,
               ...toolInfoFromToolUse(chunk, fileContentCache),
             };
-            output.push({ sessionId, update: toolCallUpdate });
-
-            if (requiresPermission) {
-              // Request permission from the client
-              const permissionOptions = this.createPermissionOptions(chunk.name, chunk.input);
-              
-              console.error(`Requesting permission for tool ${chunk.name} with ${permissionOptions.length} options`);
-              
-              try {
-                const permissionRequest: RequestPermissionRequest = {
-                  sessionId,
-                  options: permissionOptions,
-                  toolCall: toolCallUpdate
-                };
-
-                const permissionResponse = await this.client.requestPermission(permissionRequest);
-                console.error(`Permission response:`, JSON.stringify(permissionResponse, null, 2));
-
-                if (permissionResponse.outcome.outcome === "cancelled") {
-                  // Permission was cancelled - mark tool as failed
-                  const cancelUpdate = {
-                    toolCallId: chunk.id,
-                    sessionUpdate: "tool_call_update" as const,
-                    status: "failed" as const,
-                    content: [{
-                      type: "content" as const,
-                      content: {
-                        type: "text" as const,
-                        text: "Permission denied by user"
-                      }
-                    }]
-                  };
-                  output.push({ sessionId, update: cancelUpdate });
-                } else {
-                  // Permission was granted - execute the tool via ACP client
-                  const optionId = (permissionResponse.outcome as any).optionId;
-                  session.pendingPermissions[chunk.id] = true;
-                  console.error(`Permission granted for tool ${chunk.name} with option ${optionId}`);
-                  
-                  // Execute the tool operation via ACP client methods
-                  try {
-                    const toolResult = await this.executeToolViaAcp(chunk, sessionId);
-                    
-                    // Send successful tool result
-                    const successUpdate = {
-                      toolCallId: chunk.id,
-                      sessionUpdate: "tool_call_update" as const,
-                      status: "completed" as const,
-                      content: [{
-                        type: "content" as const,
-                        content: {
-                          type: "text" as const,
-                          text: toolResult
-                        }
-                      }]
-                    };
-                    output.push({ sessionId, update: successUpdate });
-                  } catch (toolError) {
-                    console.error(`Failed to execute tool via ACP:`, toolError);
-                    // Send failed tool result
-                    const failureUpdate = {
-                      toolCallId: chunk.id,
-                      sessionUpdate: "tool_call_update" as const,
-                      status: "failed" as const,
-                      content: [{
-                        type: "content" as const,
-                        content: {
-                          type: "text" as const,
-                          text: `Tool execution failed: ${toolError}`
-                        }
-                      }]
-                    };
-                    output.push({ sessionId, update: failureUpdate });
-                  }
-                }
-              } catch (error) {
-                console.error(`Failed to request permission:`, error);
-                // If permission request fails, mark tool as failed
-                const errorUpdate = {
-                  toolCallId: chunk.id,
-                  sessionUpdate: "tool_call_update" as const,
-                  status: "failed" as const,
-                  content: [{
-                    type: "content" as const,
-                    content: {
-                      type: "text" as const,
-                      text: `Permission request failed: ${error}`
-                    }
-                  }]
-                };
-                output.push({ sessionId, update: errorUpdate });
-              }
-            }
-            // Don't add the tool call update here since we already added it above
-            continue;
           }
           break;
 
@@ -627,22 +538,8 @@ export class ClaudeAcpAgent implements Agent {
           }
 
           if (toolUse.name !== "TodoWrite") {
-            // Check if this tool was already handled via ACP
-            if (session.pendingPermissions[chunk.tool_use_id]) {
-              console.error(`Ignoring Claude's tool result for ${chunk.tool_use_id} - already handled via ACP`);
-              // Don't send any update - we already sent the success notification
-              break;
-            }
-            
-            // Check for file modification conflicts and handle them
-            if (chunk.is_error && 
-                typeof chunk.content === 'string' && 
-                chunk.content.includes('File has been modified since read')) {
-              console.error(`File modification conflict detected for ${chunk.tool_use_id} - Claude couldn't execute after ACP`);
-              // Don't send a failure update - we already handled this via ACP
-              break;
-            }
-            
+            // With --disallowed-tools, tool results are handled naturally by Claude
+            // No need for special conflict resolution
             update = {
               toolCallId: chunk.tool_use_id,
               sessionUpdate: "tool_call_update",
@@ -665,123 +562,6 @@ export class ClaudeAcpAgent implements Agent {
     return output;
   }
 
-  private async executeToolViaAcp(toolUse: any, sessionId: string): Promise<string> {
-    const { name, input } = toolUse;
-    
-    switch (name) {
-      case 'Write':
-      case 'mcp__acp__write': {
-        const filePath = input.file_path || input.abs_path;
-        const content = input.content;
-        
-        if (!filePath || !content) {
-          throw new Error('Missing file_path or content for Write operation');
-        }
-        
-        console.error(`Executing Write via ACP: ${filePath}`);
-        await this.client.writeTextFile({
-          path: filePath,
-          content: content,
-          sessionId: sessionId
-        });
-        
-        // Return the content that was written, mimicking Claude's Write tool behavior
-        return content;
-      }
-      
-      case 'Edit':
-      case 'mcp__acp__edit': {
-        const filePath = input.file_path || input.abs_path;
-        const oldString = input.old_string;
-        const newString = input.new_string;
-        
-        if (!filePath || oldString === undefined || newString === undefined) {
-          throw new Error('Missing required parameters for Edit operation');
-        }
-        
-        console.error(`Executing Edit via ACP: ${filePath}`);
-        
-        // First read the current file content
-        let currentContent: string;
-        try {
-          const readResult = await this.client.readTextFile({
-            path: filePath,
-            sessionId: sessionId
-          });
-          currentContent = readResult.content;
-        } catch (error) {
-          throw new Error(`Failed to read file for editing: ${error}`);
-        }
-        
-        // Perform the replacement
-        const updatedContent = input.replace_all 
-          ? currentContent.split(oldString).join(newString)
-          : currentContent.replace(oldString, newString);
-        
-        if (updatedContent === currentContent) {
-          throw new Error(`String "${oldString}" not found in file`);
-        }
-        
-        // Write the updated content back
-        await this.client.writeTextFile({
-          path: filePath,
-          content: updatedContent,
-          sessionId: sessionId
-        });
-        
-        // Return the updated content, mimicking Claude's Edit tool behavior
-        return updatedContent;
-      }
-      
-      case 'MultiEdit':
-      case 'mcp__acp__multi-edit': {
-        const filePath = input.file_path;
-        const edits = input.edits;
-        
-        if (!filePath || !Array.isArray(edits)) {
-          throw new Error('Missing file_path or edits array for MultiEdit operation');
-        }
-        
-        console.error(`Executing MultiEdit via ACP: ${filePath} (${edits.length} edits)`);
-        
-        // Read the current file content
-        let currentContent: string;
-        try {
-          const readResult = await this.client.readTextFile({
-            path: filePath,
-            sessionId: sessionId
-          });
-          currentContent = readResult.content;
-        } catch (error) {
-          throw new Error(`Failed to read file for multi-editing: ${error}`);
-        }
-        
-        // Apply each edit sequentially
-        let updatedContent = currentContent;
-        for (const edit of edits) {
-          const { old_string, new_string, replace_all } = edit;
-          if (replace_all) {
-            updatedContent = updatedContent.split(old_string).join(new_string);
-          } else {
-            updatedContent = updatedContent.replace(old_string, new_string);
-          }
-        }
-        
-        // Write the updated content back
-        await this.client.writeTextFile({
-          path: filePath,
-          content: updatedContent,
-          sessionId: sessionId
-        });
-        
-        // Return the final content after all edits, mimicking Claude's MultiEdit tool behavior
-        return updatedContent;
-      }
-      
-      default:
-        throw new Error(`Unsupported tool for ACP execution: ${name}`);
-    }
-  }
 
   private async handleClaudeMessage(
     message: any,
