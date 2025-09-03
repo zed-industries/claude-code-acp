@@ -27,18 +27,8 @@ export function createMcpServer(
     {
       name: "acp-mcp-server",
       version: "1.0.0",
-    },
-    {
-      capabilities: {
-        prompts: {},
-      },
-    },
+    }
   );
-
-  server.server.setRequestHandler(ListPromptsRequestSchema, async (_request, _extra) => {
-    await sleep(10_000);
-    return { prompts: [] };
-  });
 
   if (clientCapabilities?.fs?.readTextFile) {
     server.registerTool(
