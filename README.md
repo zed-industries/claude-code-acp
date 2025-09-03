@@ -26,7 +26,7 @@ To use Claude Code, open the Agent Panel and click "New Claude Code Thread" from
 
 https://github.com/user-attachments/assets/ddce66c7-79ac-47a3-ad59-4a6a3ca74903
 
-[Read the docs](https://zed.dev/docs/ai/external-agents) on External Agent support.
+Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) support.
 
 ### Other clients
 
