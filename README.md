@@ -1,5 +1,7 @@
 # ACP adapter for Claude Code
 
+[![npm](https://img.shields.io/npm/v/%40zed-industries%2Fclaude-code-acp)](https://www.npmjs.com/package/@zed-industries/claude-code-acp) 
+
 Use [Claude Code](https://www.anthropic.com/claude-code) from [ACP-compatible](https://agentclientprotocol.com) clients such as [Zed](https://zed.dev)!
 
 This tool implements an ACP agent by using the official [Claude Code SDK](https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-overview), supporting:
@@ -15,6 +17,7 @@ This tool implements an ACP agent by using the official [Claude Code SDK](https:
 - Client MCP servers
 
 Learn more about the [Agent Client Protocol](https://agentclientprotocol.com/).
+
 
 ## How to use
 
