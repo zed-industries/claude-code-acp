@@ -22,12 +22,10 @@ export function createMcpServer(
   clientCapabilities: ClientCapabilities | undefined,
 ): Promise<Server> {
   // Create MCP server
-  const server = new McpServer(
-    {
-      name: "acp-mcp-server",
-      version: "1.0.0",
-    }
-  );
+  const server = new McpServer({
+    name: "acp-mcp-server",
+    version: "1.0.0",
+  });
 
   if (clientCapabilities?.fs?.readTextFile) {
     server.registerTool(
