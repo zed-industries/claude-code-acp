@@ -233,7 +233,7 @@ export class ClaudeAcpAgent implements Agent {
       disallowedTools.push("Write", "Edit", "MultiEdit", "NotebookEdit");
     }
     if (this.clientCapabilities?.terminal) {
-      allowedTools.push("mcp__acp__BashOutput", "mcp__acp__KillBash");
+      allowedTools.push("mcp__acp__Bash", "mcp__acp__BashOutput", "mcp__acp__KillBash");
       disallowedTools.push("Bash", "BashOutput", "KillBash");
     }
 
