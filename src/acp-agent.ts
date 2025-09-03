@@ -324,7 +324,9 @@ async function availableSlashCommands(query: Query): Promise<AvailableCommand[]>
       ) {
         throw RequestError.authRequired();
       }
-      throw new Error("can't load supported slash commands");
+      throw new Error(
+        "Failed to intialize Claude Code.\n\nThis may be caused by incorrect MCP server configuration, try disabling them.",
+      );
     }),
   ]);
 
