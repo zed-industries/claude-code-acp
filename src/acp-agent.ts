@@ -206,9 +206,8 @@ export class ClaudeAcpAgent implements Agent {
       '--print',
       '--input-format=stream-json',
       '--output-format=stream-json',
-      '--verbose',
-      // Use acceptEdits mode to handle permissions through ACP rather than Claude's internal system
-      '--permission-mode=acceptEdits'
+      '--verbose'
+      // Allow all tools but handle file operations via ACP to prevent conflicts
     ];
 
     // Prepare environment
@@ -554,12 +553,46 @@ export class ClaudeAcpAgent implements Agent {
                   };
                   output.push({ sessionId, update: cancelUpdate });
                 } else {
-                  // Permission was granted - store it
+                  // Permission was granted - execute the tool via ACP client
                   const optionId = (permissionResponse.outcome as any).optionId;
                   session.pendingPermissions[chunk.id] = true;
                   console.error(`Permission granted for tool ${chunk.name} with option ${optionId}`);
                   
-                  // The tool execution will continue normally through Claude's process
+                  // Execute the tool operation via ACP client methods
+                  try {
+                    const toolResult = await this.executeToolViaAcp(chunk, sessionId);
+                    
+                    // Send successful tool result
+                    const successUpdate = {
+                      toolCallId: chunk.id,
+                      sessionUpdate: "tool_call_update" as const,
+                      status: "completed" as const,
+                      content: [{
+                        type: "content" as const,
+                        content: {
+                          type: "text" as const,
+                          text: toolResult
+                        }
+                      }]
+                    };
+                    output.push({ sessionId, update: successUpdate });
+                  } catch (toolError) {
+                    console.error(`Failed to execute tool via ACP:`, toolError);
+                    // Send failed tool result
+                    const failureUpdate = {
+                      toolCallId: chunk.id,
+                      sessionUpdate: "tool_call_update" as const,
+                      status: "failed" as const,
+                      content: [{
+                        type: "content" as const,
+                        content: {
+                          type: "text" as const,
+                          text: `Tool execution failed: ${toolError}`
+                        }
+                      }]
+                    };
+                    output.push({ sessionId, update: failureUpdate });
+                  }
                 }
               } catch (error) {
                 console.error(`Failed to request permission:`, error);
@@ -594,6 +627,22 @@ export class ClaudeAcpAgent implements Agent {
           }
 
           if (toolUse.name !== "TodoWrite") {
+            // Check if this tool was already handled via ACP
+            if (session.pendingPermissions[chunk.tool_use_id]) {
+              console.error(`Ignoring Claude's tool result for ${chunk.tool_use_id} - already handled via ACP`);
+              // Don't send any update - we already sent the success notification
+              break;
+            }
+            
+            // Check for file modification conflicts and handle them
+            if (chunk.is_error && 
+                typeof chunk.content === 'string' && 
+                chunk.content.includes('File has been modified since read')) {
+              console.error(`File modification conflict detected for ${chunk.tool_use_id} - Claude couldn't execute after ACP`);
+              // Don't send a failure update - we already handled this via ACP
+              break;
+            }
+            
             update = {
               toolCallId: chunk.tool_use_id,
               sessionUpdate: "tool_call_update",
@@ -614,6 +663,124 @@ export class ClaudeAcpAgent implements Agent {
     }
 
     return output;
+  }
+
+  private async executeToolViaAcp(toolUse: any, sessionId: string): Promise<string> {
+    const { name, input } = toolUse;
+    
+    switch (name) {
+      case 'Write':
+      case 'mcp__acp__write': {
+        const filePath = input.file_path || input.abs_path;
+        const content = input.content;
+        
+        if (!filePath || !content) {
+          throw new Error('Missing file_path or content for Write operation');
+        }
+        
+        console.error(`Executing Write via ACP: ${filePath}`);
+        await this.client.writeTextFile({
+          path: filePath,
+          content: content,
+          sessionId: sessionId
+        });
+        
+        // Return the content that was written, mimicking Claude's Write tool behavior
+        return content;
+      }
+      
+      case 'Edit':
+      case 'mcp__acp__edit': {
+        const filePath = input.file_path || input.abs_path;
+        const oldString = input.old_string;
+        const newString = input.new_string;
+        
+        if (!filePath || oldString === undefined || newString === undefined) {
+          throw new Error('Missing required parameters for Edit operation');
+        }
+        
+        console.error(`Executing Edit via ACP: ${filePath}`);
+        
+        // First read the current file content
+        let currentContent: string;
+        try {
+          const readResult = await this.client.readTextFile({
+            path: filePath,
+            sessionId: sessionId
+          });
+          currentContent = readResult.content;
+        } catch (error) {
+          throw new Error(`Failed to read file for editing: ${error}`);
+        }
+        
+        // Perform the replacement
+        const updatedContent = input.replace_all 
+          ? currentContent.split(oldString).join(newString)
+          : currentContent.replace(oldString, newString);
+        
+        if (updatedContent === currentContent) {
+          throw new Error(`String "${oldString}" not found in file`);
+        }
+        
+        // Write the updated content back
+        await this.client.writeTextFile({
+          path: filePath,
+          content: updatedContent,
+          sessionId: sessionId
+        });
+        
+        // Return the updated content, mimicking Claude's Edit tool behavior
+        return updatedContent;
+      }
+      
+      case 'MultiEdit':
+      case 'mcp__acp__multi-edit': {
+        const filePath = input.file_path;
+        const edits = input.edits;
+        
+        if (!filePath || !Array.isArray(edits)) {
+          throw new Error('Missing file_path or edits array for MultiEdit operation');
+        }
+        
+        console.error(`Executing MultiEdit via ACP: ${filePath} (${edits.length} edits)`);
+        
+        // Read the current file content
+        let currentContent: string;
+        try {
+          const readResult = await this.client.readTextFile({
+            path: filePath,
+            sessionId: sessionId
+          });
+          currentContent = readResult.content;
+        } catch (error) {
+          throw new Error(`Failed to read file for multi-editing: ${error}`);
+        }
+        
+        // Apply each edit sequentially
+        let updatedContent = currentContent;
+        for (const edit of edits) {
+          const { old_string, new_string, replace_all } = edit;
+          if (replace_all) {
+            updatedContent = updatedContent.split(old_string).join(new_string);
+          } else {
+            updatedContent = updatedContent.replace(old_string, new_string);
+          }
+        }
+        
+        // Write the updated content back
+        await this.client.writeTextFile({
+          path: filePath,
+          content: updatedContent,
+          sessionId: sessionId
+        });
+        
+        // Return the final content after all edits, mimicking Claude's MultiEdit tool behavior
+        return updatedContent;
+      }
+      
+      default:
+        throw new Error(`Unsupported tool for ACP execution: ${name}`);
+    }
   }
 
   private async handleClaudeMessage(
