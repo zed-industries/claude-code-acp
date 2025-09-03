@@ -32,6 +32,8 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 
 ### Other clients
 
+- Neovim via [CodeCompanion.nvim](https://codecompanion.olimorris.dev/configuration/adapters#setup-claude-code-via-acp)
+
 Setup instructions for other clients are coming soon. Feel free to [submit a PR](https://github.com/zed-industries/claude-code-acp/pulls) to add yours!
 
 #### Installation
