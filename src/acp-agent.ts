@@ -314,7 +314,7 @@ async function availableSlashCommands(query: Query): Promise<AvailableCommand[]>
   const commands = await Promise.race([
     //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
     (query as any).supportedCommands(),
-    sleep(5000).then(() => {
+    sleep(10000).then(() => {
       if (
         fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
         !fs.existsSync(path.resolve(os.homedir(), ".claude.json"))

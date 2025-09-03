@@ -7,6 +7,10 @@ console.info = console.error;
 console.warn = console.error;
 console.debug = console.error;
 
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
 import { runAcp as runAcp } from "./acp-agent.js";
 runAcp();
 
