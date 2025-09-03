@@ -262,11 +262,6 @@ File editing instructions:
             .min(1)
             .describe("Array of edit operations to perform sequentially on the file"),
         },
-        outputSchema: {
-          affected_line_numbers: z
-            .array(z.number())
-            .describe("The line numbers of the affected lines."),
-        },
         annotations: {
           title: "Multi Edit file",
           readOnlyHint: false,
