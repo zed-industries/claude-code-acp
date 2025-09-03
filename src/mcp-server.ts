@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
+import * as diff from "diff";
 
 import { sleep, unreachable } from "./utils.js";
 
@@ -200,13 +201,15 @@ File editing instructions:
           path: input.abs_path,
         });
 
-        const { newContent, lineNumbers } = replaceAndCalculateLocation(content, [
+        const { newContent } = replaceAndCalculateLocation(content, [
           {
             oldText: input.old_string,
             newText: input.new_string,
             replaceAll: false,
           },
         ]);
+
+        const patch = diff.createPatch(input.abs_path, content, newContent);
 
         await agent.writeTextFile({
           sessionId,
@@ -218,7 +221,7 @@ File editing instructions:
           content: [
             {
               type: "text",
-              text: JSON.stringify({ lineNumbers }),
+              text: patch,
             },
           ],
         };
@@ -259,6 +262,11 @@ File editing instructions:
             .min(1)
             .describe("Array of edit operations to perform sequentially on the file"),
         },
+        outputSchema: {
+          affected_line_numbers: z
+            .array(z.number())
+            .describe("The line numbers of the affected lines."),
+        },
         annotations: {
           title: "Multi Edit file",
           readOnlyHint: false,
@@ -285,7 +293,7 @@ File editing instructions:
           path: input.file_path,
         });
 
-        const { newContent, lineNumbers } = replaceAndCalculateLocation(
+        const { newContent } = replaceAndCalculateLocation(
           content,
           input.edits.map((edit) => ({
             oldText: edit.old_string,
@@ -293,6 +301,8 @@ File editing instructions:
             replaceAll: edit.replace_all ?? false,
           })),
         );
+
+        const patch = diff.createPatch(input.file_path, content, newContent);
 
         await agent.writeTextFile({
           sessionId,
@@ -304,7 +314,7 @@ File editing instructions:
           content: [
             {
               type: "text",
-              text: JSON.stringify({ lineNumbers }),
+              text: patch,
             },
           ],
         };
@@ -774,7 +784,7 @@ export function replaceAndCalculateLocation(
   for (const edit of edits) {
     // Skip empty oldText
     if (edit.oldText === "") {
-      throw new Error(`The provided \`old_string\` is empty. No edits were applied.`);
+      throw new Error(`The provided \`old_string\` is empty.\n\nNo edits were applied.`);
     }
 
     if (edit.replaceAll) {
@@ -788,7 +798,7 @@ export function replaceAndCalculateLocation(
         if (index === -1) {
           if (searchIndex === 0) {
             throw new Error(
-              `The provided \`old_string\` does not appear in the file: "${edit.oldText}". No edits were applied.`,
+              `The provided \`old_string\` does not appear in the file: "${edit.oldText}".\n\nNo edits were applied.`,
             );
           }
           break;
@@ -814,7 +824,7 @@ export function replaceAndCalculateLocation(
       const index = currentContent.indexOf(edit.oldText);
       if (index === -1) {
         throw new Error(
-          `The provided \`old_string\` does not appear in the file: "${edit.oldText}". No edits were applied.`,
+          `The provided \`old_string\` does not appear in the file: "${edit.oldText}".\n\nNo edits were applied.`,
         );
       } else {
         const marker = `${markerPrefix}${markerCounter++}__`;

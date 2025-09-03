@@ -638,36 +638,6 @@ describe("tool conversions", () => {
     ]);
   });
 
-  it("should extract locations from edit tool results", () => {
-    const toolUse = {
-      type: "tool_use",
-      id: "toolu_01ABC123",
-      name: "edit",
-      input: {
-        abs_path: "/Users/test/project/example.txt",
-        old_string: "old content",
-        new_string: "new content",
-      },
-    };
-
-    const toolResult = {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ lineNumbers: [5, 10, 15] }),
-        },
-      ],
-    };
-
-    const update = toolUpdateFromToolResult(toolResult, toolUse);
-
-    expect(update.locations).toEqual([
-      { path: "/Users/test/project/example.txt", line: 5 },
-      { path: "/Users/test/project/example.txt", line: 10 },
-      { path: "/Users/test/project/example.txt", line: 15 },
-    ]);
-  });
-
   it("should show full diff for multi edit tool", () => {
     const toolUse = {
       type: "tool_use",
@@ -728,104 +698,11 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should extract locations from multi-edit tool results", () => {
-    const toolUse = {
-      type: "tool_use",
-      id: "toolu_01DEF456",
-      name: "multi-edit",
-      input: {
-        file_path: "/Users/test/project/config.json",
-        edits: [
-          {
-            old_string: "version: 1.0",
-            new_string: "version: 2.0",
-            replace_all: false,
-          },
-          {
-            old_string: "enabled: false",
-            new_string: "enabled: true",
-            replace_all: true,
-          },
-        ],
-      },
-    };
-
-    const toolResult = {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ lineNumbers: [2, 8, 12, 20] }),
-        },
-      ],
-    };
-
-    const update = toolUpdateFromToolResult(toolResult, toolUse);
-
-    expect(update.locations).toEqual([
-      { path: "/Users/test/project/config.json", line: 2 },
-      { path: "/Users/test/project/config.json", line: 8 },
-      { path: "/Users/test/project/config.json", line: 12 },
-      { path: "/Users/test/project/config.json", line: 20 },
-    ]);
-  });
-
-  it("should handle mcp__acp__edit tool results", () => {
-    const toolUse = {
-      type: "tool_use",
-      id: "toolu_01GHI789",
-      name: "mcp__acp__edit",
-      input: {
-        abs_path: "/Users/test/project/main.py",
-        old_string: "def hello():",
-        new_string: "def hello_world():",
-      },
-    };
-
-    const toolResult = {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ lineNumbers: [42] }),
-        },
-      ],
-    };
-
-    const update = toolUpdateFromToolResult(toolResult, toolUse);
-
-    expect(update.locations).toEqual([{ path: "/Users/test/project/main.py", line: 42 }]);
-  });
-
-  it("should handle empty locations from edit tools", () => {
-    const toolUse = {
-      type: "tool_use",
-      id: "toolu_01JKL012",
-      name: "edit",
-      input: {
-        abs_path: "/Users/test/project/notfound.txt",
-        old_string: "nonexistent",
-        new_string: "replacement",
-      },
-    };
-
-    const toolResult = {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({ lineNumbers: [] }),
-        },
-      ],
-    };
-
-    const update = toolUpdateFromToolResult(toolResult, toolUse);
-
-    expect(update.locations).toEqual([]);
-  });
-
-  it("should handle malformed tool results gracefully", () => {
+  it("should return empty update for successful edit result", () => {
     const toolUse = {
       type: "tool_use",
       id: "toolu_01MNO345",
-      name: "edit",
+      name: "mcp__acp__edit",
       input: {
         abs_path: "/Users/test/project/test.txt",
         old_string: "old",
@@ -840,12 +717,49 @@ describe("tool conversions", () => {
           text: "not valid json",
         },
       ],
+      tool_use_id: "test",
+      is_error: false,
+      type: "tool_result" as const,
     };
 
     const update = toolUpdateFromToolResult(toolResult, toolUse);
 
     // Should return empty object when parsing fails
     expect(update).toEqual({});
+  });
+
+  it("should return content update for edit failure", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "mcp__acp__edit",
+      input: {
+        abs_path: "/Users/test/project/test.txt",
+        old_string: "old",
+        new_string: "new",
+      },
+    };
+
+    const toolResult = {
+      content: [
+        {
+          type: "text",
+          text: "Failed to find `old_string`",
+        },
+      ],
+      tool_use_id: "test",
+      is_error: true,
+      type: "tool_result" as const,
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    // Should return empty object when parsing fails
+    expect(update).toEqual({
+      content: [
+        { content: { type: "text", text: "Failed to find `old_string`" }, type: "content" },
+      ],
+    });
   });
 });
 

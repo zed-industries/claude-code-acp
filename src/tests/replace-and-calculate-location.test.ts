@@ -89,7 +89,7 @@ describe("replaceAndCalculateLocation", () => {
     expect(() => {
       replaceAndCalculateLocation("", [{ oldText: "text", newText: "replaced" }]);
     }).toThrowError(
-      'The provided `old_string` does not appear in the file: "text". No edits were applied.',
+      'The provided `old_string` does not appear in the file: "text".\n\nNo edits were applied.',
     );
   });
 
@@ -98,19 +98,19 @@ describe("replaceAndCalculateLocation", () => {
     const content1 = "line 1\nline 2\nline 3";
     expect(() => {
       replaceAndCalculateLocation(content1, [{ oldText: "", newText: "replaced" }]);
-    }).toThrowError("The provided `old_string` is empty. No edits were applied.");
+    }).toThrowError("The provided `old_string` is empty.\n\nNo edits were applied.");
 
     // Test with replaceAll true on single line
     const content2 = "abc";
     expect(() => {
       replaceAndCalculateLocation(content2, [{ oldText: "", newText: "X", replaceAll: true }]);
-    }).toThrowError("The provided `old_string` is empty. No edits were applied.");
+    }).toThrowError("The provided `old_string` is empty.\n\nNo edits were applied.");
 
     // Test with replaceAll true on multiline content
     const content3 = "ab\ncd";
     expect(() => {
       replaceAndCalculateLocation(content3, [{ oldText: "", newText: "X", replaceAll: true }]);
-    }).toThrowError("The provided `old_string` is empty. No edits were applied.");
+    }).toThrowError("The provided `old_string` is empty.\n\nNo edits were applied.");
   });
 
   it("should handle single line content", () => {
