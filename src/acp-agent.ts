@@ -90,7 +90,7 @@ export class ClaudeAcpAgent implements Agent {
       authMethods: [
         {
           description: "Run `claude /login` in the terminal",
-          name: "Login with Claude CLI",
+          name: "Log in with Claude Code",
           id: "claude-login",
         },
         {
