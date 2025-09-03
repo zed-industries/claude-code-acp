@@ -9,11 +9,14 @@ import {
   InitializeResponse,
   NewSessionRequest,
   NewSessionResponse,
+  PermissionOption,
   PromptRequest,
   PromptResponse,
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
   TerminalHandle,
   TerminalOutputResponse,
   WriteTextFileRequest,
@@ -57,6 +60,7 @@ type Session = {
   cwd?: string;
   cancelled: boolean;
   conversationHistory: ConversationMessage[];
+  pendingPermissions: { [toolCallId: string]: boolean }; // Track granted permissions
 };
 
 type BackgroundTerminal =
@@ -151,6 +155,7 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       cancelled: false,
       conversationHistory: [],
+      pendingPermissions: {},
     };
 
     const availableCommands = await this.getAvailableCommands();
@@ -201,7 +206,9 @@ export class ClaudeAcpAgent implements Agent {
       '--print',
       '--input-format=stream-json',
       '--output-format=stream-json',
-      '--verbose'
+      '--verbose',
+      // Use acceptEdits mode to handle permissions through ACP rather than Claude's internal system
+      '--permission-mode=acceptEdits'
     ];
 
     // Prepare environment
@@ -393,6 +400,221 @@ export class ClaudeAcpAgent implements Agent {
     ];
   }
 
+  private requiresPermission(toolName: string, input: any): boolean {
+    // Define which tools require user permission
+    const sensitiveTools = [
+      'Write',
+      'Edit', 
+      'MultiEdit',
+      'Bash',
+      'mcp__acp__write',
+      'mcp__acp__edit',
+      'mcp__acp__multi-edit',
+      'mcp__acp__Bash'
+    ];
+    return sensitiveTools.includes(toolName);
+  }
+
+  private createPermissionOptions(toolName: string, input: any): PermissionOption[] {
+    // Create appropriate permission options based on the tool
+    const baseOptions: PermissionOption[] = [
+      {
+        optionId: "allow_once",
+        name: "Allow once",
+        kind: "allow_once"
+      },
+      {
+        optionId: "reject_once", 
+        name: "Reject",
+        kind: "reject_once"
+      }
+    ];
+
+    // For file operations, add allow always option
+    if (['Write', 'Edit', 'MultiEdit', 'mcp__acp__write', 'mcp__acp__edit', 'mcp__acp__multi-edit'].includes(toolName)) {
+      baseOptions.splice(1, 0, {
+        optionId: "allow_always",
+        name: "Allow always for file operations", 
+        kind: "allow_always"
+      });
+    }
+
+    // For bash operations, add allow always option
+    if (['Bash', 'mcp__acp__Bash'].includes(toolName)) {
+      baseOptions.splice(1, 0, {
+        optionId: "allow_always",
+        name: "Allow always for terminal commands",
+        kind: "allow_always" 
+      });
+    }
+
+    return baseOptions;
+  }
+
+  private async toAcpNotificationsWithPermissions(
+    message: any,
+    sessionId: string, 
+    toolUseCache: ToolUseCache,
+    fileContentCache: { [key: string]: string },
+  ): Promise<SessionNotification[]> {
+    console.error(`toAcpNotificationsWithPermissions: Processing message`);
+    const chunks = message.message.content as ContentChunk[];
+    const output: SessionNotification[] = [];
+    const session = this.sessions[sessionId];
+
+    if (!session) {
+      throw new Error("Session not found");
+    }
+
+    for (const chunk of chunks) {
+      console.error(`toAcpNotificationsWithPermissions: Processing chunk:`, JSON.stringify(chunk, null, 2));
+      let update: SessionNotification["update"] | null = null;
+      
+      switch (chunk.type) {
+        case "text":
+          update = {
+            sessionUpdate: "agent_message_chunk",
+            content: {
+              type: "text",
+              text: chunk.text,
+            },
+          };
+          break;
+        case "image":
+          update = {
+            sessionUpdate: "agent_message_chunk",
+            content: {
+              type: "image",
+              data: chunk.source.type === "base64" ? chunk.source.data : "",
+              mimeType: chunk.source.type === "base64" ? chunk.source.media_type : "",
+              uri: chunk.source.type === "url" ? chunk.source.url : undefined,
+            },
+          };
+          break;
+        case "thinking":
+          update = {
+            sessionUpdate: "agent_thought_chunk",
+            content: {
+              type: "text",
+              text: chunk.thinking,
+            },
+          };
+          break;
+        case "tool_use":
+          toolUseCache[chunk.id] = chunk;
+          if (chunk.name === "TodoWrite") {
+            update = {
+              sessionUpdate: "plan",
+              entries: planEntries(chunk.input),
+            };
+          } else {
+            // Check if this tool requires permission
+            const requiresPermission = this.requiresPermission(chunk.name, chunk.input);
+            console.error(`Tool ${chunk.name} requires permission: ${requiresPermission}`);
+            
+            // First, send the tool call notification
+            const toolCallUpdate = {
+              toolCallId: chunk.id,
+              sessionUpdate: "tool_call" as const,
+              rawInput: chunk.input,
+              status: "pending" as const,
+              ...toolInfoFromToolUse(chunk, fileContentCache),
+            };
+            output.push({ sessionId, update: toolCallUpdate });
+
+            if (requiresPermission) {
+              // Request permission from the client
+              const permissionOptions = this.createPermissionOptions(chunk.name, chunk.input);
+              
+              console.error(`Requesting permission for tool ${chunk.name} with ${permissionOptions.length} options`);
+              
+              try {
+                const permissionRequest: RequestPermissionRequest = {
+                  sessionId,
+                  options: permissionOptions,
+                  toolCall: toolCallUpdate
+                };
+
+                const permissionResponse = await this.client.requestPermission(permissionRequest);
+                console.error(`Permission response:`, JSON.stringify(permissionResponse, null, 2));
+
+                if (permissionResponse.outcome.outcome === "cancelled") {
+                  // Permission was cancelled - mark tool as failed
+                  const cancelUpdate = {
+                    toolCallId: chunk.id,
+                    sessionUpdate: "tool_call_update" as const,
+                    status: "failed" as const,
+                    content: [{
+                      type: "content" as const,
+                      content: {
+                        type: "text" as const,
+                        text: "Permission denied by user"
+                      }
+                    }]
+                  };
+                  output.push({ sessionId, update: cancelUpdate });
+                } else {
+                  // Permission was granted - store it
+                  const optionId = (permissionResponse.outcome as any).optionId;
+                  session.pendingPermissions[chunk.id] = true;
+                  console.error(`Permission granted for tool ${chunk.name} with option ${optionId}`);
+                  
+                  // The tool execution will continue normally through Claude's process
+                }
+              } catch (error) {
+                console.error(`Failed to request permission:`, error);
+                // If permission request fails, mark tool as failed
+                const errorUpdate = {
+                  toolCallId: chunk.id,
+                  sessionUpdate: "tool_call_update" as const,
+                  status: "failed" as const,
+                  content: [{
+                    type: "content" as const,
+                    content: {
+                      type: "text" as const,
+                      text: `Permission request failed: ${error}`
+                    }
+                  }]
+                };
+                output.push({ sessionId, update: errorUpdate });
+              }
+            }
+            // Don't add the tool call update here since we already added it above
+            continue;
+          }
+          break;
+
+        case "tool_result": {
+          const toolUse = toolUseCache[chunk.tool_use_id];
+          if (!toolUse) {
+            console.error(
+              `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`,
+            );
+            break;
+          }
+
+          if (toolUse.name !== "TodoWrite") {
+            update = {
+              toolCallId: chunk.tool_use_id,
+              sessionUpdate: "tool_call_update",
+              status: chunk.is_error ? "failed" : "completed",
+              ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
+            };
+          }
+          break;
+        }
+
+        default:
+          throw new Error("unhandled chunk type: " + chunk.type);
+      }
+      
+      if (update) {
+        output.push({ sessionId, update });
+      }
+    }
+
+    return output;
+  }
 
   private async handleClaudeMessage(
     message: any,
@@ -457,7 +679,7 @@ export class ClaudeAcpAgent implements Agent {
         // Note: With persistent processes, conversation history is maintained by Claude itself
         
         console.error(`handleClaudeMessage: Converting to ACP notifications...`);
-        const notifications = toAcpNotifications(
+        const notifications = await this.toAcpNotificationsWithPermissions(
           message,
           sessionId,
           this.toolUseCache,
