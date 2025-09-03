@@ -134,6 +134,9 @@ export class ClaudeAcpAgent implements Agent {
       mcpServers,
       permissionPromptToolName: "mcp__acp__permission",
       stderr: (err) => console.error(err),
+      // note: although not documented by the types, passing an absolute path
+      // here works to find zed's managed node version.
+      executable: process.execPath as any,
     };
 
     const allowedTools = [];
