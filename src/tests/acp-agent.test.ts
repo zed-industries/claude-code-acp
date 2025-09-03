@@ -216,7 +216,7 @@ describe("tool conversions", () => {
 
     expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
       kind: "search",
-      title: "Find */**.ts",
+      title: "Find `*/**.ts`",
       content: [],
       locations: [],
     });
