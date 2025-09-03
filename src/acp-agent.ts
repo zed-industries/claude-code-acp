@@ -47,10 +47,16 @@ type ClaudeResult = {
   result?: string;
 };
 
+type ConversationMessage = {
+  role: "user" | "assistant";
+  content: any[];
+};
+
 type Session = {
   mcpEnvVars: { [key: string]: string };
   cwd?: string;
   cancelled: boolean;
+  conversationHistory: ConversationMessage[];
 };
 
 type BackgroundTerminal =
@@ -144,6 +150,7 @@ export class ClaudeAcpAgent implements Agent {
       mcpEnvVars,
       cwd: params.cwd,
       cancelled: false,
+      conversationHistory: [],
     };
 
     const availableCommands = await this.getAvailableCommands();
@@ -160,15 +167,36 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
-    if (!this.sessions[params.sessionId]) {
+    const session = this.sessions[params.sessionId];
+    if (!session) {
       throw new Error("Session not found");
     }
 
-    this.sessions[params.sessionId].cancelled = false;
+    session.cancelled = false;
 
-    const session = this.sessions[params.sessionId];
+    // Add current user message to conversation history
+    const userMessage: ConversationMessage = {
+      role: "user",
+      content: params.prompt.map(chunk => {
+        switch (chunk.type) {
+          case "text":
+            return { type: "text", text: chunk.text };
+          case "image":
+            return {
+              type: "image",
+              source: chunk.data 
+                ? { type: "base64", data: chunk.data, media_type: chunk.mimeType }
+                : { type: "url", url: chunk.uri }
+            };
+          default:
+            return { type: "text", text: JSON.stringify(chunk) };
+        }
+      })
+    };
+    
+    session.conversationHistory.push(userMessage);
 
-    // Spawn a new Claude process for each prompt (--print mode doesn't stay alive)
+    // Spawn a new Claude process for this prompt with conversation context
     const claudeArgs = [
       '--print',
       '--input-format=stream-json',
@@ -176,22 +204,17 @@ export class ClaudeAcpAgent implements Agent {
       '--verbose'
     ];
 
-    // Note: Claude CLI doesn't support --cwd flag, the working directory
-    // should be set via process spawn options instead
-
-    console.error(`Spawning Claude with args: ${claudeArgs.join(' ')}`);
-    
-    // Ensure Claude authentication environment is preserved
+    // Prepare environment
     const claudeEnv = {
-      ...process.env, // Start with all env vars
-      ...session.mcpEnvVars // Add MCP-specific vars
+      ...process.env,
+      ...session.mcpEnvVars
     };
     
-    // Remove API key env vars that might interfere with logged-in session
+    // Remove API key env vars to use logged-in session
     delete claudeEnv.ANTHROPIC_API_KEY;
     delete claudeEnv.CLAUDE_API_KEY;
     
-    // Ensure Claude-specific auth env vars are present
+    // Ensure Claude auth env vars are present
     if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
       claudeEnv.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
     }
@@ -202,20 +225,19 @@ export class ClaudeAcpAgent implements Agent {
       claudeEnv.CLAUDECODE = process.env.CLAUDECODE;
     }
     
-    console.error(`Claude auth env vars: OAUTH_TOKEN=${!!claudeEnv.CLAUDE_CODE_OAUTH_TOKEN}, ENTRYPOINT=${claudeEnv.CLAUDE_CODE_ENTRYPOINT}, CLAUDECODE=${claudeEnv.CLAUDECODE}`);
+    console.error(`Spawning Claude with conversation history (${session.conversationHistory.length} messages)`);
     
     const claudeProcess = spawn('claude', claudeArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: claudeEnv,
-      cwd: session.cwd  // Set working directory via spawn options instead
+      cwd: session.cwd
     });
-
-    console.error(`Claude process spawned with PID: ${claudeProcess.pid}`);
 
     return new Promise((resolve, reject) => {
       let outputBuffer = '';
       let hasReceivedResult = false;
       let isResolved = false;
+      let assistantMessage: ConversationMessage | null = null;
 
       const cleanup = () => {
         claudeProcess.stdout?.removeAllListeners('data');
@@ -231,6 +253,10 @@ export class ClaudeAcpAgent implements Agent {
         if (!isResolved) {
           isResolved = true;
           cleanup();
+          // Save assistant response to history if we have one
+          if (assistantMessage) {
+            session.conversationHistory.push(assistantMessage);
+          }
           resolve(response);
         }
       };
@@ -250,24 +276,28 @@ export class ClaudeAcpAgent implements Agent {
 
       const handleOutput = (data: Buffer) => {
         const dataStr = data.toString();
-        console.error(`Claude stdout: ${dataStr.trim()}`);
         outputBuffer += dataStr;
         
         // Process complete JSON lines
         const lines = outputBuffer.split('\n');
-        outputBuffer = lines.pop() || ''; // Keep incomplete line in buffer
+        outputBuffer = lines.pop() || '';
 
         for (const line of lines) {
           if (!line.trim()) continue;
           
           try {
             const message = JSON.parse(line);
-            console.error(`Parsed Claude message:`, JSON.stringify(message, null, 2));
             this.handleClaudeMessage(message, params.sessionId, safeResolve, safeReject);
             
             if (message.type === 'result') {
               hasReceivedResult = true;
               clearTimeout(timeout);
+            } else if (message.type === 'assistant' && !assistantMessage) {
+              // Capture the assistant message for history
+              assistantMessage = {
+                role: "assistant",
+                content: message.message.content
+              };
             }
           } catch (error) {
             console.error('Failed to parse Claude output:', line, error);
@@ -282,11 +312,8 @@ export class ClaudeAcpAgent implements Agent {
       };
 
       const handleExit = (code: number | null, signal: string | null) => {
-        console.error(`Claude process exited with code ${code}, signal ${signal}`);
         clearTimeout(timeout);
         if (!hasReceivedResult && !isResolved) {
-          // Claude exits with code 1 even for successful error responses (like "credit balance too low")
-          // Only treat it as an error if we didn't get any JSON response at all
           if (code === 0 || code === 1) {
             safeResolve({ stopReason: "end_turn" });
           } else {
@@ -302,14 +329,14 @@ export class ClaudeAcpAgent implements Agent {
       claudeProcess.on('error', handleError);
       claudeProcess.on('exit', handleExit);
 
-      // Send the user message to Claude immediately
+      // Send the conversation with history context
       try {
-        const claudeMessage = promptToClaude(params);
+        const claudeMessage = buildConversationMessage(session.conversationHistory, params.sessionId);
         const messageJson = JSON.stringify(claudeMessage) + '\n';
         console.error(`Sending to Claude: ${messageJson.trim()}`);
         
         claudeProcess.stdin?.write(messageJson);
-        claudeProcess.stdin?.end(); // Close stdin to signal we're done sending input
+        claudeProcess.stdin?.end();
       } catch (error) {
         console.error('Failed to send message to Claude:', error);
         safeReject(error instanceof Error ? error : new Error(String(error)));
@@ -318,13 +345,16 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   async cancel(params: CancelNotification): Promise<void> {
-    if (!this.sessions[params.sessionId]) {
+    const session = this.sessions[params.sessionId];
+    if (!session) {
       throw new Error("Session not found");
     }
-    this.sessions[params.sessionId].cancelled = true;
     
-    // Note: In the new approach, we spawn a new process for each prompt
-    // so cancellation is handled by the cleanup in the prompt method
+    session.cancelled = true;
+    
+    // Note: In --print mode, each Claude process is short-lived per request,
+    // so we just mark the session as cancelled. Active requests will check
+    // this flag and terminate gracefully.
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
@@ -362,6 +392,7 @@ export class ClaudeAcpAgent implements Agent {
       }
     ];
   }
+
 
   private async handleClaudeMessage(
     message: any,
@@ -422,6 +453,8 @@ export class ClaudeAcpAgent implements Agent {
           reject(RequestError.authRequired());
           return;
         }
+        
+        // Note: With persistent processes, conversation history is maintained by Claude itself
         
         console.error(`handleClaudeMessage: Converting to ACP notifications...`);
         const notifications = toAcpNotifications(
@@ -499,6 +532,61 @@ function formatUriAsLink(uri: string): string {
   }
 }
 
+// Build conversation message with history for Claude command
+function buildConversationMessage(conversationHistory: ConversationMessage[], sessionId: string): ClaudeMessage {
+  // For --print mode, we send the entire conversation as context
+  // The last message should be the current user message
+  const lastMessage = conversationHistory[conversationHistory.length - 1];
+  
+  if (!lastMessage || lastMessage.role !== "user") {
+    throw new Error("Expected last message to be from user");
+  }
+  
+  // If we have conversation history (more than just the current message), 
+  // include it as context
+  if (conversationHistory.length > 1) {
+    const historyContext = conversationHistory.slice(0, -1).map(msg => {
+      const roleLabel = msg.role === "user" ? "Human" : "Assistant";
+      const textContent = msg.content
+        .filter(chunk => chunk.type === "text")
+        .map(chunk => chunk.text)
+        .join("\n");
+      return `${roleLabel}: ${textContent}`;
+    }).join("\n\n");
+    
+    // Add history as context to the current message
+    const enrichedContent = [
+      {
+        type: "text",
+        text: `Previous conversation:\n${historyContext}\n\nCurrent request:`
+      },
+      ...lastMessage.content
+    ];
+    
+    return {
+      type: "user",
+      message: {
+        role: "user",
+        content: enrichedContent,
+      },
+      session_id: sessionId,
+      parent_tool_use_id: null,
+    };
+  }
+  
+  // First message in conversation - send as is
+  return {
+    type: "user",
+    message: {
+      role: "user",
+      content: lastMessage.content,
+    },
+    session_id: sessionId,
+    parent_tool_use_id: null,
+  };
+}
+
+// Convert prompt request to Claude message format
 function promptToClaude(prompt: PromptRequest): ClaudeMessage {
   const content: any[] = [];
   const context: any[] = [];
