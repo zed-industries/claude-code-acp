@@ -160,7 +160,7 @@ export function toolInfoFromToolUse(
         }
       }
       return {
-        title: path ? `Edit ${path}` : "Edit",
+        title: path ? `Edit \`${path}\`` : "Edit",
         kind: "edit",
         content:
           input && path
@@ -272,10 +272,10 @@ export function toolInfoFromToolUse(
     case "Glob": {
       let label = "Find";
       if (input.path) {
-        label += ` ${input.path}`;
+        label += ` \`${input.path}\``;
       }
       if (input.pattern) {
-        label += ` ${input.pattern}`;
+        label += ` \`${input.pattern}\``;
       }
       return {
         title: label,
