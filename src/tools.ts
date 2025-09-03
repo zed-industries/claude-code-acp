@@ -424,60 +424,18 @@ export function toolInfoFromToolUse(
   }
 }
 
-export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefined): ToolUpdate {
+type ToolResult = {
+  type: "tool_result";
+  content: any;
+  tool_use_id: string;
+  is_error: boolean;
+};
+
+export function toolUpdateFromToolResult(
+  toolResult: ToolResult,
+  toolUse: any | undefined,
+): ToolUpdate {
   switch (toolUse?.name) {
-    case "mcp__acp__edit":
-    case "edit":
-    case "Edit": {
-      // Parse the line numbers from the tool result
-      if (toolResult.content && toolResult.content.length > 0) {
-        try {
-          const firstContent = toolResult.content[0];
-          const data = JSON.parse(firstContent.text || firstContent);
-          if (data.lineNumbers && Array.isArray(data.lineNumbers)) {
-            const locations: ToolCallLocation[] = data.lineNumbers.map((line: number) => ({
-              path: toolUse?.input?.abs_path || toolUse?.input?.file_path,
-              line: line,
-            }));
-            return { locations };
-          }
-        } catch (error) {
-          console.error(`Error parsing edit tool result: ${error}`);
-          // If parsing fails, return empty object
-          return {};
-        }
-      }
-      return {};
-    }
-    case "mcp__acp__multi-edit":
-    case "multi-edit":
-    case "MultiEdit": {
-      // Parse the line numbers from the tool result
-      if (toolResult.content && toolResult.content.length > 0) {
-        try {
-          const firstContent = toolResult.content[0];
-          const data = JSON.parse(firstContent.text || firstContent);
-          if (data.lineNumbers && Array.isArray(data.lineNumbers)) {
-            const locations: ToolCallLocation[] = data.lineNumbers.map((line: number) => ({
-              path: toolUse?.input?.file_path || toolUse?.input?.abs_path,
-              line: line,
-            }));
-            return { locations };
-          }
-        } catch (error) {
-          console.error(`Error parsing edit tool result: ${error}`);
-
-          // If parsing fails, return empty object
-          return {};
-        }
-      }
-      return {};
-    }
-
-    case "mcp__acp__write":
-    case "Write":
-      return {};
-
     case "Read":
     case "mcp__acp__read":
       if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
@@ -509,8 +467,20 @@ export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefin
       return {};
 
     case "mcp__acp__Bash":
-      // The bash tool already embeds a terminal
+    case "mcp__acp__edit":
+    case "edit":
+    case "Edit":
+    case "mcp__acp__multi-edit":
+    case "multi-edit":
+    case "MultiEdit":
+    case "mcp__acp__write":
+    case "Write": {
+      if (toolResult.is_error && toolResult.content?.length > 0) {
+        // Only return errors
+        return toAcpContentUpdate(toolResult.content);
+      }
       return {};
+    }
 
     case "Task":
     case "NotebookEdit":
@@ -527,29 +497,33 @@ export function toolUpdateFromToolResult(toolResult: any, toolUse: any | undefin
     case "WebSearch":
     case "Other":
     default: {
-      if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
-        return {
-          content: toolResult.content.map((content: any) => ({
-            type: "content",
-            content,
-          })),
-        };
-      } else if (typeof toolResult.content === "string" && toolResult.content.length > 0) {
-        return {
-          content: [
-            {
-              type: "content",
-              content: {
-                type: "text",
-                text: toolResult.content,
-              },
-            },
-          ],
-        };
-      }
-      return {};
+      return toAcpContentUpdate(toolResult.content);
     }
   }
+}
+
+function toAcpContentUpdate(content: any): { content?: ToolCallContent[] } {
+  if (Array.isArray(content) && content.length > 0) {
+    return {
+      content: content.map((content: any) => ({
+        type: "content",
+        content,
+      })),
+    };
+  } else if (typeof content === "string" && content.length > 0) {
+    return {
+      content: [
+        {
+          type: "content",
+          content: {
+            type: "text",
+            text: content,
+          },
+        },
+      ],
+    };
+  }
+  return {};
 }
 
 type ClaudePlanEntry = {
