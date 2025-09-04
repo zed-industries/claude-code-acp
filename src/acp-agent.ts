@@ -93,11 +93,6 @@ export class ClaudeAcpAgent implements Agent {
           name: "Log in with Claude Code",
           id: "claude-login",
         },
-        {
-          description: "Anthropic API KEY",
-          name: "Use Anthropic API Key",
-          id: "anthropic-api-key",
-        },
       ],
     };
   }
