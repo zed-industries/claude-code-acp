@@ -1,10 +1,8 @@
-# ACP adapter for Claude Code
+# ACP for Claude Code CLI
 
-[![npm](https://img.shields.io/npm/v/%40zed-industries%2Fclaude-code-acp)](https://www.npmjs.com/package/@zed-industries/claude-code-acp)
+Use Claude Code directly with your Claude Pro/Max subscription from ACP-compatible clients such as Zed.
 
-Use [Claude Code](https://www.anthropic.com/claude-code) from [ACP-compatible](https://agentclientprotocol.com) clients such as [Zed](https://zed.dev)!
-
-This tool implements an ACP agent by using the official [Claude Code SDK](https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-overview), supporting:
+This tool implements an ACP agent that connects directly to Claude Code via the CLI, supporting:
 
 - Context @-mentions
 - Images
@@ -18,34 +16,54 @@ This tool implements an ACP agent by using the official [Claude Code SDK](https:
 
 Learn more about the [Agent Client Protocol](https://agentclientprotocol.com/).
 
-## How to use
+## Setup
 
-### Zed
+### Prerequisites
 
-The latest version of Zed can already use this adapter out of the box.
+- Node.js installed on your system
+- Claude Pro or Max subscription (no API key needed)
+- Claude Code CLI installed and authenticated
 
-To use Claude Code, open the Agent Panel and click "New Claude Code Thread" from the `+` button menu in the top-right:
+### Installation
 
-https://github.com/user-attachments/assets/ddce66c7-79ac-47a3-ad59-4a6a3ca74903
+1. Clone this repository:
+```bash
+git clone https://github.com/your-username/claude-code-cli
+cd claude-code-cli
+```
 
-Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) support.
+2. Install dependencies:
+```bash
+npm install
+```
 
-### Other clients
+3. Build the project:
+```bash
+npm run build
+```
 
-Setup instructions for other clients are coming soon. Feel free to [submit a PR](https://github.com/zed-industries/claude-code-acp/pulls) to add yours!
+### Usage with Zed
 
-#### Installation
+Add the following configuration to your Zed settings under `agent_servers`:
 
-Install the adapter from `npm`:
+```json
+"agent_servers": {
+  "Claude Code via CLI": {
+    "command": "node",
+    "args": ["/path/to/claude-code-cli/dist/index.js"],
+    "env": {}
+  }
+}
+```
+
+Replace `/path/to/claude-code-cli` with the actual path to your cloned repository.
+
+### Other ACP-compatible clients
+
+This adapter works with any ACP-compatible client. Configure it to run:
 
 ```bash
-$ npm install @zed-industries/claude-code-acp
-```
-
-You can then use `claude-code-acp` as a regular ACP agent:
-
-```
-$ ANTHROPIC_API_KEY=sk-... claude-code-acp
+node /path/to/claude-code-cli/dist/index.js
 ```
 
 ## License
