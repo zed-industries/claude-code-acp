@@ -334,10 +334,7 @@ export class ClaudeAcpAgent implements Agent {
         }
       };
 
-      // Add timeout to prevent hanging
-      const timeout = setTimeout(() => {
-        safeReject(new Error('Claude process timeout - no response received within 30 seconds'));
-      }, 30000);
+      // No fixed timeout - let long-running commands complete naturally
 
       const handleOutput = (data: Buffer) => {
         const dataStr = data.toString();
@@ -356,7 +353,6 @@ export class ClaudeAcpAgent implements Agent {
             
             if (message.type === 'result') {
               hasReceivedResult = true;
-              clearTimeout(timeout);
             } else if (message.type === 'assistant' && !assistantMessage) {
               // Capture the assistant message for history
               assistantMessage = {
@@ -372,12 +368,10 @@ export class ClaudeAcpAgent implements Agent {
 
       const handleError = (error: Error) => {
         console.error('Claude process error:', error);
-        clearTimeout(timeout);
         safeReject(error);
       };
 
       const handleExit = (code: number | null, signal: string | null) => {
-        clearTimeout(timeout);
         if (!hasReceivedResult && !isResolved) {
           if (code === 0 || code === 1) {
             safeResolve({ stopReason: "end_turn" });
