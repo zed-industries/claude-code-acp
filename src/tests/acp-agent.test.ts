@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "child_process";
 import {
   Agent,
+  AvailableCommand,
   Client,
   ClientSideConnection,
   NewSessionResponse,
@@ -47,9 +48,15 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
     agent: Agent;
     files: Map<string, string> = new Map();
     receivedText: string = "";
+    resolveAvailableCommands: (commands: AvailableCommand[]) => void;
+    availableCommandsPromise: Promise<AvailableCommand[]>;
 
     constructor(agent: Agent) {
       this.agent = agent;
+      this.resolveAvailableCommands = () => {};
+      this.availableCommandsPromise = new Promise((resolve) => {
+        this.resolveAvailableCommands = resolve;
+      });
     }
 
     takeReceivedText() {
@@ -67,11 +74,18 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
     async sessionUpdate(params: SessionNotification): Promise<void> {
       console.error("RECEIVED", JSON.stringify(params, null, 4));
 
-      if (
-        params.update.sessionUpdate === "agent_message_chunk" &&
-        params.update.content.type === "text"
-      ) {
-        this.receivedText += params.update.content.text;
+      switch (params.update.sessionUpdate) {
+        case "agent_message_chunk": {
+          if (params.update.content.type === "text") {
+            this.receivedText += params.update.content.text;
+          }
+          break;
+        }
+        case "available_commands_update":
+          this.resolveAvailableCommands(params.update.availableCommands);
+          break;
+        default:
+          break;
       }
     }
 
@@ -140,12 +154,14 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
   it("should include available commands", async () => {
     const { client, connection, newSessionResponse } = await setupTestSession(__dirname);
 
-    expect(newSessionResponse.availableCommands).toContainEqual({
+    const commands = await client.availableCommandsPromise;
+
+    expect(commands).toContainEqual({
       name: "quick-math",
       description: "10 * 3 = 30 (project)",
       input: null,
     });
-    expect(newSessionResponse.availableCommands).toContainEqual({
+    expect(commands).toContainEqual({
       name: "say-hello",
       description: "Say hello (project)",
       input: { hint: "[name]" },
