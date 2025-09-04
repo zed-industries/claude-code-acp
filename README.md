@@ -41,13 +41,13 @@ Setup instructions for other clients are coming soon. Feel free to [submit a PR]
 Install the adapter from `npm`:
 
 ```bash
-$ npm install @zed-industries/claude-code-acp
+npm install @zed-industries/claude-code-acp
 ```
 
 You can then use `claude-code-acp` as a regular ACP agent:
 
 ```
-$ ANTHROPIC_API_KEY=sk-... claude-code-acp
+ANTHROPIC_API_KEY=sk-... claude-code-acp
 ```
 
 ## License
