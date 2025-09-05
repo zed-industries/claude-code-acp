@@ -14,6 +14,8 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  SetSessionModeRequest,
+  SetSessionModeResponse,
   TerminalHandle,
   TerminalOutputResponse,
   WriteTextFileRequest,
@@ -22,6 +24,7 @@ import {
 import {
   McpServerConfig,
   Options,
+  PermissionMode,
   Query,
   query,
   SDKAssistantMessage,
@@ -185,6 +188,13 @@ export class ClaudeAcpAgent implements Agent {
 
     return {
       sessionId,
+      modes: {
+        currentModeId: "default",
+        availableModes: [
+          { id: "default", name: "Default" },
+          { id: "plan", name: "Plan" },
+        ],
+      },
     };
   }
 
@@ -270,6 +280,29 @@ export class ClaudeAcpAgent implements Agent {
     }
     this.sessions[params.sessionId].cancelled = true;
     await this.sessions[params.sessionId].query.interrupt();
+  }
+
+  async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
+    if (!this.sessions[params.sessionId]) {
+      throw new Error("Session not found");
+    }
+
+    let permissionMode: PermissionMode;
+    // Doing this explictly to maintain type safety
+    switch (params.modeId) {
+      case "default":
+        permissionMode = "default";
+        break;
+      case "plan":
+        permissionMode = "plan";
+        break;
+      default:
+        throw new Error("Invalid mode");
+    }
+
+    this.sessions[params.sessionId].query.setPermissionMode(permissionMode);
+
+    return {};
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
