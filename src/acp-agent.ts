@@ -89,6 +89,10 @@ export class ClaudeAcpAgent implements Agent {
           image: true,
           embeddedContext: true,
         },
+        mcpCapabilities: {
+          http: true,
+          sse: true,
+        },
       },
       authMethods: [
         {
@@ -113,14 +117,24 @@ export class ClaudeAcpAgent implements Agent {
     const mcpServers: Record<string, McpServerConfig> = {};
     if (Array.isArray(params.mcpServers)) {
       for (const server of params.mcpServers) {
-        mcpServers[server.name] = {
-          type: "stdio",
-          command: server.command,
-          args: server.args,
-          env: server.env
-            ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
-            : undefined,
-        };
+        if ("type" in server) {
+          mcpServers[server.name] = {
+            type: server.type,
+            url: server.url,
+            headers: server.headers
+              ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        } else {
+          mcpServers[server.name] = {
+            type: "stdio",
+            command: server.command,
+            args: server.args,
+            env: server.env
+              ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        }
       }
     }
 
