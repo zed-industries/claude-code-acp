@@ -207,10 +207,26 @@ export class ClaudeAcpAgent implements Agent {
       modes: {
         currentModeId: "default",
         availableModes: [
-          { id: "default", name: "Default" },
-          { id: "acceptEdits", name: "Accept Edits" },
-          { id: "bypassPermissions", name: "Bypass Permissions" },
-          { id: "plan", name: "Plan" },
+          {
+            id: "default",
+            name: "Always Ask",
+            description: "Prompts for permission on first use of each tool",
+          },
+          {
+            id: "acceptEdits",
+            name: "Accept Edits",
+            description: "Automatically accepts file edit permissions for the session",
+          },
+          {
+            id: "bypassPermissions",
+            name: "Bypass Permissions",
+            description: "Skips all permission prompts",
+          },
+          {
+            id: "plan",
+            name: "Plan Mode",
+            description: "Claude can analyze but not modify files or execute commands",
+          },
         ],
       },
     };
