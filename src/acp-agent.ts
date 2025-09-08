@@ -24,7 +24,6 @@ import {
 import {
   McpServerConfig,
   Options,
-  PermissionMode,
   Query,
   query,
   SDKAssistantMessage,
@@ -44,18 +43,19 @@ type Session = {
   query: Query;
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
+  bypassPermissions: boolean;
 };
 
 type BackgroundTerminal =
   | {
-      handle: TerminalHandle;
-      status: "started";
-      lastOutput: TerminalOutputResponse | null;
-    }
+    handle: TerminalHandle;
+    status: "started";
+    lastOutput: TerminalOutputResponse | null;
+  }
   | {
-      status: "aborted" | "exited" | "killed" | "timedOut";
-      pendingOutput: TerminalOutputResponse;
-    };
+    status: "aborted" | "exited" | "killed" | "timedOut";
+    pendingOutput: TerminalOutputResponse;
+  };
 
 type ToolUseCache = {
   [key: string]: { type: "tool_use"; id: string; name: string; input: any };
@@ -174,6 +174,8 @@ export class ClaudeAcpAgent implements Agent {
       query: q,
       input: input,
       cancelled: false,
+      // todo! take mode from prompt options
+      bypassPermissions: false,
     };
 
     getAvailableSlashCommands(q).then((availableCommands) => {
@@ -192,6 +194,8 @@ export class ClaudeAcpAgent implements Agent {
         currentModeId: "default",
         availableModes: [
           { id: "default", name: "Default" },
+          { id: "acceptEdits", name: "Accept Edits" },
+          { id: "bypassPermissions", name: "Bypass Permissions" },
           { id: "plan", name: "Plan" },
         ],
       },
@@ -287,22 +291,22 @@ export class ClaudeAcpAgent implements Agent {
       throw new Error("Session not found");
     }
 
-    let permissionMode: PermissionMode;
-    // Doing this explictly to maintain type safety
     switch (params.modeId) {
       case "default":
-        permissionMode = "default";
-        break;
+      case "acceptEdits":
       case "plan":
-        permissionMode = "plan";
-        break;
+        this.sessions[params.sessionId].bypassPermissions = false;
+        await this.sessions[params.sessionId].query.setPermissionMode(params.modeId);
+        return {};
+      case "bypassPermissions":
+        // For some reason, the SDK doesn't support setting the mode to `bypassPermissions`
+        // so we do it ourselves
+        this.sessions[params.sessionId].bypassPermissions = true;
+        await this.sessions[params.sessionId].query.setPermissionMode("acceptEdits");
+        return {};
       default:
         throw new Error("Invalid mode");
     }
-
-    this.sessions[params.sessionId].query.setPermissionMode(permissionMode);
-
-    return {};
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
@@ -568,11 +572,11 @@ type ContentChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: any }
   | {
-      type: "tool_result";
-      content: string;
-      tool_use_id: string;
-      is_error: boolean;
-    } // content type depends on your Content definition
+    type: "tool_result";
+    content: string;
+    tool_use_id: string;
+    is_error: boolean;
+  } // content type depends on your Content definition
   | { type: "thinking"; thinking: string }
   | { type: "redacted_thinking" }
   | { type: "image"; source: ImageSource }

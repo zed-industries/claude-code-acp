@@ -590,7 +590,64 @@ File editing instructions:
           ],
         };
       }
-      if (alwaysAllowedTools[input.tool_name]) {
+
+      if (input.tool_name === "ExitPlanMode") {
+        const response = await agent.client.requestPermission({
+          options: [
+            {
+              kind: "allow_always",
+              name: "Yes, and auto-accept edits",
+              optionId: "acceptEdits",
+            },
+            { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
+            { kind: "reject_once", name: "No, keep planning", optionId: "plan" },
+          ],
+          sessionId,
+          toolCall: {
+            toolCallId: input.tool_use_id!,
+            rawInput: input.input,
+          },
+        });
+
+        if (
+          response.outcome?.outcome === "selected" &&
+          (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
+        ) {
+          await agent.client.sessionUpdate({
+            sessionId,
+            update: {
+              sessionUpdate: "current_mode_update",
+              currentModeId: response.outcome.optionId
+            }
+          });
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  behavior: "allow",
+                  updatedInput: input.input,
+                }),
+              },
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  behavior: "deny",
+                  message: "User refused permission to run tool",
+                }),
+              },
+            ],
+          };
+        }
+      }
+
+      if (session.bypassPermissions || alwaysAllowedTools[input.tool_name]) {
         return {
           content: [
             {
