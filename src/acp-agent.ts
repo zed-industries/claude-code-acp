@@ -24,6 +24,7 @@ import {
 import {
   McpServerConfig,
   Options,
+  PermissionMode,
   Query,
   query,
   SDKAssistantMessage,
@@ -35,7 +36,7 @@ import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
-import { createMcpServer } from "./mcp-server.js";
+import { createMcpServer, toolNames } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
 import { toolInfoFromToolUse, planEntries, toolUpdateFromToolResult } from "./tools.js";
 
@@ -43,19 +44,19 @@ type Session = {
   query: Query;
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
-  bypassPermissions: boolean;
+  permissionMode: PermissionMode;
 };
 
 type BackgroundTerminal =
   | {
-    handle: TerminalHandle;
-    status: "started";
-    lastOutput: TerminalOutputResponse | null;
-  }
+      handle: TerminalHandle;
+      status: "started";
+      lastOutput: TerminalOutputResponse | null;
+    }
   | {
-    status: "aborted" | "exited" | "killed" | "timedOut";
-    pendingOutput: TerminalOutputResponse;
-  };
+      status: "aborted" | "exited" | "killed" | "timedOut";
+      pendingOutput: TerminalOutputResponse;
+    };
 
 type ToolUseCache = {
   [key: string]: { type: "tool_use"; id: string; name: string; input: any };
@@ -151,7 +152,7 @@ export class ClaudeAcpAgent implements Agent {
     const options: Options = {
       cwd: params.cwd,
       mcpServers,
-      permissionPromptToolName: "mcp__acp__permission",
+      permissionPromptToolName: toolNames.permission,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
@@ -161,15 +162,15 @@ export class ClaudeAcpAgent implements Agent {
     const allowedTools = [];
     const disallowedTools = [];
     if (this.clientCapabilities?.fs?.readTextFile) {
-      allowedTools.push("mcp__acp__read");
+      allowedTools.push(toolNames.read);
       disallowedTools.push("Read");
     }
     if (this.clientCapabilities?.fs?.writeTextFile) {
-      allowedTools.push("mcp__acp__write");
+      allowedTools.push(toolNames.write);
       disallowedTools.push("Write", "Edit", "MultiEdit");
     }
     if (this.clientCapabilities?.terminal) {
-      allowedTools.push("mcp__acp__BashOutput", "mcp__acp__KillBash");
+      allowedTools.push(toolNames.bashOutput, toolNames.killBash);
       disallowedTools.push("Bash", "BashOutput", "KillBash");
     }
 
@@ -188,8 +189,7 @@ export class ClaudeAcpAgent implements Agent {
       query: q,
       input: input,
       cancelled: false,
-      // todo! take mode from prompt options
-      bypassPermissions: false,
+      permissionMode: "default",
     };
 
     getAvailableSlashCommands(q).then((availableCommands) => {
@@ -309,13 +309,13 @@ export class ClaudeAcpAgent implements Agent {
       case "default":
       case "acceptEdits":
       case "plan":
-        this.sessions[params.sessionId].bypassPermissions = false;
+        this.sessions[params.sessionId].permissionMode = params.modeId;
         await this.sessions[params.sessionId].query.setPermissionMode(params.modeId);
         return {};
       case "bypassPermissions":
         // For some reason, the SDK doesn't support setting the mode to `bypassPermissions`
         // so we do it ourselves
-        this.sessions[params.sessionId].bypassPermissions = true;
+        this.sessions[params.sessionId].permissionMode = "bypassPermissions";
         await this.sessions[params.sessionId].query.setPermissionMode("acceptEdits");
         return {};
       default:
@@ -586,11 +586,11 @@ type ContentChunk =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: any }
   | {
-    type: "tool_result";
-    content: string;
-    tool_use_id: string;
-    is_error: boolean;
-  } // content type depends on your Content definition
+      type: "tool_result";
+      content: string;
+      tool_use_id: string;
+      is_error: boolean;
+    } // content type depends on your Content definition
   | { type: "thinking"; thinking: string }
   | { type: "redacted_thinking" }
   | { type: "image"; source: ImageSource }
