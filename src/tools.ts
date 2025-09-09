@@ -403,7 +403,7 @@ export function toolInfoFromToolUse(
     case "ExitPlanMode":
       return {
         title: "Ready to code?",
-        kind: "mode_switch",
+        kind: "switch_mode",
         content:
           input && input.plan
             ? [{ type: "content", content: { type: "text", text: input.plan } }]
@@ -490,6 +490,10 @@ export function toolUpdateFromToolResult(
         return toAcpContentUpdate(toolResult.content);
       }
       return {};
+    }
+
+    case "ExitPlanMode": {
+      return { title: "Exited Plan Mode" };
     }
 
     case "Task":
