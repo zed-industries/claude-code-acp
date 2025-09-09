@@ -9,6 +9,7 @@ import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agen
 import * as diff from "diff";
 
 import { sleep, unreachable } from "./utils.js";
+import { PermissionResult } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
 
@@ -601,104 +602,38 @@ File editing instructions:
       },
     },
     async (input) => {
-      const session = agent.sessions[sessionId];
-      if (!session) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "deny",
-                message: "Session not found",
-              }),
-            },
-          ],
-        };
-      }
+      const result = await canUseTool(input);
 
-      if (input.tool_name === "ExitPlanMode") {
-        const response = await agent.client.requestPermission({
-          options: [
-            {
-              kind: "allow_always",
-              name: "Yes, and auto-accept edits",
-              optionId: "acceptEdits",
-            },
-            { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
-            { kind: "reject_once", name: "No, keep planning", optionId: "plan" },
-          ],
-          sessionId,
-          toolCall: {
-            toolCallId: input.tool_use_id!,
-            rawInput: input.input,
-          },
-        });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    },
+  );
 
-        if (
-          response.outcome?.outcome === "selected" &&
-          (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
-        ) {
-          await agent.client.sessionUpdate({
-            sessionId,
-            update: {
-              sessionUpdate: "current_mode_update",
-              currentModeId: response.outcome.optionId,
-            },
-          });
+  async function canUseTool(input: {
+    tool_use_id?: string;
+    tool_name: string;
+    input?: any;
+  }): Promise<PermissionResult> {
+    const session = agent.sessions[sessionId];
+    if (!session) {
+      return {
+        behavior: "deny",
+        message: "Session not found",
+      };
+    }
+    console.log(JSON.stringify({ input, permissionMode: session.permissionMode }, null, 2));
 
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  behavior: "allow",
-                  updatedInput: input.input,
-                }),
-              },
-            ],
-          };
-        } else {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  behavior: "deny",
-                  message: "User refused permission to run tool",
-                }),
-              },
-            ],
-          };
-        }
-      }
-
-      if (
-        session.permissionMode === "bypassPermissions" ||
-        (session.permissionMode === "acceptEdits" && editToolNames.includes(input.tool_name)) ||
-        alwaysAllowedTools[input.tool_name]
-      ) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "allow",
-                updatedInput: input.input,
-              }),
-            },
-          ],
-        };
-      }
-
+    if (input.tool_name === "ExitPlanMode") {
       const response = await agent.client.requestPermission({
         options: [
           {
             kind: "allow_always",
-            name: "Always Allow",
-            optionId: "allow_always",
+            name: "Yes, and auto-accept edits",
+            optionId: "acceptEdits",
           },
-          { kind: "allow_once", name: "Allow", optionId: "allow" },
-          { kind: "reject_once", name: "Reject", optionId: "reject" },
+          { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
+          { kind: "reject_once", name: "No, keep planning", optionId: "plan" },
         ],
         sessionId,
         toolCall: {
@@ -706,39 +641,80 @@ File editing instructions:
           rawInput: input.input,
         },
       });
+
       if (
         response.outcome?.outcome === "selected" &&
-        (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
+        (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
       ) {
-        if (response.outcome.optionId === "allow_always") {
-          alwaysAllowedTools[input.tool_name] = true;
-        }
+        session.permissionMode = response.outcome.optionId;
+        await agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "current_mode_update",
+            currentModeId: response.outcome.optionId,
+          },
+        });
+
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "allow",
-                updatedInput: input.input,
-              }),
-            },
+          behavior: "allow",
+          updatedInput: input.input,
+          updatedPermissions: [
+            { type: "setMode", mode: response.outcome.optionId, destination: "session" },
           ],
         };
       } else {
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "deny",
-                message: "User refused permission to run tool",
-              }),
-            },
-          ],
+          behavior: "deny",
+          message: "User rejected request to exit plan mode.",
         };
       }
-    },
-  );
+    }
+
+    if (
+      session.permissionMode === "bypassPermissions" ||
+      (session.permissionMode === "acceptEdits" && editToolNames.includes(input.tool_name)) ||
+      alwaysAllowedTools[input.tool_name]
+    ) {
+      return {
+        behavior: "allow",
+        updatedInput: input.input,
+      };
+    }
+
+    const response = await agent.client.requestPermission({
+      options: [
+        {
+          kind: "allow_always",
+          name: "Always Allow",
+          optionId: "allow_always",
+        },
+        { kind: "allow_once", name: "Allow", optionId: "allow" },
+        { kind: "reject_once", name: "Reject", optionId: "reject" },
+      ],
+      sessionId,
+      toolCall: {
+        toolCallId: input.tool_use_id!,
+        rawInput: input.input,
+      },
+    });
+    if (
+      response.outcome?.outcome === "selected" &&
+      (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
+    ) {
+      if (response.outcome.optionId === "allow_always") {
+        alwaysAllowedTools[input.tool_name] = true;
+      }
+      return {
+        behavior: "allow",
+        updatedInput: input.input,
+      };
+    } else {
+      return {
+        behavior: "deny",
+        message: "User refused permission to run tool",
+      };
+    }
+  }
 
   const app = express();
   app.use(express.json());
