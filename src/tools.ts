@@ -4,7 +4,7 @@ import {
   ToolCallLocation,
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
-import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
+import { replaceAndCalculateLocation, SYSTEM_REMINDER, toolNames } from "./mcp-server.js";
 
 interface ToolInfo {
   title: string;
@@ -67,7 +67,7 @@ export function toolInfoFromToolUse(
       };
 
     case "Bash":
-    case "mcp__acp__Bash":
+    case toolNames.bash:
       return {
         title: input?.command ? "`" + input.command.replaceAll("`", "\\`") + "`" : "Terminal",
         kind: "execute",
@@ -83,7 +83,7 @@ export function toolInfoFromToolUse(
       };
 
     case "BashOutput":
-    case "mcp__acp__BashOutput":
+    case toolNames.bashOutput:
       return {
         title: "Tail Logs",
         kind: "execute",
@@ -91,14 +91,14 @@ export function toolInfoFromToolUse(
       };
 
     case "KillBash":
-    case "mcp__acp__KillBash":
+    case toolNames.killBash:
       return {
         title: "Kill Process",
         kind: "execute",
         content: [],
       };
 
-    case "mcp__acp__read": {
+    case toolNames.read: {
       let limit = "";
       if (input.limit) {
         limit =
@@ -135,7 +135,7 @@ export function toolInfoFromToolUse(
         locations: [],
       };
 
-    case "mcp__acp__edit":
+    case toolNames.edit:
     case "Edit": {
       const path = input?.abs_path ?? input?.file_path;
       let oldText = input.old_string ?? null;
@@ -181,7 +181,7 @@ export function toolInfoFromToolUse(
       };
     }
 
-    case "mcp__acp__multi-edit":
+    case toolNames.multiEdit:
     case "MultiEdit": {
       const multiInput = input as {
         file_path: string;
@@ -234,7 +234,7 @@ export function toolInfoFromToolUse(
           : [],
       };
     }
-    case "mcp__acp__write": {
+    case toolNames.write: {
       let content: ToolCallContent[] = [];
       if (input && input.abs_path) {
         content = [
@@ -400,10 +400,10 @@ export function toolInfoFromToolUse(
         content: [],
       };
 
-    case "exit_plan_mode":
+    case "ExitPlanMode":
       return {
-        title: "Exit Plan Mode",
-        kind: "think",
+        title: "Ready to code?",
+        kind: "switch_mode",
         content:
           input && input.plan
             ? [{ type: "content", content: { type: "text", text: input.plan } }]
@@ -447,7 +447,7 @@ export function toolUpdateFromToolResult(
 ): ToolUpdate {
   switch (toolUse?.name) {
     case "Read":
-    case "mcp__acp__read":
+    case toolNames.read:
       if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
         return {
           content: toolResult.content.map((content: any) => ({
@@ -476,20 +476,24 @@ export function toolUpdateFromToolResult(
       }
       return {};
 
-    case "mcp__acp__Bash":
-    case "mcp__acp__edit":
+    case toolNames.bash:
     case "edit":
     case "Edit":
-    case "mcp__acp__multi-edit":
+    case toolNames.edit:
+    case toolNames.multiEdit:
     case "multi-edit":
     case "MultiEdit":
-    case "mcp__acp__write":
+    case toolNames.write:
     case "Write": {
       if (toolResult.is_error && toolResult.content?.length > 0) {
         // Only return errors
         return toAcpContentUpdate(toolResult.content);
       }
       return {};
+    }
+
+    case "ExitPlanMode": {
+      return { title: "Exited Plan Mode" };
     }
 
     case "Task":

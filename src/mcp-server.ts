@@ -9,12 +9,38 @@ import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agen
 import * as diff from "diff";
 
 import { sleep, unreachable } from "./utils.js";
+import { PermissionResult } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
 
 <system-reminder>
 Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
 </system-reminder>`;
+
+const unqualifiedToolNames = {
+  read: "read",
+  edit: "edit",
+  write: "write",
+  multiEdit: "multi-edit",
+  bash: "Bash",
+  killBash: "KillBash",
+  bashOutput: "BashOutput",
+  permission: "permission",
+};
+
+const SERVER_PREFIX = "mcp__acp__";
+export const toolNames = {
+  read: SERVER_PREFIX + unqualifiedToolNames.read,
+  edit: SERVER_PREFIX + unqualifiedToolNames.edit,
+  write: SERVER_PREFIX + unqualifiedToolNames.write,
+  multiEdit: SERVER_PREFIX + unqualifiedToolNames.multiEdit,
+  bash: SERVER_PREFIX + unqualifiedToolNames.bash,
+  killBash: SERVER_PREFIX + unqualifiedToolNames.killBash,
+  bashOutput: SERVER_PREFIX + unqualifiedToolNames.bashOutput,
+  permission: SERVER_PREFIX + unqualifiedToolNames.permission,
+};
+
+const editToolNames = [toolNames.edit, toolNames.multiEdit, toolNames.write];
 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
@@ -29,14 +55,14 @@ export function createMcpServer(
 
   if (clientCapabilities?.fs?.readTextFile) {
     server.registerTool(
-      "read",
+      unqualifiedToolNames.read,
       {
         title: "Read",
         description: `Reads the content of the given file in the project.
 
 Never attempt to read a path that hasn't been previously mentioned.
 
-In sessions with mcp__acp__read always use it instead of Read as it contains the most up-to-date contents.`,
+In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.`,
         inputSchema: {
           abs_path: z.string().describe("The absolute path to the file to read."),
           offset: z
@@ -97,12 +123,12 @@ In sessions with mcp__acp__read always use it instead of Read as it contains the
 
   if (clientCapabilities?.fs?.writeTextFile) {
     server.registerTool(
-      "write",
+      unqualifiedToolNames.write,
       {
         title: "Write",
         description: `Writes content to the specified file in the project.
 
-In sessions with mcp__acp__write always use it instead of Write as it will
+In sessions with ${toolNames.write} always use it instead of Write as it will
 allow the user to conveniently review changes.`,
         inputSchema: {
           abs_path: z.string().describe("The absolute path to the file to write"),
@@ -152,12 +178,12 @@ allow the user to conveniently review changes.`,
     );
 
     server.registerTool(
-      "edit",
+      unqualifiedToolNames.edit,
       {
         title: "Edit",
         description: `Edit a file.
 
-In sessions with mcp__acp__edit always use it instead of Edit as it will
+In sessions with ${toolNames.edit} always use it instead of Edit as it will
 allow the user to conveniently review changes.
 
 File editing instructions:
@@ -229,12 +255,12 @@ File editing instructions:
     );
 
     server.registerTool(
-      "multi-edit",
+      unqualifiedToolNames.multiEdit,
       {
         title: "Multi Edit",
         description: `Edit a file with multiple sequential edits.
 
-In sessions with mcp__acp__multi-edit always use it instead of MultiEdit as it will
+In sessions with ${toolNames.multiEdit} always use it instead of MultiEdit as it will
 allow the user to conveniently review changes.
 
 File editing instructions:
@@ -319,7 +345,7 @@ File editing instructions:
 
   if (agent.clientCapabilities?.terminal) {
     server.registerTool(
-      "Bash",
+      unqualifiedToolNames.bash,
       {
         title: "Bash",
         description: "Executes a bash command",
@@ -333,7 +359,7 @@ File editing instructions:
             .boolean()
             .default(false)
             .describe(
-              "When set to true, the command is started in the background. The tool returns an `id` that can be used with the `mcp__acp__BashOutput` tool to retrieve the current output, or the `mcp__acp__KillBash` tool to stop it early.",
+              `When set to true, the command is started in the background. The tool returns an \`id\` that can be used with the \`${toolNames.bashOutput}\` tool to retrieve the current output, or the \`${toolNames.killBash}\` tool to stop it early.`,
             ),
         },
       },
@@ -454,7 +480,7 @@ File editing instructions:
     );
 
     server.registerTool(
-      "BashOutput",
+      unqualifiedToolNames.bashOutput,
       {
         title: "BashOutput",
         description:
@@ -462,7 +488,7 @@ File editing instructions:
         inputSchema: {
           id: z
             .string()
-            .describe("The id of the background bash command as returned by `mcp__acp__Bash`"),
+            .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
       async (input) => {
@@ -505,14 +531,14 @@ File editing instructions:
     );
 
     server.registerTool(
-      "KillBash",
+      unqualifiedToolNames.killBash,
       {
         title: "KillBash",
         description: "Stops a background command by its id",
         inputSchema: {
           id: z
             .string()
-            .describe("The id of the background bash command as returned by `mcp__acp__Bash`"),
+            .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
       async (input) => {
@@ -565,7 +591,7 @@ File editing instructions:
 
   const alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(
-    "permission",
+    unqualifiedToolNames.permission,
     {
       title: "Permission Tool",
       description: "Used to request tool permissions",
@@ -576,42 +602,37 @@ File editing instructions:
       },
     },
     async (input) => {
-      const session = agent.sessions[sessionId];
-      if (!session) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "deny",
-                message: "Session not found",
-              }),
-            },
-          ],
-        };
-      }
-      if (alwaysAllowedTools[input.tool_name]) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "allow",
-                updatedInput: input.input,
-              }),
-            },
-          ],
-        };
-      }
+      const result = await canUseTool(input);
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  async function canUseTool(input: {
+    tool_use_id?: string;
+    tool_name: string;
+    input?: any;
+  }): Promise<PermissionResult> {
+    const session = agent.sessions[sessionId];
+    if (!session) {
+      return {
+        behavior: "deny",
+        message: "Session not found",
+      };
+    }
+
+    if (input.tool_name === "ExitPlanMode") {
       const response = await agent.client.requestPermission({
         options: [
           {
             kind: "allow_always",
-            name: "Always Allow",
-            optionId: "allow_always",
+            name: "Yes, and auto-accept edits",
+            optionId: "acceptEdits",
           },
-          { kind: "allow_once", name: "Allow", optionId: "allow" },
-          { kind: "reject_once", name: "Reject", optionId: "reject" },
+          { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
+          { kind: "reject_once", name: "No, keep planning", optionId: "plan" },
         ],
         sessionId,
         toolCall: {
@@ -619,39 +640,80 @@ File editing instructions:
           rawInput: input.input,
         },
       });
+
       if (
         response.outcome?.outcome === "selected" &&
-        (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
+        (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
       ) {
-        if (response.outcome.optionId === "allow_always") {
-          alwaysAllowedTools[input.tool_name] = true;
-        }
+        session.permissionMode = response.outcome.optionId;
+        await agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "current_mode_update",
+            currentModeId: response.outcome.optionId,
+          },
+        });
+
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "allow",
-                updatedInput: input.input,
-              }),
-            },
+          behavior: "allow",
+          updatedInput: input.input,
+          updatedPermissions: [
+            { type: "setMode", mode: response.outcome.optionId, destination: "session" },
           ],
         };
       } else {
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                behavior: "deny",
-                message: "User refused permission to run tool",
-              }),
-            },
-          ],
+          behavior: "deny",
+          message: "User rejected request to exit plan mode.",
         };
       }
-    },
-  );
+    }
+
+    if (
+      session.permissionMode === "bypassPermissions" ||
+      (session.permissionMode === "acceptEdits" && editToolNames.includes(input.tool_name)) ||
+      alwaysAllowedTools[input.tool_name]
+    ) {
+      return {
+        behavior: "allow",
+        updatedInput: input.input,
+      };
+    }
+
+    const response = await agent.client.requestPermission({
+      options: [
+        {
+          kind: "allow_always",
+          name: "Always Allow",
+          optionId: "allow_always",
+        },
+        { kind: "allow_once", name: "Allow", optionId: "allow" },
+        { kind: "reject_once", name: "Reject", optionId: "reject" },
+      ],
+      sessionId,
+      toolCall: {
+        toolCallId: input.tool_use_id!,
+        rawInput: input.input,
+      },
+    });
+    if (
+      response.outcome?.outcome === "selected" &&
+      (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
+    ) {
+      if (response.outcome.optionId === "allow_always") {
+        alwaysAllowedTools[input.tool_name] = true;
+      }
+      return {
+        behavior: "allow",
+        updatedInput: input.input,
+      };
+    } else {
+      return {
+        behavior: "deny",
+        message: "User refused permission to run tool",
+      };
+    }
+  }
 
   const app = express();
   app.use(express.json());

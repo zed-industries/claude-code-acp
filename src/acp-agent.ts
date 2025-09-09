@@ -14,6 +14,8 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  SetSessionModeRequest,
+  SetSessionModeResponse,
   TerminalHandle,
   TerminalOutputResponse,
   WriteTextFileRequest,
@@ -22,6 +24,7 @@ import {
 import {
   McpServerConfig,
   Options,
+  PermissionMode,
   Query,
   query,
   SDKAssistantMessage,
@@ -33,7 +36,7 @@ import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
-import { createMcpServer } from "./mcp-server.js";
+import { createMcpServer, toolNames } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
 import { toolInfoFromToolUse, planEntries, toolUpdateFromToolResult } from "./tools.js";
 
@@ -41,6 +44,7 @@ type Session = {
   query: Query;
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
+  permissionMode: PermissionMode;
 };
 
 type BackgroundTerminal =
@@ -148,7 +152,7 @@ export class ClaudeAcpAgent implements Agent {
     const options: Options = {
       cwd: params.cwd,
       mcpServers,
-      permissionPromptToolName: "mcp__acp__permission",
+      permissionPromptToolName: toolNames.permission,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
@@ -158,15 +162,15 @@ export class ClaudeAcpAgent implements Agent {
     const allowedTools = [];
     const disallowedTools = [];
     if (this.clientCapabilities?.fs?.readTextFile) {
-      allowedTools.push("mcp__acp__read");
+      allowedTools.push(toolNames.read);
       disallowedTools.push("Read");
     }
     if (this.clientCapabilities?.fs?.writeTextFile) {
-      allowedTools.push("mcp__acp__write");
+      allowedTools.push(toolNames.write);
       disallowedTools.push("Write", "Edit", "MultiEdit");
     }
     if (this.clientCapabilities?.terminal) {
-      allowedTools.push("mcp__acp__BashOutput", "mcp__acp__KillBash");
+      allowedTools.push(toolNames.bashOutput, toolNames.killBash);
       disallowedTools.push("Bash", "BashOutput", "KillBash");
     }
 
@@ -185,6 +189,7 @@ export class ClaudeAcpAgent implements Agent {
       query: q,
       input: input,
       cancelled: false,
+      permissionMode: "default",
     };
 
     getAvailableSlashCommands(q).then((availableCommands) => {
@@ -199,6 +204,31 @@ export class ClaudeAcpAgent implements Agent {
 
     return {
       sessionId,
+      modes: {
+        currentModeId: "default",
+        availableModes: [
+          {
+            id: "default",
+            name: "Always Ask",
+            description: "Prompts for permission on first use of each tool",
+          },
+          {
+            id: "acceptEdits",
+            name: "Accept Edits",
+            description: "Automatically accepts file edit permissions for the session",
+          },
+          {
+            id: "bypassPermissions",
+            name: "Bypass Permissions",
+            description: "Skips all permission prompts",
+          },
+          {
+            id: "plan",
+            name: "Plan Mode",
+            description: "Claude can analyze but not modify files or execute commands",
+          },
+        ],
+      },
     };
   }
 
@@ -284,6 +314,29 @@ export class ClaudeAcpAgent implements Agent {
     }
     this.sessions[params.sessionId].cancelled = true;
     await this.sessions[params.sessionId].query.interrupt();
+  }
+
+  async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
+    if (!this.sessions[params.sessionId]) {
+      throw new Error("Session not found");
+    }
+
+    switch (params.modeId) {
+      case "default":
+      case "acceptEdits":
+      case "plan":
+        this.sessions[params.sessionId].permissionMode = params.modeId;
+        await this.sessions[params.sessionId].query.setPermissionMode(params.modeId);
+        return {};
+      case "bypassPermissions":
+        // For some reason, the SDK doesn't support setting the mode to `bypassPermissions`
+        // so we do it ourselves
+        this.sessions[params.sessionId].permissionMode = "bypassPermissions";
+        await this.sessions[params.sessionId].query.setPermissionMode("acceptEdits");
+        return {};
+      default:
+        throw new Error("Invalid mode");
+    }
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
