@@ -622,7 +622,6 @@ File editing instructions:
         message: "Session not found",
       };
     }
-    console.log(JSON.stringify({ input, permissionMode: session.permissionMode }, null, 2));
 
     if (input.tool_name === "ExitPlanMode") {
       const response = await agent.client.requestPermission({
