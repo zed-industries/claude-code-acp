@@ -1,6 +1,0 @@
-node_modules/
-dist/
-coverage/
-*.min.js
-*.config.js
-.github/
