@@ -2,6 +2,8 @@
 
 import { Readable, Writable } from "node:stream";
 import { WritableStream, ReadableStream } from "node:stream/web";
+import { readFileSync } from "node:fs";
+import { platform } from "node:os";
 
 // Useful for bridging push-based and async-iterator-based code.
 export class Pushable<T> implements AsyncIterable<T> {
@@ -79,4 +81,44 @@ export function unreachable(value: never): never {
 
 export function sleep(time: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, time));
+}
+
+interface ManagedSettings {
+  permissions?: {
+    allow?: string[];
+    deny?: string[];
+  };
+  env?: Record<string, string>;
+}
+
+// Following the rules in https://docs.anthropic.com/en/docs/claude-code/settings#settings-files
+// This can be removed once the SDK supports it natively.
+function getManagedSettingsPath(): string {
+  const os = platform();
+  switch (os) {
+    case "darwin":
+      return "/Library/Application Support/ClaudeCode/managed-settings.json";
+    case "linux": // including WSL
+      return "/etc/claude-code/managed-settings.json";
+    case "win32":
+      return "C:\\ProgramData\\ClaudeCode\\managed-settings.json";
+    default:
+      return "/etc/claude-code/managed-settings.json";
+  }
+}
+
+export function loadManagedSettings(): ManagedSettings | null {
+  try {
+    return JSON.parse(readFileSync(getManagedSettingsPath(), "utf8")) as ManagedSettings;
+  } catch {
+    return null;
+  }
+}
+
+export function applyEnvironmentSettings(settings: ManagedSettings): void {
+  if (settings.env) {
+    for (const [key, value] of Object.entries(settings.env)) {
+      process.env[key] = value;
+    }
+  }
 }
