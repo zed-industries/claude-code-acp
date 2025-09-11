@@ -302,7 +302,7 @@ export class ClaudeAcpAgent implements Agent {
           break;
         }
         default:
-          unreachable(message);
+          unreachable(message as never);
       }
     }
     throw new Error("Session did not end in result");
