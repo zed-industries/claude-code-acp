@@ -110,7 +110,7 @@ function getManagedSettingsPath(): string {
 export function loadManagedSettings(): ManagedSettings | null {
   try {
     return JSON.parse(readFileSync(getManagedSettingsPath(), "utf8")) as ManagedSettings;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
