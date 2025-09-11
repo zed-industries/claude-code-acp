@@ -43,12 +43,12 @@
   "author": "Zed Industries",
   "license": "Apache-2.0",
   "dependencies": {
-    "@anthropic-ai/claude-code": "^1.0.100",
-    "@modelcontextprotocol/sdk": "^1.17.4",
+    "@anthropic-ai/claude-code": "1.0.111",
+    "@modelcontextprotocol/sdk": "1.17.4",
     "@zed-industries/agent-client-protocol": "0.2.0-alpha.8",
-    "diff": "^8.0.2",
-    "express": "^5.1.0",
-    "minimist": "^1.2.8",
+    "diff": "8.0.2",
+    "express": "5.1.0",
+    "minimist": "1.2.8",
     "uuid": "11.1.0"
   },
   "devDependencies": {
