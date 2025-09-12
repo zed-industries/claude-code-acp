@@ -70,14 +70,14 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
             .optional()
             .default(0)
             .describe(
-              "Which line to start reading from (0-based). Default is 0 (beginning of file).",
+              "Which line to start reading from (0-based). Omit to start from the beginning.",
             ),
           limit: z
             .number()
             .optional()
             .default(1000)
             .describe(
-              "Maximum number of lines to read. Default is 1000. Use a larger value if you need more content.",
+              "How many lines to read. Omit for 1000. (Reading files that are too large can fill up the context window unnecessarily, so be thoughtful about how much you read at a time.)",
             ),
         },
         annotations: {
@@ -102,15 +102,14 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
             };
           }
 
-          // Get the full file content
-          const fullContent = await agent.readTextFile({
+          const content = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
           });
 
           // Extract lines with byte limit enforcement
           const result = extractLinesWithByteLimit(
-            fullContent.content,
+            content.content,
             input.offset ?? 0,
             input.limit ?? 1000,
             50000, // 50KB limit
