@@ -62,9 +62,7 @@ export function createMcpServer(
 
 Never attempt to read a path that hasn't been previously mentioned.
 
-In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.
-
-NOTE: Output is limited to 50KB per read to avoid exceeding context windows. If the requested lines exceed 50KB, fewer lines will be returned.`,
+In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.`,
         inputSchema: {
           abs_path: z.string().describe("The absolute path to the file to read."),
           offset: z
