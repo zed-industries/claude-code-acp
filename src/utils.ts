@@ -122,3 +122,110 @@ export function applyEnvironmentSettings(settings: ManagedSettings): void {
     }
   }
 }
+
+export interface ExtractLinesResult {
+  content: string;
+  actualEndLine: number;
+  wasLimited: boolean;
+  linesRead: number;
+  bytesRead: number;
+  totalLines: number;
+  message: string;
+}
+
+/**
+ * Extracts lines from file content with byte limit enforcement.
+ *
+ * @param fullContent - The complete file content
+ * @param offset - Starting line number (0-based)
+ * @param limit - Maximum number of lines to read
+ * @param maxBytes - Maximum bytes to return (default 50000)
+ * @returns Object containing extracted content and metadata
+ */
+export function extractLinesWithByteLimit(
+  fullContent: string,
+  offset: number = 0,
+  limit: number = 1000,
+  maxBytes: number = 50000,
+): ExtractLinesResult {
+  const allLines = fullContent.split("\n");
+  const totalLines = allLines.length;
+
+  // Validate offset
+  if (offset >= totalLines) {
+    return {
+      content: "",
+      actualEndLine: offset,
+      wasLimited: false,
+      linesRead: 0,
+      bytesRead: 0,
+      totalLines,
+      message: `[File reading info: Offset ${offset} exceeds total lines ${totalLines}.]`,
+    };
+  }
+
+  // Handle special case of 0 byte limit
+  if (maxBytes === 0) {
+    return {
+      content: "",
+      actualEndLine: offset,
+      wasLimited: false,
+      linesRead: 0,
+      bytesRead: 0,
+      totalLines,
+      message: `[File reading info: Cannot read with 0 byte limit.]`,
+    };
+  }
+
+  // Extract the requested lines, but respect byte limit
+  const requestedEndLine = Math.min(offset + limit, totalLines);
+
+  let extractedLines: string[] = [];
+  let currentSize = 0;
+  let actualEndLine = offset;
+
+  for (let i = offset; i < requestedEndLine; i++) {
+    const lineWithNewline = allLines[i] + (i < requestedEndLine - 1 ? "\n" : "");
+    const lineBytes = Buffer.from(lineWithNewline).length;
+
+    if (currentSize + lineBytes > maxBytes && extractedLines.length > 0) {
+      // Would exceed maxBytes, stop here
+      break;
+    }
+
+    extractedLines.push(allLines[i]);
+    currentSize += lineBytes;
+    actualEndLine = i + 1;
+  }
+
+  const extractedContent = extractedLines.join("\n");
+  const wasLimited = actualEndLine < requestedEndLine;
+  const linesRead = actualEndLine - offset;
+
+  // Prepare informative message about what was read
+  let message = "";
+  if (offset > 0 || actualEndLine < totalLines || wasLimited) {
+    message = `[File reading info: Read lines ${offset + 1}-${actualEndLine} of ${totalLines} total lines`;
+
+    if (wasLimited) {
+      message += `. Output limited to ${maxBytes / 1000}KB - only ${linesRead} of requested ${limit} lines were returned`;
+    }
+
+    if (actualEndLine < totalLines) {
+      const remainingLines = totalLines - actualEndLine;
+      message += `. To continue reading, call again with offset=${actualEndLine}. ${remainingLines} lines remaining`;
+    }
+
+    message += ".]";
+  }
+
+  return {
+    content: extractedContent,
+    actualEndLine,
+    wasLimited,
+    linesRead,
+    bytesRead: currentSize,
+    totalLines,
+    message,
+  };
+}

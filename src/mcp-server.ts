@@ -8,7 +8,7 @@ import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
 import * as diff from "diff";
 
-import { sleep, unreachable } from "./utils.js";
+import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
 import { PermissionResult } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
@@ -62,14 +62,25 @@ export function createMcpServer(
 
 Never attempt to read a path that hasn't been previously mentioned.
 
-In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.`,
+In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.
+
+NOTE: Output is limited to 50KB per read to avoid exceeding context windows. If the requested lines exceed 50KB, fewer lines will be returned.`,
         inputSchema: {
           abs_path: z.string().describe("The absolute path to the file to read."),
           offset: z
             .number()
             .optional()
-            .describe("Which line to start reading from. Omit to start from the beginning."),
-          limit: z.number().optional().describe("How many lines to read. Omit for the whole file."),
+            .default(0)
+            .describe(
+              "Which line to start reading from (0-based). Default is 0 (beginning of file).",
+            ),
+          limit: z
+            .number()
+            .optional()
+            .default(1000)
+            .describe(
+              "Maximum number of lines to read. Default is 1000. Use a larger value if you need more content.",
+            ),
         },
         annotations: {
           title: "Read file",
@@ -92,18 +103,29 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
               ],
             };
           }
-          const content = await agent.readTextFile({
+
+          // Get the full file content
+          const fullContent = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
-            limit: input.limit,
-            line: input.offset,
           });
+
+          // Extract lines with byte limit enforcement
+          const result = extractLinesWithByteLimit(
+            fullContent.content,
+            input.offset ?? 0,
+            input.limit ?? 1000,
+            50000, // 50KB limit
+          );
+
+          // Add the informative message if present
+          const readInfo = result.message ? "\n\n" + result.message : "";
 
           return {
             content: [
               {
                 type: "text",
-                text: content.content + SYSTEM_REMINDER,
+                text: result.content + readInfo + SYSTEM_REMINDER,
               },
             ],
           };
