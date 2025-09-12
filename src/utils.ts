@@ -130,7 +130,6 @@ export interface ExtractLinesResult {
   linesRead: number;
   bytesRead: number;
   totalLines: number;
-  message: string;
 }
 
 /**
@@ -160,7 +159,6 @@ export function extractLinesWithByteLimit(
       linesRead: 0,
       bytesRead: 0,
       totalLines,
-      message: `[File reading info: Offset ${offset} exceeds total lines ${totalLines}.]`,
     };
   }
 
@@ -173,7 +171,6 @@ export function extractLinesWithByteLimit(
       linesRead: 0,
       bytesRead: 0,
       totalLines,
-      message: `[File reading info: Cannot read with 0 byte limit.]`,
     };
   }
 
@@ -202,23 +199,6 @@ export function extractLinesWithByteLimit(
   const wasLimited = actualEndLine < requestedEndLine;
   const linesRead = actualEndLine - offset;
 
-  // Prepare informative message about what was read
-  let message = "";
-  if (offset > 0 || actualEndLine < totalLines || wasLimited) {
-    message = `[File reading info: Read lines ${offset + 1}-${actualEndLine} of ${totalLines} total lines`;
-
-    if (wasLimited) {
-      message += `. Output limited to ${maxBytes / 1000}KB - only ${linesRead} of requested ${limit} lines were returned`;
-    }
-
-    if (actualEndLine < totalLines) {
-      const remainingLines = totalLines - actualEndLine;
-      message += `. To continue reading, call again with offset=${actualEndLine}. ${remainingLines} lines remaining`;
-    }
-
-    message += ".]";
-  }
-
   return {
     content: extractedContent,
     actualEndLine,
@@ -226,6 +206,5 @@ export function extractLinesWithByteLimit(
     linesRead,
     bytesRead: currentSize,
     totalLines,
-    message,
   };
 }

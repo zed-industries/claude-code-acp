@@ -118,8 +118,24 @@ NOTE: Output is limited to 50KB per read to avoid exceeding context windows. If 
             50000, // 50KB limit
           );
 
-          // Add the informative message if present
-          const readInfo = result.message ? "\n\n" + result.message : "";
+          // Construct informative message about what was read
+          let readInfo = "";
+          if (input.offset > 0 || result.actualEndLine < result.totalLines || result.wasLimited) {
+            readInfo = "\n\n---\n";
+
+            if (result.wasLimited) {
+              readInfo += `Read ${result.linesRead} lines (hit 50KB limit). `;
+            } else {
+              readInfo += `Read lines ${(input.offset ?? 0) + 1}-${result.actualEndLine}. `;
+            }
+
+            if (result.actualEndLine < result.totalLines) {
+              const remainingLines = result.totalLines - result.actualEndLine;
+              readInfo += `${remainingLines} lines left. Continue with offset=${result.actualEndLine}.`;
+            } else {
+              readInfo += "End of file.";
+            }
+          }
 
           return {
             content: [

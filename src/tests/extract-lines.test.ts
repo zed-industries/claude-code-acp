@@ -12,7 +12,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(5);
     expect(result.totalLines).toBe(5);
-    expect(result.message).toBe("");
   });
 
   it("should extract partial lines with offset", () => {
@@ -23,9 +22,9 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(2);
     expect(result.totalLines).toBe(5);
-    expect(result.message).toContain("Read lines 3-4 of 5 total lines");
-    expect(result.message).toContain("To continue reading, call again with offset=4");
-    expect(result.message).toContain("1 lines remaining");
+    // Verify the data that would be used to construct the message
+    expect(result.actualEndLine).toBe(4);
+    expect(result.totalLines - result.actualEndLine).toBe(1); // 1 line remaining
   });
 
   it("should limit output when exceeding byte limit", () => {
@@ -39,8 +38,9 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(2); // Should only get 2 lines
     expect(result.linesRead).toBe(2);
     expect(result.bytesRead).toBeLessThanOrEqual(250);
-    expect(result.message).toContain("Output limited to 0.25KB");
-    expect(result.message).toContain("only 2 of requested 10 lines were returned");
+    expect(result.wasLimited).toBe(true);
+    // Verify it only returned 2 of the requested 10 lines
+    expect(result.linesRead).toBe(2);
   });
 
   it("should handle offset beyond file length", () => {
@@ -51,7 +51,8 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(0);
     expect(result.bytesRead).toBe(0);
-    expect(result.message).toContain("Offset 10 exceeds total lines 5");
+    // Verify offset exceeds total lines
+    expect(10).toBeGreaterThan(result.totalLines);
   });
 
   it("should handle empty content", () => {
@@ -73,7 +74,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(1);
     expect(result.totalLines).toBe(1);
-    expect(result.message).toBe("");
   });
 
   it("should correctly count bytes with multi-byte characters", () => {
@@ -119,8 +119,8 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(5);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(2);
-    expect(result.message).toContain("Read lines 4-5 of 5 total lines");
-    expect(result.message).not.toContain("To continue reading");
+    // Verify it read to the end
+    expect(result.actualEndLine).toBe(result.totalLines);
   });
 
   it("should handle default parameters", () => {
@@ -131,20 +131,22 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.bytesRead).toBeLessThanOrEqual(50000); // Default byte limit
   });
 
-  it("should include proper message for partial read at start", () => {
+  it("should provide correct data for partial read at start", () => {
     const result = extractLinesWithByteLimit(simpleContent, 0, 2, 1000);
 
-    expect(result.message).toBe(
-      "[File reading info: Read lines 1-2 of 5 total lines. To continue reading, call again with offset=2. 3 lines remaining.]",
-    );
+    expect(result.actualEndLine).toBe(2);
+    expect(result.totalLines).toBe(5);
+    expect(result.linesRead).toBe(2);
+    expect(result.totalLines - result.actualEndLine).toBe(3); // 3 lines remaining
   });
 
-  it("should include proper message for partial read with offset", () => {
+  it("should provide correct data for partial read with offset", () => {
     const result = extractLinesWithByteLimit(simpleContent, 1, 2, 1000);
 
-    expect(result.message).toBe(
-      "[File reading info: Read lines 2-3 of 5 total lines. To continue reading, call again with offset=3. 2 lines remaining.]",
-    );
+    expect(result.actualEndLine).toBe(3);
+    expect(result.totalLines).toBe(5);
+    expect(result.linesRead).toBe(2);
+    expect(result.totalLines - result.actualEndLine).toBe(2); // 2 lines remaining
   });
 
   it("should not add newline after last line", () => {
@@ -173,7 +175,7 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(true);
     expect(result.bytesRead).toBeLessThanOrEqual(50000);
     expect(result.actualEndLine).toBeLessThan(50); // Should stop well before 200 lines
-    expect(result.message).toContain("Output limited to 50KB");
+    expect(result.wasLimited).toBe(true);
   });
 
   it("should handle limit of 0", () => {
