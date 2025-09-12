@@ -91,7 +91,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
 
     async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
       this.files.set(params.path, params.content);
-      return null;
+      return {};
     }
 
     async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {

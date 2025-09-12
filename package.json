@@ -45,7 +45,7 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "1.0.111",
     "@modelcontextprotocol/sdk": "1.17.4",
-    "@zed-industries/agent-client-protocol": "0.2.0-alpha.8",
+    "@zed-industries/agent-client-protocol": "0.2.1",
     "diff": "8.0.2",
     "express": "5.1.0",
     "minimist": "1.2.8",
