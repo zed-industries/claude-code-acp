@@ -17,6 +17,8 @@ export const SYSTEM_REMINDER = `
 Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
 </system-reminder>`;
 
+const defaults = { maxFileSize: 50000, linesToRead: 1000 };
+
 const unqualifiedToolNames = {
   read: "read",
   edit: "edit",
@@ -72,12 +74,12 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
             .describe(
               "Which line to start reading from (0-based). Omit to start from the beginning.",
             ),
-          limit: z
+          linesToRead: z
             .number()
             .optional()
-            .default(1000)
+            .default(defaults.linesToRead)
             .describe(
-              "How many lines to read. Omit for 1000. (Reading files that are too large can fill up the context window unnecessarily, so be thoughtful about how much you read at a time.)",
+              `How many lines to read. Omit for ${defaults.linesToRead}. (Reading files that are too large can fill up the context window unnecessarily, so be thoughtful about how much you read at a time.)`,
             ),
         },
         annotations: {
@@ -111,8 +113,8 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
           const result = extractLinesWithByteLimit(
             content.content,
             input.offset ?? 0,
-            input.limit ?? 1000,
-            50000, // 50KB limit
+            input.linesToRead,
+            defaults.maxFileSize,
           );
 
           // Construct informative message about what was read

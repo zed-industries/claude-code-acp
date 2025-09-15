@@ -178,20 +178,11 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(true);
   });
 
-  it("should handle limit of 0", () => {
+  it("should handle line limit of 0", () => {
     const result = extractLinesWithByteLimit(simpleContent, 0, 0, 1000);
 
     expect(result.content).toBe("");
     expect(result.actualEndLine).toBe(0);
-    expect(result.linesRead).toBe(0);
-    expect(result.wasLimited).toBe(false);
-  });
-
-  it("should handle byte limit of 0", () => {
-    const result = extractLinesWithByteLimit(simpleContent, 0, 10, 0);
-
-    expect(result.content).toBe("");
-    expect(result.actualEndLine).toBe(0); // With 0 byte limit, we stay at offset
     expect(result.linesRead).toBe(0);
     expect(result.wasLimited).toBe(false);
   });

@@ -144,8 +144,8 @@ export interface ExtractLinesResult {
 export function extractLinesWithByteLimit(
   fullContent: string,
   offset: number = 0,
-  limit: number = 1000,
-  maxBytes: number = 50000,
+  limit: number,
+  maxBytes: number,
 ): ExtractLinesResult {
   const allLines = fullContent.split("\n");
   const totalLines = allLines.length;
@@ -162,22 +162,9 @@ export function extractLinesWithByteLimit(
     };
   }
 
-  // Handle special case of 0 byte limit
-  if (maxBytes === 0) {
-    return {
-      content: "",
-      actualEndLine: offset,
-      wasLimited: false,
-      linesRead: 0,
-      bytesRead: 0,
-      totalLines,
-    };
-  }
-
   // Extract the requested lines, but respect byte limit
   const requestedEndLine = Math.min(offset + limit, totalLines);
-
-  let extractedLines: string[] = [];
+  const extractedLines: string[] = [];
   let currentSize = 0;
   let actualEndLine = offset;
 
