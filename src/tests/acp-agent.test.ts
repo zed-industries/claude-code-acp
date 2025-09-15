@@ -191,6 +191,50 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
 
     expect(client.takeReceivedText()).toContain("Hello GPT-5");
   }, 30000);
+
+  it("/compact works", async () => {
+    const { client, connection, newSessionResponse } = await setupTestSession(__dirname);
+
+    const commands = await client.availableCommandsPromise;
+
+    expect(commands).toContainEqual({
+      description:
+        "Clear conversation history but keep a summary in context. Optional: /compact [instructions for summarization]",
+      input: {
+        hint: "<optional custom summarization instructions>",
+      },
+      name: "compact",
+    });
+
+    // Error case (no previous message)
+    await connection.prompt({
+      prompt: [{ type: "text", text: "/compact" }],
+      sessionId: newSessionResponse.sessionId,
+    });
+
+    expect(client.takeReceivedText()).toBe("");
+
+    // Send something
+    await connection.prompt({
+      prompt: [{ type: "text", text: "Hi" }],
+      sessionId: newSessionResponse.sessionId,
+    });
+    // Clear response
+    client.takeReceivedText();
+
+    // Test with instruction
+    await connection.prompt({
+      prompt: [
+        {
+          type: "text",
+          text: "/compact greeting",
+        },
+      ],
+      sessionId: newSessionResponse.sessionId,
+    });
+
+    expect(client.takeReceivedText()).toContain("");
+  }, 30000);
 });
 
 describe("tool conversions", () => {

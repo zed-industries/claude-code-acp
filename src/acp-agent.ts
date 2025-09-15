@@ -291,7 +291,15 @@ export class ClaudeAcpAgent implements Agent {
             message.message.content.includes("<local-command-stdout>")
           ) {
             console.log(message.message.content);
-            continue;
+            break;
+          }
+
+          if (
+            typeof message.message.content === "string" &&
+            message.message.content.includes("<local-command-stderr>")
+          ) {
+            console.log(message.message.contents);
+            break;
           }
 
           if (
