@@ -17,6 +17,7 @@ jobs:
           node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
+      - run: npm run build
         # Add back provenance once repo is public
       - run: npm publish # --provenance --access public
         env:
