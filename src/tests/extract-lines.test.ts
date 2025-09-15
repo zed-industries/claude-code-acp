@@ -11,7 +11,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(5);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(5);
-    expect(result.totalLines).toBe(5);
   });
 
   it("should extract partial lines with offset", () => {
@@ -21,10 +20,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(4);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(2);
-    expect(result.totalLines).toBe(5);
-    // Verify the data that would be used to construct the message
-    expect(result.actualEndLine).toBe(4);
-    expect(result.totalLines - result.actualEndLine).toBe(1); // 1 line remaining
   });
 
   it("should limit output when exceeding byte limit", () => {
@@ -37,10 +32,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.wasLimited).toBe(true);
     expect(result.actualEndLine).toBe(2); // Should only get 2 lines
     expect(result.linesRead).toBe(2);
-    expect(result.bytesRead).toBeLessThanOrEqual(250);
-    expect(result.wasLimited).toBe(true);
-    // Verify it only returned 2 of the requested 10 lines
-    expect(result.linesRead).toBe(2);
   });
 
   it("should handle offset beyond file length", () => {
@@ -50,9 +41,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(10);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(0);
-    expect(result.bytesRead).toBe(0);
-    // Verify offset exceeds total lines
-    expect(10).toBeGreaterThan(result.totalLines);
   });
 
   it("should handle empty content", () => {
@@ -62,7 +50,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(1); // Empty string splits to [""] and we process that one empty line
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(1); // We read the one empty line
-    expect(result.totalLines).toBe(1); // Empty string splits to [""]
   });
 
   it("should handle single line file", () => {
@@ -73,7 +60,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(1);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(1);
-    expect(result.totalLines).toBe(1);
   });
 
   it("should correctly count bytes with multi-byte characters", () => {
@@ -82,7 +68,6 @@ describe("extractLinesWithByteLimit", () => {
 
     expect(result.content).toBe(unicodeContent);
     expect(result.linesRead).toBe(4);
-    expect(result.bytesRead).toBe(Buffer.from(unicodeContent).length);
   });
 
   it("should stop at byte limit even with one more line available", () => {
@@ -98,7 +83,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(2);
     expect(result.wasLimited).toBe(true);
     expect(result.linesRead).toBe(2);
-    expect(result.bytesRead).toBeLessThanOrEqual(85);
   });
 
   it("should read exactly to limit when possible", () => {
@@ -109,7 +93,6 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(3);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(3);
-    expect(result.bytesRead).toBe(17);
   });
 
   it("should handle reading from middle to end", () => {
@@ -119,41 +102,33 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(5);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(2);
-    // Verify it read to the end
-    expect(result.actualEndLine).toBe(result.totalLines);
   });
 
-  it("should handle default parameters", () => {
+  it("should handle large content with typical parameters", () => {
     const longContent = Array(2000).fill("Line content here").join("\n");
-    const result = extractLinesWithByteLimit(longContent);
+    const result = extractLinesWithByteLimit(longContent, 0, 1000, 50000);
 
-    expect(result.actualEndLine).toBeLessThanOrEqual(1000); // Default limit
-    expect(result.bytesRead).toBeLessThanOrEqual(50000); // Default byte limit
+    expect(result.actualEndLine).toBeLessThanOrEqual(1000); // Should be limited by line count
   });
 
   it("should provide correct data for partial read at start", () => {
     const result = extractLinesWithByteLimit(simpleContent, 0, 2, 1000);
 
     expect(result.actualEndLine).toBe(2);
-    expect(result.totalLines).toBe(5);
     expect(result.linesRead).toBe(2);
-    expect(result.totalLines - result.actualEndLine).toBe(3); // 3 lines remaining
   });
 
   it("should provide correct data for partial read with offset", () => {
     const result = extractLinesWithByteLimit(simpleContent, 1, 2, 1000);
 
     expect(result.actualEndLine).toBe(3);
-    expect(result.totalLines).toBe(5);
     expect(result.linesRead).toBe(2);
-    expect(result.totalLines - result.actualEndLine).toBe(2); // 2 lines remaining
   });
 
   it("should not add newline after last line", () => {
     const result = extractLinesWithByteLimit("Line 1\nLine 2\nLine 3", 2, 1, 1000);
 
     expect(result.content).toBe("Line 3"); // No trailing newline
-    expect(result.bytesRead).toBe(6); // Just "Line 3"
   });
 
   it("should handle Windows-style line endings", () => {
@@ -173,9 +148,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(largeContent, 0, 200, 50000);
 
     expect(result.wasLimited).toBe(true);
-    expect(result.bytesRead).toBeLessThanOrEqual(50000);
     expect(result.actualEndLine).toBeLessThan(50); // Should stop well before 200 lines
-    expect(result.wasLimited).toBe(true);
   });
 
   it("should handle line limit of 0", () => {
@@ -197,6 +170,5 @@ describe("extractLinesWithByteLimit", () => {
     expect(result.actualEndLine).toBe(1);
     expect(result.linesRead).toBe(1);
     expect(result.wasLimited).toBe(false);
-    expect(result.bytesRead).toBe(100000);
   });
 });
