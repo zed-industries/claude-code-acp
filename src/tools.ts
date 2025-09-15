@@ -487,7 +487,7 @@ export function toolUpdateFromToolResult(
     case "Write": {
       if (toolResult.is_error && toolResult.content?.length > 0) {
         // Only return errors
-        return toAcpContentUpdate(toolResult.content);
+        return toAcpContentUpdate(toolResult.content, true);
       }
       return {};
     }
@@ -511,17 +511,26 @@ export function toolUpdateFromToolResult(
     case "WebSearch":
     case "Other":
     default: {
-      return toAcpContentUpdate(toolResult.content);
+      return toAcpContentUpdate(toolResult.content, toolResult.is_error);
     }
   }
 }
 
-function toAcpContentUpdate(content: any): { content?: ToolCallContent[] } {
+function toAcpContentUpdate(
+  content: any,
+  isError: boolean = false,
+): { content?: ToolCallContent[] } {
   if (Array.isArray(content) && content.length > 0) {
     return {
       content: content.map((content: any) => ({
         type: "content",
-        content,
+        content:
+          isError && content.type === "text"
+            ? {
+                ...content,
+                text: `\`\`\`\n${content.text}\n\`\`\``,
+              }
+            : content,
       })),
     };
   } else if (typeof content === "string" && content.length > 0) {
@@ -531,7 +540,7 @@ function toAcpContentUpdate(content: any): { content?: ToolCallContent[] } {
           type: "content",
           content: {
             type: "text",
-            text: content,
+            text: isError ? `\`\`\`\n${content}\n\`\`\`` : content,
           },
         },
       ],
