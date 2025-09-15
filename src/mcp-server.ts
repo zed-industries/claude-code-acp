@@ -119,7 +119,7 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
 
           // Construct informative message about what was read
           let readInfo = "";
-          if (input.offset > 0 || result.actualEndLine < result.totalLines || result.wasLimited) {
+          if (input.offset > 0 || result.wasLimited) {
             readInfo = "\n\n<file-read-info>";
 
             if (result.wasLimited) {
@@ -128,11 +128,8 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
               readInfo += `Read lines ${(input.offset ?? 0) + 1}-${result.actualEndLine}. `;
             }
 
-            if (result.actualEndLine < result.totalLines) {
-              const remainingLines = result.totalLines - result.actualEndLine;
-              readInfo += `${remainingLines} lines left. Continue with offset=${result.actualEndLine}.`;
-            } else {
-              readInfo += "End of file reached.";
+            if (result.wasLimited) {
+              readInfo += `Continue with offset=${result.actualEndLine}.`;
             }
 
             readInfo += "</file-read-info>";
