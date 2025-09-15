@@ -284,6 +284,24 @@ export class ClaudeAcpAgent implements Agent {
             continue;
           }
 
+          // Slash commands like /compact can generate invalid output... doesn't match
+          // their own docs: https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-slash-commands#%2Fcompact-compact-conversation-history
+          if (
+            typeof message.message.content === "string" &&
+            message.message.content.includes("<local-command-stdout>")
+          ) {
+            console.log(message.message.content);
+            break;
+          }
+
+          if (
+            typeof message.message.content === "string" &&
+            message.message.content.includes("<local-command-stderr>")
+          ) {
+            console.error(message.message.content);
+            break;
+          }
+
           if (
             message.message.model === "<synthetic>" &&
             message.message.content.length === 1 &&
@@ -361,7 +379,6 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
     "bashes", // Modal
     "bug", // Modal
     "clear", // Escape Codes
-    "compact", // Not supported via SDK?
     "config", // Modal
     "context", // Escape Codes
     "cost", // Escape Codes
@@ -390,14 +407,14 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
     "todos", // Escape Codes
     "vim", // Not needed
   ];
-  //todo: Do not use `as any` once `supportedCommands` is exposed via the typescript interface
-  const commands = await (query as any).supportedCommands();
+  const commands = await query.supportedCommands();
 
   return commands
-    .map((command: { name: string; description: string; argumentHint: string }) => {
+    .map((command) => {
       const input = command.argumentHint ? { hint: command.argumentHint } : null;
       return {
         name: command.name,
+        // @ts-expect-error type in the ts interface
         description: command.description || "",
         input,
       };
