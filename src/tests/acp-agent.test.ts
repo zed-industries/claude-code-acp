@@ -778,7 +778,10 @@ describe("tool conversions", () => {
     // Should return empty object when parsing fails
     expect(update).toEqual({
       content: [
-        { content: { type: "text", text: "Failed to find `old_string`" }, type: "content" },
+        {
+          content: { type: "text", text: "```\nFailed to find `old_string`\n```" },
+          type: "content",
+        },
       ],
     });
   });
