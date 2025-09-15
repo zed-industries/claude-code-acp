@@ -298,7 +298,7 @@ export class ClaudeAcpAgent implements Agent {
             typeof message.message.content === "string" &&
             message.message.content.includes("<local-command-stderr>")
           ) {
-            console.log(message.message.contents);
+            console.error(message.message.content);
             break;
           }
 
