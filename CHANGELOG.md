@@ -1,8 +1,10 @@
 # Changelog
 
-## v0.4.1
+## v0.4.2
 
-### What's New
+- Fix missing package.json metadata
+
+## v0.4.1
 
 - Add support for /compact command [ecfd36a](https://github.com/zed-industries/claude-code-acp/commit/ecfd36afa6c4e31f12e1daf9b8a2bdc12dda1794)
 - Add default limits to read tool [7bd1638](https://github.com/zed-industries/claude-code-acp/commit/7bd163818bb959b11fd2c933eff73ad83c57abb8)
