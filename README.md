@@ -33,6 +33,7 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 ### Other clients
 
 - Neovim via [CodeCompanion.nvim](https://codecompanion.olimorris.dev/configuration/adapters#setup-claude-code-via-acp)
+- [marimo notebook](https://github.com/marimo-team/marimo)
 
 [Submit a PR](https://github.com/zed-industries/claude-code-acp/pulls) to add yours!
 
