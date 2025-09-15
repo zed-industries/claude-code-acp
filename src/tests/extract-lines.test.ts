@@ -8,7 +8,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(simpleContent, 0, 5, 1000);
 
     expect(result.content).toBe(simpleContent);
-    expect(result.actualEndLine).toBe(5);
+    expect(result.actualEndLine).toBe(4);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(5);
   });
@@ -17,7 +17,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(simpleContent, 2, 2, 1000);
 
     expect(result.content).toBe("Line 3\nLine 4");
-    expect(result.actualEndLine).toBe(4);
+    expect(result.actualEndLine).toBe(3);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(2);
   });
@@ -30,7 +30,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(manyLines, 0, 10, 250);
 
     expect(result.wasLimited).toBe(true);
-    expect(result.actualEndLine).toBe(2); // Should only get 2 lines
+    expect(result.actualEndLine).toBe(1); // Should only get 2 lines
     expect(result.linesRead).toBe(2);
   });
 
@@ -47,7 +47,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit("", 0, 10, 1000);
 
     expect(result.content).toBe("");
-    expect(result.actualEndLine).toBe(1); // Empty string splits to [""] and we process that one empty line
+    expect(result.actualEndLine).toBe(0); // Empty string splits to [""] and we process that one empty line
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(1); // We read the one empty line
   });
@@ -57,7 +57,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(singleLine, 0, 10, 1000);
 
     expect(result.content).toBe(singleLine);
-    expect(result.actualEndLine).toBe(1);
+    expect(result.actualEndLine).toBe(0);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(1);
   });
@@ -80,7 +80,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(content, 0, 3, 85);
 
     expect(result.content).toBe(`${line1}\n${line2}`);
-    expect(result.actualEndLine).toBe(2);
+    expect(result.actualEndLine).toBe(1);
     expect(result.wasLimited).toBe(true);
     expect(result.linesRead).toBe(2);
   });
@@ -90,7 +90,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(exactContent, 0, 3, 17);
 
     expect(result.content).toBe(exactContent);
-    expect(result.actualEndLine).toBe(3);
+    expect(result.actualEndLine).toBe(2);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(3);
   });
@@ -99,7 +99,7 @@ describe("extractLinesWithByteLimit", () => {
     const result = extractLinesWithByteLimit(simpleContent, 3, 100, 1000);
 
     expect(result.content).toBe("Line 4\nLine 5");
-    expect(result.actualEndLine).toBe(5);
+    expect(result.actualEndLine).toBe(4);
     expect(result.wasLimited).toBe(false);
     expect(result.linesRead).toBe(2);
   });
@@ -114,14 +114,14 @@ describe("extractLinesWithByteLimit", () => {
   it("should provide correct data for partial read at start", () => {
     const result = extractLinesWithByteLimit(simpleContent, 0, 2, 1000);
 
-    expect(result.actualEndLine).toBe(2);
+    expect(result.actualEndLine).toBe(1);
     expect(result.linesRead).toBe(2);
   });
 
   it("should provide correct data for partial read with offset", () => {
     const result = extractLinesWithByteLimit(simpleContent, 1, 2, 1000);
 
-    expect(result.actualEndLine).toBe(3);
+    expect(result.actualEndLine).toBe(2);
     expect(result.linesRead).toBe(2);
   });
 
@@ -167,7 +167,7 @@ describe("extractLinesWithByteLimit", () => {
     // Should return the line even though it exceeds the byte limit
     // because we always allow at least one line if no lines have been added yet
     expect(result.content).toBe(veryLongLine);
-    expect(result.actualEndLine).toBe(1);
+    expect(result.actualEndLine).toBe(0);
     expect(result.linesRead).toBe(1);
     expect(result.wasLimited).toBe(false);
   });

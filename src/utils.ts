@@ -149,7 +149,7 @@ export function extractLinesWithByteLimit(
     if (linesToSkip === 0 && linesToRead > 0) {
       return {
         content: "",
-        actualEndLine: 1,
+        actualEndLine: 0,
         wasLimited: false,
         linesRead: 1,
       };
@@ -227,7 +227,7 @@ export function extractLinesWithByteLimit(
 
   return {
     content: fullContent.slice(startIndex, startIndex + contentLength),
-    actualEndLine: linesToSkip + linesSeen,
+    actualEndLine: linesSeen > 0 ? linesToSkip + linesSeen - 1 : linesToSkip,
     wasLimited,
     linesRead: linesSeen,
   };
