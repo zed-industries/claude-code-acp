@@ -8,7 +8,7 @@ import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
 import * as diff from "diff";
 
-import { sleep, unreachable } from "./utils.js";
+import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
 import { PermissionResult } from "@anthropic-ai/claude-code";
 
 export const SYSTEM_REMINDER = `
@@ -16,6 +16,8 @@ export const SYSTEM_REMINDER = `
 <system-reminder>
 Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
 </system-reminder>`;
+
+const defaults = { maxFileSize: 50000, linesToRead: 1000 };
 
 const unqualifiedToolNames = {
   read: "read",
@@ -68,8 +70,17 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
           offset: z
             .number()
             .optional()
-            .describe("Which line to start reading from. Omit to start from the beginning."),
-          limit: z.number().optional().describe("How many lines to read. Omit for the whole file."),
+            .default(0)
+            .describe(
+              "Which line to start reading from (0-based). Omit to start from the beginning.",
+            ),
+          linesToRead: z
+            .number()
+            .optional()
+            .default(defaults.linesToRead)
+            .describe(
+              `How many lines to read. Omit for ${defaults.linesToRead}. (Reading files that are too large can fill up the context window unnecessarily, so be thoughtful about how much you read at a time.)`,
+            ),
         },
         annotations: {
           title: "Read file",
@@ -92,18 +103,43 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
               ],
             };
           }
+
           const content = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
-            limit: input.limit,
-            line: input.offset,
           });
+
+          // Extract lines with byte limit enforcement
+          const result = extractLinesWithByteLimit(
+            content.content,
+            input.offset ?? 0,
+            input.linesToRead,
+            defaults.maxFileSize,
+          );
+
+          // Construct informative message about what was read
+          let readInfo = "";
+          if (input.offset > 0 || result.wasLimited) {
+            readInfo = "\n\n<file-read-info>";
+
+            if (result.wasLimited) {
+              readInfo += `Read ${result.linesRead} lines (hit 50KB limit). `;
+            } else {
+              readInfo += `Read lines ${(input.offset ?? 0) + 1}-${result.actualEndLine}. `;
+            }
+
+            if (result.wasLimited) {
+              readInfo += `Continue with offset=${result.actualEndLine}.`;
+            }
+
+            readInfo += "</file-read-info>";
+          }
 
           return {
             content: [
               {
                 type: "text",
-                text: content.content + SYSTEM_REMINDER,
+                text: result.content + readInfo + SYSTEM_REMINDER,
               },
             ],
           };
