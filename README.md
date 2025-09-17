@@ -34,7 +34,7 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 
 - Neovim via [CodeCompanion.nvim](https://codecompanion.olimorris.dev/configuration/adapters#setup-claude-code-via-acp)
 - [marimo notebook](https://github.com/marimo-team/marimo)
-
+- [cotg](https://github.com/fikri2992/remote-coding-extension)
 [Submit a PR](https://github.com/zed-industries/claude-code-acp/pulls) to add yours!
 
 #### Installation
