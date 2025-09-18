@@ -7,6 +7,7 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
   PromptRequest,
@@ -608,11 +609,11 @@ export function toAcpNotifications(
 }
 
 export function runAcp() {
-  new AgentSideConnection(
-    (client) => new ClaudeAcpAgent(client),
-    nodeToWebWritable(process.stdout),
-    nodeToWebReadable(process.stdin),
-  );
+  const input = nodeToWebWritable(process.stdout);
+  const output = nodeToWebReadable(process.stdin);
+
+  const stream = ndJsonStream(input, output);
+  new AgentSideConnection((client) => new ClaudeAcpAgent(client), stream);
 }
 
 type ContentChunk =
