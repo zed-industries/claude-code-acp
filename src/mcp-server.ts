@@ -27,7 +27,6 @@ const unqualifiedToolNames = {
   bash: "Bash",
   killBash: "KillBash",
   bashOutput: "BashOutput",
-  permission: "permission",
 };
 
 const SERVER_PREFIX = "mcp__acp__";
@@ -39,7 +38,6 @@ export const toolNames = {
   bash: SERVER_PREFIX + unqualifiedToolNames.bash,
   killBash: SERVER_PREFIX + unqualifiedToolNames.killBash,
   bashOutput: SERVER_PREFIX + unqualifiedToolNames.bashOutput,
-  permission: SERVER_PREFIX + unqualifiedToolNames.permission,
 };
 
 const editToolNames = [toolNames.edit, toolNames.multiEdit, toolNames.write];
@@ -48,12 +46,9 @@ export function createMcpServer(
   agent: ClaudeAcpAgent,
   sessionId: string,
   clientCapabilities: ClientCapabilities | undefined,
-): Promise<Server> {
+): McpServer {
   // Create MCP server
-  const server = new McpServer({
-    name: "acp-mcp-server",
-    version: "1.0.0",
-  });
+  const server = new McpServer({ name: "acp", version: "1.0.0" }, { capabilities: { tools: {} } });
 
   if (clientCapabilities?.fs?.readTextFile) {
     server.registerTool(
@@ -625,9 +620,30 @@ File editing instructions:
     );
   }
 
+  return server;
+}
+
+const UNQUALIFIED_PERMISSION_TOOL_NAME = "permission";
+const PERMISSION_SERVER_PREFIX = "mcp__acpPermission__";
+export const PERMISSION_TOOL_NAME = PERMISSION_SERVER_PREFIX + UNQUALIFIED_PERMISSION_TOOL_NAME;
+
+/**
+ * Separate permission tool. Needs to be an HTTP server for now, because Claude Code doesn't
+ * support permission tools via SDK servers.
+ * Ideally it moves to the `canUseTool` callback in the future.
+ */
+export function createPermissionMcpServer(
+  agent: ClaudeAcpAgent,
+  sessionId: string,
+): Promise<Server> {
+  const server = new McpServer(
+    { name: "acpPermission", version: "1.0.0" },
+    { capabilities: { tools: {} } },
+  );
+
   const alwaysAllowedTools: { [key: string]: boolean } = {};
   server.registerTool(
-    unqualifiedToolNames.permission,
+    UNQUALIFIED_PERMISSION_TOOL_NAME,
     {
       title: "Permission Tool",
       description: "Used to request tool permissions",
