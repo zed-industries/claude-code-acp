@@ -6,7 +6,7 @@
   "bin": {
     "claude-code-acp": "./dist/index.js"
   },
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/index.js",
   "type": "module",
@@ -51,9 +51,9 @@
   "author": "Zed Industries",
   "license": "Apache-2.0",
   "dependencies": {
-    "@anthropic-ai/claude-code": "1.0.113",
-    "@modelcontextprotocol/sdk": "1.18.0",
-    "@zed-industries/agent-client-protocol": "0.3.1",
+    "@anthropic-ai/claude-code": "1.0.119",
+    "@modelcontextprotocol/sdk": "1.18.1",
+    "@zed-industries/agent-client-protocol": "0.4.0",
     "diff": "8.0.2",
     "express": "5.1.0",
     "minimist": "1.2.8",
@@ -62,10 +62,10 @@
   "devDependencies": {
     "@types/express": "5.0.3",
     "@types/minimist": "1.2.5",
-    "@types/node": "24.4.0",
+    "@types/node": "24.5.2",
     "@types/uuid": "10.0.0",
-    "@typescript-eslint/eslint-plugin": "8.43.0",
-    "@typescript-eslint/parser": "8.43.0",
+    "@typescript-eslint/eslint-plugin": "8.44.0",
+    "@typescript-eslint/parser": "8.44.0",
     "@vitest/ui": "3.2.4",
     "eslint": "9.35.0",
     "eslint-config-prettier": "10.1.8",

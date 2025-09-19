@@ -7,6 +7,7 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
   PromptRequest,
@@ -36,7 +37,12 @@ import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { SessionNotification } from "@zed-industries/agent-client-protocol";
-import { createMcpServer, toolNames } from "./mcp-server.js";
+import {
+  createMcpServer,
+  createPermissionMcpServer,
+  PERMISSION_TOOL_NAME,
+  toolNames,
+} from "./mcp-server.js";
 import { AddressInfo } from "node:net";
 import { toolInfoFromToolUse, planEntries, toolUpdateFromToolResult } from "./tools.js";
 
@@ -139,9 +145,17 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    const server = await createMcpServer(this, sessionId, this.clientCapabilities);
-    const address = server.address() as AddressInfo;
+    const server = createMcpServer(this, sessionId, this.clientCapabilities);
     mcpServers["acp"] = {
+      type: "sdk",
+      name: "acp",
+      instance: server,
+    };
+
+    // Ideally replace with `canUseTool`
+    const permissionServer = await createPermissionMcpServer(this, sessionId);
+    const address = permissionServer.address() as AddressInfo;
+    mcpServers["acpPermission"] = {
       type: "http",
       url: "http://127.0.0.1:" + address.port + "/mcp",
       headers: {
@@ -152,7 +166,7 @@ export class ClaudeAcpAgent implements Agent {
     const options: Options = {
       cwd: params.cwd,
       mcpServers,
-      permissionPromptToolName: toolNames.permission,
+      permissionPromptToolName: PERMISSION_TOOL_NAME,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
@@ -608,11 +622,11 @@ export function toAcpNotifications(
 }
 
 export function runAcp() {
-  new AgentSideConnection(
-    (client) => new ClaudeAcpAgent(client),
-    nodeToWebWritable(process.stdout),
-    nodeToWebReadable(process.stdin),
-  );
+  const input = nodeToWebWritable(process.stdout);
+  const output = nodeToWebReadable(process.stdin);
+
+  const stream = ndJsonStream(input, output);
+  new AgentSideConnection((client) => new ClaudeAcpAgent(client), stream);
 }
 
 type ContentChunk =

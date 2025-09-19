@@ -5,6 +5,7 @@ import {
   AvailableCommand,
   Client,
   ClientSideConnection,
+  ndJsonStream,
   NewSessionResponse,
   ReadTextFileRequest,
   ReadTextFileResponse,
@@ -108,14 +109,13 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
     newSessionResponse: NewSessionResponse;
   }> {
     let client;
-    const connection = new ClientSideConnection(
-      (agent) => {
-        client = new TestClient(agent);
-        return client;
-      },
-      nodeToWebWritable(child.stdin!),
-      nodeToWebReadable(child.stdout!),
-    );
+    const input = nodeToWebWritable(child.stdin!);
+    const output = nodeToWebReadable(child.stdout!);
+    const stream = ndJsonStream(input, output);
+    const connection = new ClientSideConnection((agent) => {
+      client = new TestClient(agent);
+      return client;
+    }, stream);
 
     await connection.initialize({
       protocolVersion: 1,
