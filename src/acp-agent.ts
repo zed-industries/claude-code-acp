@@ -428,7 +428,6 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
       const input = command.argumentHint ? { hint: command.argumentHint } : null;
       return {
         name: command.name,
-        // @ts-expect-error type in the ts interface
         description: command.description || "",
         input,
       };

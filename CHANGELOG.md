@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.4
+
+- Update to @anthropic-ai/claude-code@v1.0.123
+- Update to @zed-industries/agent-client-protocol@v0.4.2
+
 ## v0.4.3
 
 - Move ACP tools over MCP from an "http" MCP server to an "sdk" one so more tool calls can stay in-memory.
