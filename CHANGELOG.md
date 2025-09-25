@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.5
+
+- Update to @anthropic-ai/claude-code@v1.0.124
+- Update to @zed-industries/agent-client-protocol@v0.4.3
+
 ## v0.4.4
 
 - Update to @anthropic-ai/claude-code@v1.0.123
