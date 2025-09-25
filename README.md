@@ -34,7 +34,9 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 
 - Emacs via [agent-shell.el](https://github.com/xenodium/agent-shell)
 - [marimo notebook](https://github.com/marimo-team/marimo)
-- Neovim via [CodeCompanion.nvim](https://codecompanion.olimorris.dev/configuration/adapters#setup-claude-code-via-acp)
+- Neovim
+  - via [CodeCompanion.nvim](https://codecompanion.olimorris.dev/configuration/adapters#setup-claude-code-via-acp)
+  - via [yetone/avante.nvim](https://github.com/yetone/avante.nvim)
 
 [Submit a PR](https://github.com/zed-industries/claude-code-acp/pulls) to add yours!
 
