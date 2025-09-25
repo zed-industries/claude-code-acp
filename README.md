@@ -32,6 +32,8 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 
 ### Other clients
 
+<!-- sorted alphabetically: -->
+- Emacs via [agent-shell.el](https://github.com/xenodium/agent-shell)
 - Neovim via [CodeCompanion.nvim](https://codecompanion.olimorris.dev/configuration/adapters#setup-claude-code-via-acp)
 - [marimo notebook](https://github.com/marimo-team/marimo)
 
