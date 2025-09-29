@@ -125,7 +125,6 @@ export function applyEnvironmentSettings(settings: ManagedSettings): void {
 
 export interface ExtractLinesResult {
   content: string;
-  actualEndLine: number;
   wasLimited: boolean;
   linesRead: number;
 }
@@ -134,100 +133,55 @@ export interface ExtractLinesResult {
  * Extracts lines from file content with byte limit enforcement.
  *
  * @param fullContent - The complete file content
- * @param linesToSkip - Starting line number (0-based)
- * @param linesToRead - Maximum number of lines to read
  * @param maxContentLength - Maximum number of UTF-16 Code Units to return
  * @returns Object containing extracted content and metadata
  */
 export function extractLinesWithByteLimit(
   fullContent: string,
-  linesToSkip: number,
-  linesToRead: number,
   maxContentLength: number,
 ): ExtractLinesResult {
-  if (fullContent === "" || linesToRead === 0) {
-    if (linesToSkip === 0 && linesToRead > 0) {
-      return {
-        content: "",
-        actualEndLine: 0,
-        wasLimited: false,
-        linesRead: 1,
-      };
-    } else {
-      return {
-        content: "",
-        actualEndLine: linesToSkip,
-        wasLimited: false,
-        linesRead: 0,
-      };
-    }
+  if (fullContent === "") {
+    return {
+      content: "",
+      wasLimited: false,
+      linesRead: 1,
+    };
   }
 
   let linesSeen = 0;
   let index = 0;
-
-  while (linesSeen < linesToSkip) {
-    const nextIndex = fullContent.indexOf("\n", index);
-
-    // There were not enough lines to skip.
-    if (nextIndex < 0) {
-      return {
-        content: "",
-        actualEndLine: linesToSkip,
-        wasLimited: false,
-        linesRead: 0,
-      };
-    }
-
-    linesSeen += 1;
-    index = nextIndex + 1;
-  }
-
-  // We've successfully skipped over all the lines we were supposed to.
-  // Now we can actually start reading!
-  const startIndex = index;
   linesSeen = 0;
 
   let contentLength = 0;
   let wasLimited = false;
 
-  while (linesSeen < linesToRead) {
+  while (true) {
     const nextIndex = fullContent.indexOf("\n", index);
 
     if (nextIndex < 0) {
       // Last line in file (no trailing newline)
-      const newContentLength = fullContent.length - startIndex;
-      if (linesSeen > 0 && newContentLength > maxContentLength) {
+      if (linesSeen > 0 && fullContent.length > maxContentLength) {
         wasLimited = true;
         break;
       }
       linesSeen += 1;
-      contentLength = newContentLength;
+      contentLength = fullContent.length;
       break;
     } else {
       // Line with newline - include up to the newline
-      const newContentLength = nextIndex + 1 - startIndex;
+      const newContentLength = nextIndex + 1;
       if (linesSeen > 0 && newContentLength > maxContentLength) {
         wasLimited = true;
         break;
       }
       linesSeen += 1;
       contentLength = newContentLength;
-      index = nextIndex + 1;
-    }
-  }
-
-  // If we ended with a newline and we stopped due to byte limit or line limit (not end of file), remove the trailing newline
-  if (contentLength > 0 && fullContent[startIndex + contentLength - 1] === "\n") {
-    // Check if there's more content after our current position that we didn't read
-    if (startIndex + contentLength < fullContent.length) {
-      contentLength -= 1;
+      index = newContentLength;
     }
   }
 
   return {
-    content: fullContent.slice(startIndex, startIndex + contentLength),
-    actualEndLine: linesSeen > 0 ? linesToSkip + linesSeen - 1 : linesToSkip,
+    content: fullContent.slice(0, contentLength),
     wasLimited,
     linesRead: linesSeen,
   };

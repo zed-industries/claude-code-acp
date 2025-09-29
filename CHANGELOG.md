@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.7
+
+- More efficient file reads from the client.
+
 ## v0.4.6
 
 - Update to @anthropic-ai/claude-code@v1.0.128
