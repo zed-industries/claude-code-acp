@@ -30,6 +30,7 @@ import {
   query,
   SDKAssistantMessage,
   SDKUserMessage,
+  SDKUserMessageReplay,
 } from "@anthropic-ai/claude-code";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -44,7 +45,12 @@ import {
   toolNames,
 } from "./mcp-server.js";
 import { AddressInfo } from "node:net";
-import { toolInfoFromToolUse, planEntries, toolUpdateFromToolResult } from "./tools.js";
+import {
+  toolInfoFromToolUse,
+  planEntries,
+  toolUpdateFromToolResult,
+  ClaudePlanEntry,
+} from "./tools.js";
 
 type Session = {
   query: Query;
@@ -270,6 +276,14 @@ export class ClaudeAcpAgent implements Agent {
       }
       switch (message.type) {
         case "system":
+          switch (message.subtype) {
+            case "init":
+              break;
+            case "compact_boundary":
+              continue;
+            default:
+              unreachable(message as never);
+          }
           break;
         case "result": {
           if (this.sessions[params.sessionId].cancelled) {
@@ -317,8 +331,11 @@ export class ClaudeAcpAgent implements Agent {
           }
 
           if (
+            // @ts-expect-error - types may not match reality
             message.message.model === "<synthetic>" &&
+            Array.isArray(message.message.content) &&
             message.message.content.length === 1 &&
+            message.message.content[0].type === "text" &&
             message.message.content[0].text.includes("Please run /login")
           ) {
             throw RequestError.authRequired();
@@ -531,20 +548,38 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
  * Only handles text, image, and thinking chunks for now.
  */
 export function toAcpNotifications(
-  message: SDKAssistantMessage | SDKUserMessage,
+  message: SDKAssistantMessage | SDKUserMessage | SDKUserMessageReplay,
   sessionId: string,
   toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
 ): SessionNotification[] {
-  const chunks = message.message.content as ContentChunk[];
+  const content = message.message.content;
+
+  if (typeof content === "string") {
+    return [
+      {
+        sessionId,
+        update: {
+          sessionUpdate:
+            message.type === "assistant" ? "agent_message_chunk" : "user_message_chunk",
+          content: {
+            type: "text",
+            text: content,
+          },
+        },
+      },
+    ];
+  }
+
   const output = [];
   // Only handle the first chunk for streaming; extend as needed for batching
-  for (const chunk of chunks) {
+  for (const chunk of content) {
     let update: SessionNotification["update"] | null = null;
     switch (chunk.type) {
       case "text":
         update = {
-          sessionUpdate: "agent_message_chunk",
+          sessionUpdate:
+            message.type === "assistant" ? "agent_message_chunk" : "user_message_chunk",
           content: {
             type: "text",
             text: chunk.text,
@@ -553,7 +588,8 @@ export function toAcpNotifications(
         break;
       case "image":
         update = {
-          sessionUpdate: "agent_message_chunk",
+          sessionUpdate:
+            message.type === "assistant" ? "agent_message_chunk" : "user_message_chunk",
           content: {
             type: "image",
             data: chunk.source.type === "base64" ? chunk.source.data : "",
@@ -576,13 +612,13 @@ export function toAcpNotifications(
         if (chunk.name === "TodoWrite") {
           update = {
             sessionUpdate: "plan",
-            entries: planEntries(chunk.input),
+            entries: planEntries(chunk.input as { todos: ClaudePlanEntry[] }),
           };
         } else {
           update = {
             toolCallId: chunk.id,
             sessionUpdate: "tool_call",
-            rawInput: chunk.input,
+            rawInput: JSON.parse(JSON.stringify(chunk.input)),
             status: "pending",
             ...toolInfoFromToolUse(chunk, fileContentCache),
           };
@@ -627,24 +663,3 @@ export function runAcp() {
   const stream = ndJsonStream(input, output);
   new AgentSideConnection((client) => new ClaudeAcpAgent(client), stream);
 }
-
-type ContentChunk =
-  | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: any }
-  | {
-      type: "tool_result";
-      content: string;
-      tool_use_id: string;
-      is_error: boolean;
-    } // content type depends on your Content definition
-  | { type: "thinking"; thinking: string }
-  | { type: "redacted_thinking" }
-  | { type: "image"; source: ImageSource }
-  | { type: "document" }
-  | { type: "web_search_tool_result" }
-  | { type: "untagged_text"; text: string };
-
-// Example ImageSource type (adjust as needed)
-type ImageSource =
-  | { type: "base64"; data: string; media_type: string }
-  | { type: "url"; url: string };
