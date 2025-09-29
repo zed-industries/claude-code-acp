@@ -5,6 +5,7 @@ import {
   ToolKind,
 } from "@zed-industries/agent-client-protocol";
 import { replaceAndCalculateLocation, SYSTEM_REMINDER, toolNames } from "./mcp-server.js";
+import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources";
 
 interface ToolInfo {
   title: string;
@@ -410,7 +411,13 @@ export function toolInfoFromToolUse(
             : [],
       };
 
-    case "Other":
+    case "Other": {
+      let output;
+      try {
+        output = JSON.stringify(input, null, 2);
+      } catch {
+        output = typeof input === "string" ? input : "{}";
+      }
       return {
         title: name || "Unknown Tool",
         kind: "other",
@@ -419,11 +426,12 @@ export function toolInfoFromToolUse(
             type: "content",
             content: {
               type: "text",
-              text: `\`\`\`json\n${JSON.stringify(input, null, 2) || "{}"}\`\`\``,
+              text: `\`\`\`json\n${output}\`\`\``,
             },
           },
         ],
       };
+    }
 
     default:
       return {
@@ -434,15 +442,8 @@ export function toolInfoFromToolUse(
   }
 }
 
-type ToolResult = {
-  type: "tool_result";
-  content: any;
-  tool_use_id: string;
-  is_error: boolean;
-};
-
 export function toolUpdateFromToolResult(
-  toolResult: ToolResult,
+  toolResult: ToolResultBlockParam,
   toolUse: any | undefined,
 ): ToolUpdate {
   switch (toolUse?.name) {
@@ -485,7 +486,7 @@ export function toolUpdateFromToolResult(
     case "MultiEdit":
     case toolNames.write:
     case "Write": {
-      if (toolResult.is_error && toolResult.content?.length > 0) {
+      if (toolResult.is_error && toolResult.content && toolResult.content.length > 0) {
         // Only return errors
         return toAcpContentUpdate(toolResult.content, true);
       }
@@ -549,7 +550,7 @@ function toAcpContentUpdate(
   return {};
 }
 
-type ClaudePlanEntry = {
+export type ClaudePlanEntry = {
   content: string;
   status: "pending" | "in_progress" | "completed";
   activeForm: string;

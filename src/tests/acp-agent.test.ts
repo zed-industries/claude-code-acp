@@ -576,6 +576,7 @@ describe("tool conversions", () => {
         id: "msg_017eNosJgww7F5qD4a8BcAcx",
         type: "message",
         role: "assistant",
+        container: null,
         model: "claude-sonnet-4-20250514",
         content: [
           {
@@ -640,6 +641,7 @@ describe("tool conversions", () => {
           },
           output_tokens: 1,
           service_tier: "standard",
+          server_tool_use: null,
         },
       },
       parent_tool_use_id: null,
@@ -778,7 +780,7 @@ describe("tool conversions", () => {
     const toolResult = {
       content: [
         {
-          type: "text",
+          type: "text" as const,
           text: "not valid json",
         },
       ],
@@ -808,7 +810,7 @@ describe("tool conversions", () => {
     const toolResult = {
       content: [
         {
-          type: "text",
+          type: "text" as const,
           text: "Failed to find `old_string`",
         },
       ],

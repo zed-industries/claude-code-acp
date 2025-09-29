@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.6
+
+- Update to @anthropic-ai/claude-code@v1.0.128
+
 ## v0.4.5
 
 - Update to @anthropic-ai/claude-code@v1.0.124
