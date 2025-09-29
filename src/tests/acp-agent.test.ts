@@ -31,7 +31,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
     // Start the subprocess
     child = spawn("npm", ["run", "--silent", "dev"], {
       stdio: ["pipe", "pipe", "inherit"],
-      // env: process.env,
+      env: process.env,
     });
     child.on("error", (error) => {
       console.error("Error starting subprocess:", error);
