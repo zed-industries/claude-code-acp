@@ -102,15 +102,12 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
           const content = await agent.readTextFile({
             sessionId,
             path: input.abs_path,
+            line: input.offset + 1,
+            limit: input.linesToRead,
           });
 
           // Extract lines with byte limit enforcement
-          const result = extractLinesWithByteLimit(
-            content.content,
-            input.offset ?? 0,
-            input.linesToRead,
-            defaults.maxFileSize,
-          );
+          const result = extractLinesWithByteLimit(content.content, defaults.maxFileSize);
 
           // Construct informative message about what was read
           let readInfo = "";
@@ -120,11 +117,11 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
             if (result.wasLimited) {
               readInfo += `Read ${result.linesRead} lines (hit 50KB limit). `;
             } else {
-              readInfo += `Read lines ${(input.offset ?? 0) + 1}-${result.actualEndLine}. `;
+              readInfo += `Read lines ${(input.offset ?? 0) + 1}-${result.linesRead}. `;
             }
 
             if (result.wasLimited) {
-              readInfo += `Continue with offset=${result.actualEndLine}.`;
+              readInfo += `Continue with offset=${result.linesRead}.`;
             }
 
             readInfo += "</file-read-info>";
