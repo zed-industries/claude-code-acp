@@ -411,7 +411,13 @@ export function toolInfoFromToolUse(
             : [],
       };
 
-    case "Other":
+    case "Other": {
+      let output;
+      try {
+        output = JSON.stringify(input, null, 2);
+      } catch {
+        output = typeof input === "string" ? input : "{}";
+      }
       return {
         title: name || "Unknown Tool",
         kind: "other",
@@ -420,11 +426,12 @@ export function toolInfoFromToolUse(
             type: "content",
             content: {
               type: "text",
-              text: `\`\`\`json\n${JSON.stringify(input, null, 2) || "{}"}\`\`\``,
+              text: `\`\`\`json\n${output}\`\`\``,
             },
           },
         ],
       };
+    }
 
     default:
       return {

@@ -617,10 +617,16 @@ export function toAcpNotifications(
             entries: planEntries(chunk.input as { todos: ClaudePlanEntry[] }),
           };
         } else {
+          let rawInput;
+          try {
+            rawInput = JSON.parse(JSON.stringify(chunk.input));
+          } catch {
+            // ignore if we can't turn it to JSON
+          }
           update = {
             toolCallId: chunk.id,
             sessionUpdate: "tool_call",
-            rawInput: JSON.parse(JSON.stringify(chunk.input)),
+            rawInput,
             status: "pending",
             ...toolInfoFromToolUse(chunk, fileContentCache),
           };
