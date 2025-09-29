@@ -280,7 +280,7 @@ export class ClaudeAcpAgent implements Agent {
             case "init":
               break;
             case "compact_boundary":
-              continue;
+              break;
             default:
               unreachable(message as never);
           }
@@ -306,12 +306,7 @@ export class ClaudeAcpAgent implements Agent {
               return { stopReason: "refusal" };
           }
         }
-        case "user":
-        case "assistant": {
-          if (this.sessions[params.sessionId].cancelled) {
-            continue;
-          }
-
+        case "user": {
           // Slash commands like /compact can generate invalid output... doesn't match
           // their own docs: https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-slash-commands#%2Fcompact-compact-conversation-history
           if (
@@ -329,9 +324,15 @@ export class ClaudeAcpAgent implements Agent {
             console.error(message.message.content);
             break;
           }
+          // Skip user messages for now, since they seem to just be messages we don't want in the feed
+          break;
+        }
+        case "assistant": {
+          if (this.sessions[params.sessionId].cancelled) {
+            break;
+          }
 
           if (
-            // @ts-expect-error - types may not match reality
             message.message.model === "<synthetic>" &&
             Array.isArray(message.message.content) &&
             message.message.content.length === 1 &&
@@ -340,6 +341,7 @@ export class ClaudeAcpAgent implements Agent {
           ) {
             throw RequestError.authRequired();
           }
+
           for (const notification of toAcpNotifications(
             message,
             params.sessionId,

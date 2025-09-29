@@ -20,7 +20,7 @@ import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from ".
 import { toAcpNotifications } from "../acp-agent.js";
 import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
 
-describe.skipIf(process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
+describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
 
   beforeAll(async () => {
