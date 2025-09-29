@@ -377,15 +377,10 @@ export class ClaudeAcpAgent implements Agent {
     switch (params.modeId) {
       case "default":
       case "acceptEdits":
+      case "bypassPermissions":
       case "plan":
         this.sessions[params.sessionId].permissionMode = params.modeId;
         await this.sessions[params.sessionId].query.setPermissionMode(params.modeId);
-        return {};
-      case "bypassPermissions":
-        // For some reason, the SDK doesn't support setting the mode to `bypassPermissions`
-        // so we do it ourselves
-        this.sessions[params.sessionId].permissionMode = "bypassPermissions";
-        await this.sessions[params.sessionId].query.setPermissionMode("acceptEdits");
         return {};
       default:
         throw new Error("Invalid mode");
