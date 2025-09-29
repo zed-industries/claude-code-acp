@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- Migrate to @anthropic-ai/claude-agent-sdk@v0.1.0
+
 ## v0.4.7
 
 - More efficient file reads from the client.

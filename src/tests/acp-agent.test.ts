@@ -18,7 +18,7 @@ import {
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
-import { SDKAssistantMessage } from "@anthropic-ai/claude-code";
+import { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -643,6 +643,7 @@ describe("tool conversions", () => {
           service_tier: "standard",
           server_tool_use: null,
         },
+        context_management: null,
       },
       parent_tool_use_id: null,
       session_id: "d056596f-e328-41e9-badd-b07122ae5227",

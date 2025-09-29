@@ -9,7 +9,7 @@ import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agen
 import * as diff from "diff";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
-import { PermissionResult } from "@anthropic-ai/claude-code";
+import { PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 
 export const SYSTEM_REMINDER = `
 

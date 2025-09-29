@@ -31,7 +31,7 @@ import {
   SDKAssistantMessage,
   SDKUserMessage,
   SDKUserMessageReplay,
-} from "@anthropic-ai/claude-code";
+} from "@anthropic-ai/claude-agent-sdk";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -172,6 +172,8 @@ export class ClaudeAcpAgent implements Agent {
     const options: Options = {
       cwd: params.cwd,
       mcpServers,
+      systemPrompt: { type: "preset", preset: "claude_code" },
+      settingSources: ["user", "project", "local"],
       permissionPromptToolName: PERMISSION_TOOL_NAME,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
