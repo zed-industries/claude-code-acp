@@ -6,7 +6,7 @@
   "bin": {
     "claude-code-acp": "./dist/index.js"
   },
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/index.js",
   "type": "module",
@@ -52,6 +52,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.1.1",
+    "@anthropic-ai/claude-code": "2.0.1",
     "@modelcontextprotocol/sdk": "1.18.2",
     "@zed-industries/agent-client-protocol": "0.4.3",
     "diff": "8.0.2",
