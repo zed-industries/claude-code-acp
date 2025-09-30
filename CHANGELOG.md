@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.1
+- Make improvements to ACP tools provided to the model
+
 ## 0.5.0
 
 - Migrate to @anthropic-ai/claude-agent-sdk@v0.1.0

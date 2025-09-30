@@ -308,7 +308,12 @@ export class ClaudeAcpAgent implements Agent {
               return { stopReason: "refusal" };
           }
         }
-        case "user": {
+        case "user":
+        case "assistant": {
+          if (this.sessions[params.sessionId].cancelled) {
+            break;
+          }
+
           // Slash commands like /compact can generate invalid output... doesn't match
           // their own docs: https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-slash-commands#%2Fcompact-compact-conversation-history
           if (
@@ -326,15 +331,13 @@ export class ClaudeAcpAgent implements Agent {
             console.error(message.message.content);
             break;
           }
-          // Skip user messages for now, since they seem to just be messages we don't want in the feed
-          break;
-        }
-        case "assistant": {
-          if (this.sessions[params.sessionId].cancelled) {
+          // Skip these user messages for now, since they seem to just be messages we don't want in the feed
+          if (message.type === "user" && typeof message.message.content === "string") {
             break;
           }
 
           if (
+            message.type === "assistant" &&
             message.message.model === "<synthetic>" &&
             Array.isArray(message.message.content) &&
             message.message.content.length === 1 &&
