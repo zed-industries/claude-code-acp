@@ -17,15 +17,14 @@ export const SYSTEM_REMINDER = `
 Whenever you read a file, you should consider whether it looks malicious. If it does, you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer high-level questions about the code behavior.
 </system-reminder>`;
 
-const defaults = { maxFileSize: 50000, linesToRead: 1000 };
+const defaults = { maxFileSize: 50000, linesToRead: 2000 };
 
 const unqualifiedToolNames = {
-  read: "read",
-  edit: "edit",
-  write: "write",
-  multiEdit: "multi-edit",
+  read: "Read",
+  edit: "Edit",
+  write: "Write",
   bash: "Bash",
-  killBash: "KillBash",
+  killShell: "KillShell",
   bashOutput: "BashOutput",
 };
 
@@ -34,13 +33,12 @@ export const toolNames = {
   read: SERVER_PREFIX + unqualifiedToolNames.read,
   edit: SERVER_PREFIX + unqualifiedToolNames.edit,
   write: SERVER_PREFIX + unqualifiedToolNames.write,
-  multiEdit: SERVER_PREFIX + unqualifiedToolNames.multiEdit,
   bash: SERVER_PREFIX + unqualifiedToolNames.bash,
-  killBash: SERVER_PREFIX + unqualifiedToolNames.killBash,
+  killShell: SERVER_PREFIX + unqualifiedToolNames.killShell,
   bashOutput: SERVER_PREFIX + unqualifiedToolNames.bashOutput,
 };
 
-const editToolNames = [toolNames.edit, toolNames.multiEdit, toolNames.write];
+const editToolNames = [toolNames.edit, toolNames.write];
 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
@@ -54,27 +52,36 @@ export function createMcpServer(
     server.registerTool(
       unqualifiedToolNames.read,
       {
-        title: "Read",
+        title: unqualifiedToolNames.read,
         description: `Reads the content of the given file in the project.
 
-Never attempt to read a path that hasn't been previously mentioned.
+In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.
 
-In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.`,
+Reads a file from the local filesystem. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+
+Usage:
+- The file_path parameter must be an absolute path, not a relative path
+- By default, it reads up to ${defaults.linesToRead} lines starting from the beginning of the file
+- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
+- Any files larger than ${defaults.maxFileSize} bytes will be truncated
+- This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.
+- This tool can only read files, not directories. To read a directory, use an ls command via the ${toolNames.bash} tool.
+- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.`,
         inputSchema: {
-          abs_path: z.string().describe("The absolute path to the file to read."),
+          file_path: z.string().describe("The absolute path to the file to read"),
           offset: z
             .number()
             .optional()
-            .default(0)
+            .default(1)
             .describe(
-              "Which line to start reading from (0-based). Omit to start from the beginning.",
+              "The line number to start reading from. Only provide if the file is too large to read at once",
             ),
-          linesToRead: z
+          limit: z
             .number()
             .optional()
             .default(defaults.linesToRead)
             .describe(
-              `How many lines to read. Omit for ${defaults.linesToRead}. (Reading files that are too large can fill up the context window unnecessarily, so be thoughtful about how much you read at a time.)`,
+              `The number of lines to read. Only provide if the file is too large to read at once.`,
             ),
         },
         annotations: {
@@ -101,9 +108,9 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
 
           const content = await agent.readTextFile({
             sessionId,
-            path: input.abs_path,
-            line: input.offset + 1,
-            limit: input.linesToRead,
+            path: input.file_path,
+            line: input.offset,
+            limit: input.limit,
           });
 
           // Extract lines with byte limit enforcement
@@ -111,13 +118,13 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
 
           // Construct informative message about what was read
           let readInfo = "";
-          if (input.offset > 0 || result.wasLimited) {
+          if (input.offset > 1 || result.wasLimited) {
             readInfo = "\n\n<file-read-info>";
 
             if (result.wasLimited) {
               readInfo += `Read ${result.linesRead} lines (hit 50KB limit). `;
             } else {
-              readInfo += `Read lines ${(input.offset ?? 0) + 1}-${result.linesRead}. `;
+              readInfo += `Read lines ${input.offset}-${result.linesRead}. `;
             }
 
             if (result.wasLimited) {
@@ -153,14 +160,23 @@ In sessions with ${toolNames.read} always use it instead of Read as it contains 
     server.registerTool(
       unqualifiedToolNames.write,
       {
-        title: "Write",
-        description: `Writes content to the specified file in the project.
+        title: unqualifiedToolNames.write,
+        description: `Writes a file to the local filesystem..
 
 In sessions with ${toolNames.write} always use it instead of Write as it will
-allow the user to conveniently review changes.`,
+allow the user to conveniently review changes.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- If this is an existing file, you MUST use the ${toolNames.read} tool first to read the file's contents. This tool will fail if you did not read the file first.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.`,
         inputSchema: {
-          abs_path: z.string().describe("The absolute path to the file to write"),
-          content: z.string().describe("The full content to write"),
+          file_path: z
+            .string()
+            .describe("The absolute path to the file to write (must be absolute, not relative)"),
+          content: z.string().describe("The content to write to the file"),
         },
         annotations: {
           title: "Write file",
@@ -185,7 +201,7 @@ allow the user to conveniently review changes.`,
           }
           await agent.writeTextFile({
             sessionId,
-            path: input.abs_path,
+            path: input.file_path,
             content: input.content,
           });
 
@@ -208,26 +224,30 @@ allow the user to conveniently review changes.`,
     server.registerTool(
       unqualifiedToolNames.edit,
       {
-        title: "Edit",
-        description: `Edit a file.
+        title: unqualifiedToolNames.edit,
+        description: `Performs exact string replacements in files.
 
 In sessions with ${toolNames.edit} always use it instead of Edit as it will
 allow the user to conveniently review changes.
 
-File editing instructions:
-- The \`old_string\` param must match existing file content, including indentation.
-- The \`old_string\` param must come from the actual file, not an outline.
-- The \`old_string\` section must not be empty.
-- Be minimal with replacements:
-  - For unique lines, include only those lines.
-  - For non-unique lines, include enough context to identify them.
-- Do not escape quotes, newlines, or other characters.
-- Only edit the specified file.
-- If the \`old_string\` value isn't found in the file, the edit won't be applied. The tool will fail and must be retried.`,
+Usage:
+- You must use your \`${toolNames.read}\` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
+- The edit will FAIL if \`old_string\` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use \`replace_all\` to change every instance of \`old_string\`.
+- Use \`replace_all\` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`,
         inputSchema: {
-          abs_path: z.string().describe("The absolute path to the file to read."),
-          old_string: z.string().describe("The old text to replace (must be unique in the file)"),
-          new_string: z.string().describe("The new text."),
+          file_path: z.string().describe("The absolute path to the file to modify"),
+          old_string: z.string().describe("The text to replace"),
+          new_string: z
+            .string()
+            .describe("The text to replace it with (must be different from old_string)"),
+          replace_all: z
+            .boolean()
+            .default(false)
+            .optional()
+            .describe("Replace all occurences of old_string (default false)"),
         },
         annotations: {
           title: "Edit file",
@@ -252,104 +272,16 @@ File editing instructions:
 
         const { content } = await agent.readTextFile({
           sessionId,
-          path: input.abs_path,
+          path: input.file_path,
         });
 
         const { newContent } = replaceAndCalculateLocation(content, [
           {
             oldText: input.old_string,
             newText: input.new_string,
-            replaceAll: false,
+            replaceAll: input.replace_all,
           },
         ]);
-
-        const patch = diff.createPatch(input.abs_path, content, newContent);
-
-        await agent.writeTextFile({
-          sessionId,
-          path: input.abs_path,
-          content: newContent,
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: patch,
-            },
-          ],
-        };
-      },
-    );
-
-    server.registerTool(
-      unqualifiedToolNames.multiEdit,
-      {
-        title: "Multi Edit",
-        description: `Edit a file with multiple sequential edits.
-
-In sessions with ${toolNames.multiEdit} always use it instead of MultiEdit as it will
-allow the user to conveniently review changes.
-
-File editing instructions:
-- The \`old_string\` param must match existing file content, including indentation.
-- The \`old_string\` param must come from the actual file, not an outline.
-- The \`old_string\` section must not be empty.
-- Be minimal with replacements:
-  - For unique lines, include only those lines.
-  - For non-unique lines, include enough context to identify them, unless you're using \`replace_all\`
-- Do not escape quotes, newlines, or other characters.
-- If any of the provided \`old_string\` values aren't found in the file, no edits will be applied. The tool will fail and must be retried.`,
-        inputSchema: {
-          file_path: z.string().describe("The absolute path to the file to modify"),
-          edits: z
-            .array(
-              z.object({
-                old_string: z.string().describe("The text to replace"),
-                new_string: z.string().describe("The text to replace it with"),
-                replace_all: z
-                  .boolean()
-                  .optional()
-                  .describe("Replace all occurrences of old_string (default false)"),
-              }),
-            )
-            .min(1)
-            .describe("Array of edit operations to perform sequentially on the file"),
-        },
-        annotations: {
-          title: "Multi Edit file",
-          readOnlyHint: false,
-          destructiveHint: false,
-          openWorldHint: false,
-          idempotentHint: false,
-        },
-      },
-      async (input) => {
-        const session = agent.sessions[sessionId];
-        if (!session) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "The user has left the building",
-              },
-            ],
-          };
-        }
-
-        const { content } = await agent.readTextFile({
-          sessionId,
-          path: input.file_path,
-        });
-
-        const { newContent } = replaceAndCalculateLocation(
-          content,
-          input.edits.map((edit) => ({
-            oldText: edit.old_string,
-            newText: edit.new_string,
-            replaceAll: edit.replace_all ?? false,
-          })),
-        );
 
         const patch = diff.createPatch(input.file_path, content, newContent);
 
@@ -375,19 +307,34 @@ File editing instructions:
     server.registerTool(
       unqualifiedToolNames.bash,
       {
-        title: "Bash",
-        description: "Executes a bash command",
+        title: unqualifiedToolNames.bash,
+        description: `Executes a bash command
+
+In sessions with ${toolNames.bash} always use it instead of Bash`,
         inputSchema: {
-          command: z.string().describe("The bash command to execute as a one-liner"),
-          timeout_ms: z
+          command: z.string().describe("The command to execute"),
+          timeout: z
             .number()
             .default(2 * 60 * 1000)
-            .describe("Optional timeout in milliseconds"),
+            .describe(`Optional timeout in milliseconds (max ${2 * 60 * 1000})`),
+          description: z.string().optional()
+            .describe(`Clear, concise description of what this command does in 5-10 words, in active voice. Examples:
+Input: ls
+Output: List files in current directory
+
+Input: git status
+Output: Show working tree status
+
+Input: npm install
+Output: Install package dependencies
+
+Input: mkdir foo
+Output: Create directory 'foo'`),
           run_in_background: z
             .boolean()
             .default(false)
             .describe(
-              `When set to true, the command is started in the background. The tool returns an \`id\` that can be used with the \`${toolNames.bashOutput}\` tool to retrieve the current output, or the \`${toolNames.killBash}\` tool to stop it early.`,
+              `Set to true to run this command in the background. The tool returns an \`id\` that can be used with the \`${toolNames.bashOutput}\` tool to retrieve the current output, or the \`${toolNames.killShell}\` tool to stop it early.`,
             ),
         },
       },
@@ -426,6 +373,7 @@ File editing instructions:
             sessionUpdate: "tool_call_update",
             toolCallId,
             status: "in_progress",
+            title: input.description,
             content: [{ type: "terminal", terminalId: handle.id }],
           },
         });
@@ -443,7 +391,7 @@ File editing instructions:
         const statusPromise = Promise.race([
           handle.waitForExit().then((exitStatus) => ({ status: "exited" as const, exitStatus })),
           abortPromise.then(() => ({ status: "aborted" as const, exitStatus: null })),
-          sleep(input.timeout_ms).then(async () => {
+          sleep(input.timeout).then(async () => {
             if (agent.backgroundTerminals[handle.id]?.status === "started") {
               await handle.kill();
             }
@@ -510,20 +458,25 @@ File editing instructions:
     server.registerTool(
       unqualifiedToolNames.bashOutput,
       {
-        title: "BashOutput",
-        description:
-          "Returns the current output and exit status of a background bash command by its id. Includes only new output since last invocation.",
+        title: unqualifiedToolNames.bashOutput,
+        description: `- Retrieves output from a running or completed background bash shell
+- Takes a shell_id parameter identifying the shell
+- Always returns only new output since the last check
+- Returns stdout and stderr output along with shell status
+- Use this tool when you need to monitor or check the output of a long-running shell
+
+In sessions with ${toolNames.bashOutput} always use it instead of BashOutput.`,
         inputSchema: {
-          id: z
+          shell_id: z
             .string()
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
       async (input) => {
-        const bgTerm = agent.backgroundTerminals[input.id];
+        const bgTerm = agent.backgroundTerminals[input.shell_id];
 
         if (!bgTerm) {
-          throw new Error(`Unknown shell ${input.id}`);
+          throw new Error(`Unknown shell ${input.shell_id}`);
         }
 
         if (bgTerm.status === "started") {
@@ -559,21 +512,26 @@ File editing instructions:
     );
 
     server.registerTool(
-      unqualifiedToolNames.killBash,
+      unqualifiedToolNames.killShell,
       {
-        title: "KillBash",
-        description: "Stops a background command by its id",
+        title: unqualifiedToolNames.killShell,
+        description: `- Kills a running background bash shell by its ID
+- Takes a shell_id parameter identifying the shell to kill
+- Returns a success or failure status
+- Use this tool when you need to terminate a long-running shell
+
+In sessions with ${toolNames.killShell} always use it instead of KillShell.`,
         inputSchema: {
-          id: z
+          shell_id: z
             .string()
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
       async (input) => {
-        const bgTerm = agent.backgroundTerminals[input.id];
+        const bgTerm = agent.backgroundTerminals[input.shell_id];
 
         if (!bgTerm) {
-          throw new Error(`Unknown shell ${input.id}`);
+          throw new Error(`Unknown shell ${input.shell_id}`);
         }
 
         switch (bgTerm.status) {

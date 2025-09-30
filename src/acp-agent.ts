@@ -189,11 +189,11 @@ export class ClaudeAcpAgent implements Agent {
     }
     if (this.clientCapabilities?.fs?.writeTextFile) {
       allowedTools.push(toolNames.write);
-      disallowedTools.push("Write", "Edit", "MultiEdit");
+      disallowedTools.push("Write", "Edit");
     }
     if (this.clientCapabilities?.terminal) {
-      allowedTools.push(toolNames.bashOutput, toolNames.killBash);
-      disallowedTools.push("Bash", "BashOutput", "KillBash");
+      allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+      disallowedTools.push("Bash", "BashOutput", "KillShell");
     }
 
     if (allowedTools.length > 0) {

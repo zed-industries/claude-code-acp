@@ -371,13 +371,13 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should handle mcp__acp__write tool calls", () => {
+  it("should handle mcp__acp__Write tool calls", () => {
     const tool_use = {
       type: "tool_use",
       id: "toolu_01GHI789JKL456",
-      name: "mcp__acp__write",
+      name: "mcp__acp__Write",
       input: {
-        abs_path: "/Users/test/project/config.json",
+        file_path: "/Users/test/project/config.json",
         content: '{"version": "1.0.0"}',
       },
     };
@@ -415,13 +415,13 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should handle mcp__acp__read tool calls", () => {
+  it("should handle mcp__acp__Read tool calls", () => {
     const tool_use = {
       type: "tool_use",
       id: "toolu_01YZA789BCD123",
-      name: "mcp__acp__read",
+      name: "mcp__acp__Read",
       input: {
-        abs_path: "/Users/test/project/data.json",
+        file_path: "/Users/test/project/data.json",
       },
     };
 
@@ -433,13 +433,13 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should handle mcp__acp__read with limit", () => {
+  it("should handle mcp__acp__Read with limit", () => {
     const tool_use = {
       type: "tool_use",
       id: "toolu_01EFG456HIJ789",
-      name: "mcp__acp__read",
+      name: "mcp__acp__Read",
       input: {
-        abs_path: "/Users/test/project/large.txt",
+        file_path: "/Users/test/project/large.txt",
         limit: 100,
       },
     };
@@ -452,13 +452,13 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should handle mcp__acp__read with offset and limit", () => {
+  it("should handle mcp__acp__Read with offset and limit", () => {
     const tool_use = {
       type: "tool_use",
       id: "toolu_01KLM789NOP456",
-      name: "mcp__acp__read",
+      name: "mcp__acp__Read",
       input: {
-        abs_path: "/Users/test/project/large.txt",
+        file_path: "/Users/test/project/large.txt",
         offset: 50,
         limit: 100,
       },
@@ -472,13 +472,13 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should handle mcp__acp__read with only offset", () => {
+  it("should handle mcp__acp__Read with only offset", () => {
     const tool_use = {
       type: "tool_use",
       id: "toolu_01QRS123TUV789",
-      name: "mcp__acp__read",
+      name: "mcp__acp__Read",
       input: {
-        abs_path: "/Users/test/project/large.txt",
+        file_path: "/Users/test/project/large.txt",
         offset: 200,
       },
     };
@@ -539,7 +539,7 @@ describe("tool conversions", () => {
     const tool_use = {
       type: "tool_use",
       id: "toolu_01PhLms5fuvmdjy2bb6dfUKT",
-      name: "KillBash",
+      name: "KillShell",
       input: {
         shell_id: "bash_1",
       },
@@ -701,78 +701,13 @@ describe("tool conversions", () => {
     ]);
   });
 
-  it("should show full diff for multi edit tool", () => {
-    const toolUse = {
-      type: "tool_use",
-      id: "toolu_01DEF456",
-      name: "mcp__acp__multi-edit",
-      input: {
-        file_path: "/Users/test/project/config.json",
-        edits: [
-          {
-            old_string: 'version": 1',
-            new_string: 'version": 2',
-            replace_all: false,
-          },
-          {
-            old_string: 'enabled": false',
-            new_string: 'enabled": true',
-            replace_all: true,
-          },
-        ],
-      },
-    };
-    const fileCache: { [key: string]: string } = {
-      "/Users/test/project/config.json": JSON.stringify(
-        {
-          version: 1,
-          filler: "filler",
-          enabled: false,
-        },
-        null,
-        4,
-      ),
-    };
-
-    expect(toolInfoFromToolUse(toolUse, fileCache)).toEqual({
-      content: [
-        {
-          newText: `{
-    "version": 2,
-    "filler": "filler",
-    "enabled": true
-}`,
-          oldText: `{
-    "version": 1,
-    "filler": "filler",
-    "enabled": false
-}`,
-          path: "/Users/test/project/config.json",
-          type: "diff",
-        },
-      ],
-      kind: "edit",
-      locations: [
-        {
-          path: "/Users/test/project/config.json",
-          line: 1,
-        },
-        {
-          path: "/Users/test/project/config.json",
-          line: 3,
-        },
-      ],
-      title: "Edit /Users/test/project/config.json",
-    });
-  });
-
   it("should return empty update for successful edit result", () => {
     const toolUse = {
       type: "tool_use",
       id: "toolu_01MNO345",
-      name: "mcp__acp__edit",
+      name: "mcp__acp__Edit",
       input: {
-        abs_path: "/Users/test/project/test.txt",
+        file_path: "/Users/test/project/test.txt",
         old_string: "old",
         new_string: "new",
       },
@@ -800,9 +735,9 @@ describe("tool conversions", () => {
     const toolUse = {
       type: "tool_use",
       id: "toolu_01MNO345",
-      name: "mcp__acp__edit",
+      name: "mcp__acp__Edit",
       input: {
-        abs_path: "/Users/test/project/test.txt",
+        file_path: "/Users/test/project/test.txt",
         old_string: "old",
         new_string: "new",
       },
