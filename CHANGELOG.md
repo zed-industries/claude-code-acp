@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- Add back @anthropic-ai/claude-code@2.0.1 as runtime dependency
+
 ## 0.5.1
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.1
