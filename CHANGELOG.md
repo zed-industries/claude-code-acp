@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.8
+- Update to @zed-industries/agent-client-protocol@v0.4.5
+
 ## 0.5.2
 
 - Add back @anthropic-ai/claude-code@2.0.1 as runtime dependency
