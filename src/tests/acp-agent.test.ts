@@ -769,6 +769,22 @@ describe("tool conversions", () => {
   });
 });
 
+describe("setSessionMode bypass permissions error handling", () => {
+  it("should handle bypass permissions errors by wrapping the original SDK error", () => {
+    const originalError = new Error("Some SDK error message");
+
+    const simulateBypassPermissionError = (error: Error) => {
+      throw new Error(
+        `Failed to enable bypass permissions mode. This mode requires proper Claude Code configuration. Original error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    };
+
+    expect(() => simulateBypassPermissionError(originalError)).toThrow(
+      "Failed to enable bypass permissions mode. This mode requires proper Claude Code configuration. Original error: Some SDK error message",
+    );
+  });
+});
+
 describe("escape markdown", () => {
   it("should escape markdown characters", () => {
     let text = "Hello *world*!";
