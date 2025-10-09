@@ -386,10 +386,17 @@ export class ClaudeAcpAgent implements Agent {
       case "bypassPermissions":
       case "plan":
         this.sessions[params.sessionId].permissionMode = params.modeId;
-        await this.sessions[params.sessionId].query.setPermissionMode(params.modeId);
+        try {
+          await this.sessions[params.sessionId].query.setPermissionMode(params.modeId);
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error && error.message ? error.message : "Invalid Mode";
+
+          throw new Error(errorMessage);
+        }
         return {};
       default:
-        throw new Error("Invalid mode");
+        throw new Error("Invalid Mode");
     }
   }
 
