@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.4
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.11
+- Enable setting CLAUDE_CODE_EXECUTABLE to override the executable used by the SDK https://github.com/zed-industries/claude-code-acp/pull/86
+
 ## 0.5.3
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.8
