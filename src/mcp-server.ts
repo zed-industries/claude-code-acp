@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
-import { ClientCapabilities, TerminalOutputResponse } from "@zed-industries/agent-client-protocol";
+import { ClientCapabilities, TerminalOutputResponse } from "@agentclientprotocol/sdk";
 import * as diff from "diff";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
