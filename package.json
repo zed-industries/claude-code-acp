@@ -6,7 +6,7 @@
   "bin": {
     "claude-code-acp": "./dist/index.js"
   },
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/index.js",
   "type": "module",
@@ -52,9 +52,9 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@agentclientprotocol/sdk": "0.4.5",
-    "@anthropic-ai/claude-agent-sdk": "0.1.11",
-    "@anthropic-ai/claude-code": "2.0.11",
-    "@modelcontextprotocol/sdk": "1.19.1",
+    "@anthropic-ai/claude-agent-sdk": "0.1.13",
+    "@anthropic-ai/claude-code": "2.0.13",
+    "@modelcontextprotocol/sdk": "1.20.0",
     "diff": "8.0.2",
     "express": "5.1.0",
     "minimist": "1.2.8",
@@ -64,7 +64,7 @@
     "@anthropic-ai/sdk": "^0.65.0",
     "@types/express": "5.0.3",
     "@types/minimist": "1.2.5",
-    "@types/node": "24.7.0",
+    "@types/node": "24.7.1",
     "@types/uuid": "10.0.0",
     "@typescript-eslint/eslint-plugin": "8.46.0",
     "@typescript-eslint/parser": "8.46.0",
