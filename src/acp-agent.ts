@@ -21,7 +21,7 @@ import {
   TerminalOutputResponse,
   WriteTextFileRequest,
   WriteTextFileResponse,
-} from "@zed-industries/agent-client-protocol";
+} from "@agentclientprotocol/sdk";
 import {
   McpServerConfig,
   Options,
@@ -37,7 +37,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
-import { SessionNotification } from "@zed-industries/agent-client-protocol";
+import { SessionNotification } from "@agentclientprotocol/sdk";
 import {
   createMcpServer,
   createPermissionMcpServer,

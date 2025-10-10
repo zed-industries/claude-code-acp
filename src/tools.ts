@@ -1,9 +1,4 @@
-import {
-  PlanEntry,
-  ToolCallContent,
-  ToolCallLocation,
-  ToolKind,
-} from "@zed-industries/agent-client-protocol";
+import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
 import { replaceAndCalculateLocation, SYSTEM_REMINDER, toolNames } from "./mcp-server.js";
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources";
 
