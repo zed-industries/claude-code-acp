@@ -191,7 +191,7 @@ export class ClaudeAcpAgent implements Agent {
       disallowedTools.push("Read");
     }
     if (this.clientCapabilities?.fs?.writeTextFile) {
-      allowedTools.push(toolNames.write);
+      allowedTools.push(toolNames.write, toolNames.edit);
       disallowedTools.push("Write", "Edit");
     }
     if (this.clientCapabilities?.terminal) {
