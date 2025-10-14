@@ -7,6 +7,7 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  ModelInfo,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -15,6 +16,8 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  SetSessionModelRequest,
+  SetSessionModelResponse,
   SetSessionModeRequest,
   SetSessionModeResponse,
   TerminalHandle,
@@ -73,6 +76,8 @@ type BackgroundTerminal =
 type ToolUseCache = {
   [key: string]: { type: "tool_use"; id: string; name: string; input: any };
 };
+
+const DEFAULT_MODEL_ID = "default";
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -189,6 +194,7 @@ export class ClaudeAcpAgent implements Agent {
       systemPrompt,
       settingSources: ["user", "project", "local"],
       permissionPromptToolName: PERMISSION_TOOL_NAME,
+      model: DEFAULT_MODEL_ID,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
@@ -240,8 +246,14 @@ export class ClaudeAcpAgent implements Agent {
       });
     });
 
+    const models = await getAvailableModels(q);
+
     return {
       sessionId,
+      models: {
+        availableModels: models,
+        currentModelId: DEFAULT_MODEL_ID,
+      },
       modes: {
         currentModeId: "default",
         availableModes: [
@@ -388,6 +400,13 @@ export class ClaudeAcpAgent implements Agent {
     await this.sessions[params.sessionId].query.interrupt();
   }
 
+  async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse | void> {
+    if (!this.sessions[params.sessionId]) {
+      throw new Error("Session not found");
+    }
+    await this.sessions[params.sessionId].query.setModel(params.modelId);
+  }
+
   async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
     if (!this.sessions[params.sessionId]) {
       throw new Error("Session not found");
@@ -426,6 +445,15 @@ export class ClaudeAcpAgent implements Agent {
     this.fileContentCache[params.path] = params.content;
     return response;
   }
+}
+
+async function getAvailableModels(query: Query): Promise<ModelInfo[]> {
+  const models = await query.supportedModels();
+  return models.map((model) => ({
+    modelId: model.value,
+    name: model.displayName,
+    description: model.description,
+  }));
 }
 
 async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
