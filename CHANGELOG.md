@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.6
+
+- Make sure writes require permissions when necessary: https://github.com/zed-industries/claude-code-acp/pull/92
+- Add support for appending or overriding the system prompt: https://github.com/zed-industries/claude-code-acp/pull/91
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.15
+- Update to @agentclientprotocol/sdk@0.4.7
+
 ## 0.5.5
 
 - Migrate to @agentclientprotocol/sdk@0.4.5
