@@ -18,7 +18,7 @@ import {
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
 import { toAcpNotifications } from "../acp-agent.js";
-import { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -778,5 +778,14 @@ describe("escape markdown", () => {
     text = "for example:\n```markdown\nHello *world*!\n```\n";
     escaped = markdownEscape(text);
     expect(escaped).toEqual("````\nfor example:\n```markdown\nHello *world*!\n```\n````");
+  });
+});
+
+describe("SDK behavior", () => {
+  it("query has a 'default' model", async () => {
+    let q = query({ prompt: "hi" });
+    let models = await q.supportedModels();
+    let defaultModel = models.find((m) => m.value === "default");
+    expect(defaultModel).toBeDefined();
   });
 });
