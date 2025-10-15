@@ -1,12 +1,12 @@
 # Changelog
 
-## 0.5.6
+## 0.6.0
 
 - Provide a model selector. We use the "default" model by default, and the user can change it via the client.
 - Make sure writes require permissions when necessary: https://github.com/zed-industries/claude-code-acp/pull/92
 - Add support for appending or overriding the system prompt: https://github.com/zed-industries/claude-code-acp/pull/91
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.15
-- Update to @agentclientprotocol/sdk@0.4.7
+- Update to @agentclientprotocol/sdk@0.4.8
 
 ## 0.5.5
 
