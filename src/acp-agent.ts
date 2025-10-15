@@ -15,6 +15,9 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  SessionModelState,
+  SetSessionModelRequest,
+  SetSessionModelResponse,
   SetSessionModeRequest,
   SetSessionModeResponse,
   TerminalHandle,
@@ -73,6 +76,8 @@ type BackgroundTerminal =
 type ToolUseCache = {
   [key: string]: { type: "tool_use"; id: string; name: string; input: any };
 };
+
+const DEFAULT_MODEL_ID = "default";
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -240,8 +245,11 @@ export class ClaudeAcpAgent implements Agent {
       });
     });
 
+    const models = await getAvailableModels(q);
+
     return {
       sessionId,
+      models,
       modes: {
         currentModeId: "default",
         availableModes: [
@@ -388,6 +396,13 @@ export class ClaudeAcpAgent implements Agent {
     await this.sessions[params.sessionId].query.interrupt();
   }
 
+  async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse | void> {
+    if (!this.sessions[params.sessionId]) {
+      throw new Error("Session not found");
+    }
+    await this.sessions[params.sessionId].query.setModel(params.modelId);
+  }
+
   async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
     if (!this.sessions[params.sessionId]) {
       throw new Error("Session not found");
@@ -426,6 +441,26 @@ export class ClaudeAcpAgent implements Agent {
     this.fileContentCache[params.path] = params.content;
     return response;
   }
+}
+
+async function getAvailableModels(query: Query): Promise<SessionModelState> {
+  const models = await query.supportedModels();
+
+  // Query doesn't give us access to the currently selected model, so we default to "default" if it is there,
+  // otherwise we just choose the first model in the list.
+  const currentModel = models.find((model) => model.value === DEFAULT_MODEL_ID) || models[0];
+  await query.setModel(currentModel.value);
+
+  const availableModels = models.map((model) => ({
+    modelId: model.value,
+    name: model.displayName,
+    description: model.description,
+  }));
+
+  return {
+    availableModels,
+    currentModelId: currentModel.value,
+  };
 }
 
 async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
