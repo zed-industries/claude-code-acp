@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- Fix to allow bypassPermissions mode to be selected (it wasn't permitted previously)
+
 ## 0.6.0
 
 - Provide a model selector. We use the "default" model by default, and the user can change it via the client.

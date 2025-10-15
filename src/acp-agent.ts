@@ -193,6 +193,9 @@ export class ClaudeAcpAgent implements Agent {
       mcpServers,
       systemPrompt,
       settingSources: ["user", "project", "local"],
+      // If we want bypassPermissions to be an option, we have to start the session with it on.
+      // We change it immediately back to default below before returning the session.
+      permissionMode: "bypassPermissions",
       permissionPromptToolName: PERMISSION_TOOL_NAME,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
@@ -228,11 +231,14 @@ export class ClaudeAcpAgent implements Agent {
       prompt: input,
       options,
     });
+    const permissionMode = "default";
+    // Change it back to default
+    await q.setPermissionMode(permissionMode);
     this.sessions[sessionId] = {
       query: q,
       input: input,
       cancelled: false,
-      permissionMode: "default",
+      permissionMode,
     };
 
     getAvailableSlashCommands(q).then((availableCommands) => {
@@ -251,7 +257,7 @@ export class ClaudeAcpAgent implements Agent {
       sessionId,
       models,
       modes: {
-        currentModeId: "default",
+        currentModeId: permissionMode,
         availableModes: [
           {
             id: "default",
