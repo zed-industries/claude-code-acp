@@ -169,19 +169,24 @@ export class ClaudeAcpAgent implements Agent {
       },
     };
 
-    let systemPrompt: Options["systemPrompt"] =  { type: "preset", preset: "claude_code" }
-    if (params._meta?.systemPrompt){
-      if (typeof params._meta.systemPrompt === "string") {
-        systemPrompt = params._meta.systemPrompt
-      } else {
-        systemPrompt = {...systemPrompt, ...params._meta.systemPrompt}
+    let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
+    if (params._meta?.systemPrompt) {
+      const customPrompt = params._meta.systemPrompt;
+      if (typeof customPrompt === "string") {
+        systemPrompt = customPrompt;
+      } else if (
+        typeof customPrompt === "object" &&
+        "append" in customPrompt &&
+        typeof customPrompt.append === "string"
+      ) {
+        systemPrompt.append = customPrompt.append;
       }
     }
 
     const options: Options = {
       cwd: params.cwd,
       mcpServers,
-      systemPrompt: systemPrompt,
+      systemPrompt,
       settingSources: ["user", "project", "local"],
       permissionPromptToolName: PERMISSION_TOOL_NAME,
       stderr: (err) => console.error(err),
