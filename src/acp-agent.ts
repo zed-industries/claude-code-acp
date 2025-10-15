@@ -16,6 +16,7 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  SessionModelState,
   SetSessionModelRequest,
   SetSessionModelResponse,
   SetSessionModeRequest,
@@ -194,7 +195,6 @@ export class ClaudeAcpAgent implements Agent {
       systemPrompt,
       settingSources: ["user", "project", "local"],
       permissionPromptToolName: PERMISSION_TOOL_NAME,
-      model: DEFAULT_MODEL_ID,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
@@ -250,10 +250,7 @@ export class ClaudeAcpAgent implements Agent {
 
     return {
       sessionId,
-      models: {
-        availableModels: models,
-        currentModelId: DEFAULT_MODEL_ID,
-      },
+      models,
       modes: {
         currentModeId: "default",
         availableModes: [
@@ -447,13 +444,24 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
-async function getAvailableModels(query: Query): Promise<ModelInfo[]> {
+async function getAvailableModels(query: Query): Promise<SessionModelState> {
   const models = await query.supportedModels();
-  return models.map((model) => ({
+
+  // Query doesn't give us access to the currently selected model, so we default to "default" if it is there,
+  // otherwise we just choose the first model in the list.
+  const currentModel = models.find((model) => model.value === DEFAULT_MODEL_ID) || models[0];
+  await query.setModel(currentModel.value);
+
+  const availableModels = models.map((model) => ({
     modelId: model.value,
     name: model.displayName,
     description: model.description,
   }));
+
+  return {
+    availableModels,
+    currentModelId: currentModel.value,
+  };
 }
 
 async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
