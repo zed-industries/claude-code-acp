@@ -7,7 +7,6 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
-  ModelInfo,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,

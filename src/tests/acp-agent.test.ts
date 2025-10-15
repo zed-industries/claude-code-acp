@@ -783,9 +783,9 @@ describe("escape markdown", () => {
 
 describe("SDK behavior", () => {
   it("query has a 'default' model", async () => {
-    let q = query({ prompt: "hi" });
-    let models = await q.supportedModels();
-    let defaultModel = models.find((m) => m.value === "default");
+    const q = query({ prompt: "hi" });
+    const models = await q.supportedModels();
+    const defaultModel = models.find((m) => m.value === "default");
     expect(defaultModel).toBeDefined();
   });
 });
