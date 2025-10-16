@@ -6,7 +6,7 @@
   "bin": {
     "claude-code-acp": "./dist/index.js"
   },
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/index.js",
   "type": "module",
