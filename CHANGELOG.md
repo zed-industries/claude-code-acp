@@ -3,6 +3,7 @@
 ## 0.6.2
 
 - Fix bug where mode selection would sometimes fire before initialization was complete.
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.19
 
 ## 0.6.1
 
