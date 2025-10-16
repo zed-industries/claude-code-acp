@@ -231,6 +231,7 @@ export class ClaudeAcpAgent implements Agent {
       prompt: input,
       options,
     });
+    const models = await getAvailableModels(q);
     const permissionMode = "default";
     // Change it back to default
     await q.setPermissionMode(permissionMode);
@@ -250,8 +251,6 @@ export class ClaudeAcpAgent implements Agent {
         },
       });
     });
-
-    const models = await getAvailableModels(q);
 
     return {
       sessionId,
