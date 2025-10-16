@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+
+- Fix issue where slash commands were loaded before initialization was complete.
+
 ## 0.6.2
 
 - Fix bug where mode selection would sometimes fire before initialization was complete.
