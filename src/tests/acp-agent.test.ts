@@ -782,10 +782,14 @@ describe("escape markdown", () => {
 });
 
 describe("SDK behavior", () => {
-  it("query has a 'default' model", async () => {
-    const q = query({ prompt: "hi" });
-    const models = await q.supportedModels();
-    const defaultModel = models.find((m) => m.value === "default");
-    expect(defaultModel).toBeDefined();
-  });
+  it.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
+    "query has a 'default' model",
+    async () => {
+      const q = query({ prompt: "hi" });
+      const models = await q.supportedModels();
+      const defaultModel = models.find((m) => m.value === "default");
+      expect(defaultModel).toBeDefined();
+    },
+    10000,
+  );
 });
