@@ -787,5 +787,5 @@ describe("SDK behavior", () => {
     const models = await q.supportedModels();
     const defaultModel = models.find((m) => m.value === "default");
     expect(defaultModel).toBeDefined();
-  });
+  }, 10000);
 });
