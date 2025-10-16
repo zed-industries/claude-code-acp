@@ -243,13 +243,15 @@ export class ClaudeAcpAgent implements Agent {
     };
 
     getAvailableSlashCommands(q).then((availableCommands) => {
-      this.client.sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "available_commands_update",
-          availableCommands,
-        },
-      });
+      setTimeout(() => {
+        this.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands,
+          },
+        });
+      }, 0);
     });
 
     return {
