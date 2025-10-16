@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- Fix bug where mode selection would sometimes fire before initialization was complete.
+
 ## 0.6.1
 
 - Fix to allow bypassPermissions mode to be selected (it wasn't permitted previously)
