@@ -238,10 +238,8 @@ export class ClaudeAcpAgent implements Agent {
       prompt: input,
       options,
     });
-    const models = await getAvailableModels(q);
+
     const permissionMode = "default";
-    // Change it back to default
-    await q.setPermissionMode(permissionMode);
     this.sessions[sessionId] = {
       query: q,
       input: input,
@@ -249,17 +247,21 @@ export class ClaudeAcpAgent implements Agent {
       permissionMode,
     };
 
-    getAvailableSlashCommands(q).then((availableCommands) => {
-      setTimeout(() => {
-        this.client.sessionUpdate({
-          sessionId,
-          update: {
-            sessionUpdate: "available_commands_update",
-            availableCommands,
-          },
-        });
-      }, 0);
-    });
+    const availableCommands = await getAvailableSlashCommands(q);
+    const models = await getAvailableModels(q);
+    // Change it back to default
+    await q.setPermissionMode(permissionMode);
+
+    // Needs to happen after we return the session
+    setTimeout(() => {
+      this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands,
+        },
+      });
+    }, 0);
 
     return {
       sessionId,
