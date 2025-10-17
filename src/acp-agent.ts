@@ -715,7 +715,6 @@ export function toAcpNotifications(
       case "mcp_tool_use": {
         toolUseCache[chunk.id] = chunk;
         if (chunk.name === "TodoWrite") {
-          console.error(JSON.stringify(chunk));
           // @ts-expect-error - sometimes input is empty object
           if (Array.isArray(chunk.input.todos)) {
             update = {
