@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.6
+
+- Do not enable bypassPermissions mode if in root/sudo mode, because Claude Code will not start
+
 ## 0.6.5
 
 - Fix for duplicated text content after streaming
