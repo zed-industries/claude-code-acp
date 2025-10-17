@@ -396,8 +396,14 @@ export class ClaudeAcpAgent implements Agent {
             throw RequestError.authRequired();
           }
 
+          const content =
+            message.type === "assistant"
+              ? // Handled by stream events above
+                message.message.content.filter((item) => !["text", "thinking"].includes(item.type))
+              : message.message.content;
+
           for (const notification of toAcpNotifications(
-            message.message.content,
+            content,
             message.message.role,
             params.sessionId,
             this.toolUseCache,

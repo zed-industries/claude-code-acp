@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.5
+
+- Fix for duplicated text content after streaming
+
 ## 0.6.4
 
 - Support streaming partial messages!
