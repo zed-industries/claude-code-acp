@@ -1,6 +1,14 @@
 import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
 import { replaceAndCalculateLocation, SYSTEM_REMINDER, toolNames } from "./mcp-server.js";
-import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources";
+import { ToolResultBlockParam, WebSearchToolResultBlockParam } from "@anthropic-ai/sdk/resources";
+import {
+  BetaBashCodeExecutionToolResultBlockParam,
+  BetaCodeExecutionToolResultBlockParam,
+  BetaRequestMCPToolResultBlockParam,
+  BetaTextEditorCodeExecutionToolResultBlockParam,
+  BetaWebFetchToolResultBlockParam,
+  BetaWebSearchToolResultBlockParam,
+} from "@anthropic-ai/sdk/resources/beta.mjs";
 
 interface ToolInfo {
   title: string;
@@ -385,7 +393,15 @@ export function toolInfoFromToolUse(
 }
 
 export function toolUpdateFromToolResult(
-  toolResult: ToolResultBlockParam,
+  toolResult:
+    | ToolResultBlockParam
+    | BetaWebSearchToolResultBlockParam
+    | BetaWebFetchToolResultBlockParam
+    | WebSearchToolResultBlockParam
+    | BetaCodeExecutionToolResultBlockParam
+    | BetaBashCodeExecutionToolResultBlockParam
+    | BetaTextEditorCodeExecutionToolResultBlockParam
+    | BetaRequestMCPToolResultBlockParam,
   toolUse: any | undefined,
 ): ToolUpdate {
   switch (toolUse?.name) {
@@ -425,7 +441,12 @@ export function toolUpdateFromToolResult(
     case toolNames.edit:
     case toolNames.write:
     case "Write": {
-      if (toolResult.is_error && toolResult.content && toolResult.content.length > 0) {
+      if (
+        "is_error" in toolResult &&
+        toolResult.is_error &&
+        toolResult.content &&
+        toolResult.content.length > 0
+      ) {
         // Only return errors
         return toAcpContentUpdate(toolResult.content, true);
       }
@@ -451,7 +472,10 @@ export function toolUpdateFromToolResult(
     case "WebSearch":
     case "Other":
     default: {
-      return toAcpContentUpdate(toolResult.content, toolResult.is_error);
+      return toAcpContentUpdate(
+        toolResult.content,
+        "is_error" in toolResult ? toolResult.is_error : false,
+      );
     }
   }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4
+
+- Support streaming partial messages!
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.21
+
 ## 0.6.3
 
 - Fix issue where slash commands were loaded before initialization was complete.

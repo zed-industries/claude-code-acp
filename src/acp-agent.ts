@@ -31,9 +31,8 @@ import {
   PermissionMode,
   Query,
   query,
-  SDKAssistantMessage,
+  SDKPartialAssistantMessage,
   SDKUserMessage,
-  SDKUserMessageReplay,
 } from "@anthropic-ai/claude-agent-sdk";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -54,6 +53,8 @@ import {
   toolUpdateFromToolResult,
   ClaudePlanEntry,
 } from "./tools.js";
+import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
+import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
 
 type Session = {
   query: Query;
@@ -74,7 +75,12 @@ type BackgroundTerminal =
     };
 
 type ToolUseCache = {
-  [key: string]: { type: "tool_use"; id: string; name: string; input: any };
+  [key: string]: {
+    type: "tool_use" | "server_tool_use" | "mcp_tool_use";
+    id: string;
+    name: string;
+    input: any;
+  };
 };
 
 const DEFAULT_MODEL_ID = "default";
@@ -190,6 +196,7 @@ export class ClaudeAcpAgent implements Agent {
 
     const options: Options = {
       cwd: params.cwd,
+      includePartialMessages: true,
       mcpServers,
       systemPrompt,
       settingSources: ["user", "project", "local"],
@@ -339,6 +346,17 @@ export class ClaudeAcpAgent implements Agent {
               return { stopReason: "refusal" };
           }
         }
+        case "stream_event": {
+          for (const notification of streamEventToAcpNotifications(
+            message,
+            params.sessionId,
+            this.toolUseCache,
+            this.fileContentCache,
+          )) {
+            await this.client.sessionUpdate(notification);
+          }
+          break;
+        }
         case "user":
         case "assistant": {
           if (this.sessions[params.sessionId].cancelled) {
@@ -379,7 +397,8 @@ export class ClaudeAcpAgent implements Agent {
           }
 
           for (const notification of toAcpNotifications(
-            message,
+            message.message.content,
+            message.message.role,
             params.sessionId,
             this.toolUseCache,
             this.fileContentCache,
@@ -615,20 +634,18 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
  * Only handles text, image, and thinking chunks for now.
  */
 export function toAcpNotifications(
-  message: SDKAssistantMessage | SDKUserMessage | SDKUserMessageReplay,
+  content: string | ContentBlockParam[] | BetaContentBlock[] | BetaRawContentBlockDelta[],
+  role: "assistant" | "user",
   sessionId: string,
   toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
 ): SessionNotification[] {
-  const content = message.message.content;
-
   if (typeof content === "string") {
     return [
       {
         sessionId,
         update: {
-          sessionUpdate:
-            message.type === "assistant" ? "agent_message_chunk" : "user_message_chunk",
+          sessionUpdate: role === "assistant" ? "agent_message_chunk" : "user_message_chunk",
           content: {
             type: "text",
             text: content,
@@ -644,9 +661,9 @@ export function toAcpNotifications(
     let update: SessionNotification["update"] | null = null;
     switch (chunk.type) {
       case "text":
+      case "text_delta":
         update = {
-          sessionUpdate:
-            message.type === "assistant" ? "agent_message_chunk" : "user_message_chunk",
+          sessionUpdate: role === "assistant" ? "agent_message_chunk" : "user_message_chunk",
           content: {
             type: "text",
             text: chunk.text,
@@ -655,8 +672,7 @@ export function toAcpNotifications(
         break;
       case "image":
         update = {
-          sessionUpdate:
-            message.type === "assistant" ? "agent_message_chunk" : "user_message_chunk",
+          sessionUpdate: role === "assistant" ? "agent_message_chunk" : "user_message_chunk",
           content: {
             type: "image",
             data: chunk.source.type === "base64" ? chunk.source.data : "",
@@ -666,6 +682,7 @@ export function toAcpNotifications(
         };
         break;
       case "thinking":
+      case "thinking_delta":
         update = {
           sessionUpdate: "agent_thought_chunk",
           content: {
@@ -675,6 +692,8 @@ export function toAcpNotifications(
         };
         break;
       case "tool_use":
+      case "server_tool_use":
+      case "mcp_tool_use": {
         toolUseCache[chunk.id] = chunk;
         if (chunk.name === "TodoWrite") {
           update = {
@@ -697,8 +716,15 @@ export function toAcpNotifications(
           };
         }
         break;
+      }
 
-      case "tool_result": {
+      case "tool_result":
+      case "web_fetch_tool_result":
+      case "web_search_tool_result":
+      case "code_execution_tool_result":
+      case "bash_code_execution_tool_result":
+      case "text_editor_code_execution_tool_result":
+      case "mcp_tool_result": {
         const toolUse = toolUseCache[chunk.tool_use_id];
         if (!toolUse) {
           console.error(
@@ -711,15 +737,24 @@ export function toAcpNotifications(
           update = {
             toolCallId: chunk.tool_use_id,
             sessionUpdate: "tool_call_update",
-            status: chunk.is_error ? "failed" : "completed",
+            status: "is_error" in chunk && chunk.is_error ? "failed" : "completed",
             ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
           };
         }
         break;
       }
 
+      case "document":
+      case "search_result":
+      case "redacted_thinking":
+      case "input_json_delta":
+      case "citations_delta":
+      case "signature_delta":
+      case "container_upload":
+        break;
+
       default:
-        throw new Error("unhandled chunk type: " + chunk.type);
+        unreachable(chunk);
     }
     if (update) {
       output.push({ sessionId, update });
@@ -727,6 +762,49 @@ export function toAcpNotifications(
   }
 
   return output;
+}
+
+export function streamEventToAcpNotifications(
+  message: SDKPartialAssistantMessage,
+  sessionId: string,
+  toolUseCache: ToolUseCache,
+  fileContentCache: { [key: string]: string },
+): SessionNotification[] {
+  const event = message.event;
+  switch (event.type) {
+    case "message_start":
+      return toAcpNotifications(
+        event.message.content,
+        event.message.role,
+        sessionId,
+        toolUseCache,
+        fileContentCache,
+      );
+    case "content_block_start":
+      return toAcpNotifications(
+        [event.content_block],
+        "assistant",
+        sessionId,
+        toolUseCache,
+        fileContentCache,
+      );
+    case "content_block_delta":
+      return toAcpNotifications(
+        [event.delta],
+        "assistant",
+        sessionId,
+        toolUseCache,
+        fileContentCache,
+      );
+    case "message_delta":
+    case "message_stop":
+    case "content_block_stop":
+      // do we need stop reason?
+      return [];
+
+    default:
+      unreachable(event);
+  }
 }
 
 export function runAcp() {
