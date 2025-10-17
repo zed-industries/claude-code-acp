@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.7
+
+- Fix for invalid plan input from the model introduced in latest agent-sdk
+
 ## 0.6.6
 
 - Do not enable bypassPermissions mode if in root/sudo mode, because Claude Code will not start
