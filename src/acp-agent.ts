@@ -85,6 +85,9 @@ type ToolUseCache = {
 
 const DEFAULT_MODEL_ID = "default";
 
+// Bypass Permissions doesn't work if we are a root/sudo user
+const IS_ROOT = (process.geteuid?.() ?? process.getuid?.()) === 0;
+
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
@@ -194,6 +197,8 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
+    const permissionMode = "default";
+
     const options: Options = {
       cwd: params.cwd,
       includePartialMessages: true,
@@ -202,7 +207,7 @@ export class ClaudeAcpAgent implements Agent {
       settingSources: ["user", "project", "local"],
       // If we want bypassPermissions to be an option, we have to start the session with it on.
       // We change it immediately back to default below before returning the session.
-      permissionMode: "bypassPermissions",
+      permissionMode: IS_ROOT ? permissionMode : "bypassPermissions",
       permissionPromptToolName: PERMISSION_TOOL_NAME,
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
@@ -239,7 +244,6 @@ export class ClaudeAcpAgent implements Agent {
       options,
     });
 
-    const permissionMode = "default";
     this.sessions[sessionId] = {
       query: q,
       input: input,
@@ -250,7 +254,9 @@ export class ClaudeAcpAgent implements Agent {
     const availableCommands = await getAvailableSlashCommands(q);
     const models = await getAvailableModels(q);
     // Change it back to default
-    await q.setPermissionMode(permissionMode);
+    if (!IS_ROOT) {
+      await q.setPermissionMode(permissionMode);
+    }
 
     // Needs to happen after we return the session
     setTimeout(() => {
@@ -263,33 +269,38 @@ export class ClaudeAcpAgent implements Agent {
       });
     }, 0);
 
+    const availableModes = [
+      {
+        id: "default",
+        name: "Always Ask",
+        description: "Prompts for permission on first use of each tool",
+      },
+      {
+        id: "acceptEdits",
+        name: "Accept Edits",
+        description: "Automatically accepts file edit permissions for the session",
+      },
+      {
+        id: "plan",
+        name: "Plan Mode",
+        description: "Claude can analyze but not modify files or execute commands",
+      },
+    ];
+    // Only works in non-root mode
+    if (!IS_ROOT) {
+      availableModes.push({
+        id: "bypassPermissions",
+        name: "Bypass Permissions",
+        description: "Skips all permission prompts",
+      });
+    }
+
     return {
       sessionId,
       models,
       modes: {
         currentModeId: permissionMode,
-        availableModes: [
-          {
-            id: "default",
-            name: "Always Ask",
-            description: "Prompts for permission on first use of each tool",
-          },
-          {
-            id: "acceptEdits",
-            name: "Accept Edits",
-            description: "Automatically accepts file edit permissions for the session",
-          },
-          {
-            id: "bypassPermissions",
-            name: "Bypass Permissions",
-            description: "Skips all permission prompts",
-          },
-          {
-            id: "plan",
-            name: "Plan Mode",
-            description: "Claude can analyze but not modify files or execute commands",
-          },
-        ],
+        availableModes,
       },
     };
   }
