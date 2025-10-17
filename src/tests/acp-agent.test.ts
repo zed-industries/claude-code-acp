@@ -649,7 +649,9 @@ describe("tool conversions", () => {
       session_id: "d056596f-e328-41e9-badd-b07122ae5227",
       uuid: "b7c3330c-de8f-4bba-ac53-68c7f76ffeb5",
     };
-    expect(toAcpNotifications(received, "test", {}, {})).toStrictEqual([
+    expect(
+      toAcpNotifications(received.message.content, received.message.role, "test", {}, {}),
+    ).toStrictEqual([
       {
         sessionId: "test",
         update: {
