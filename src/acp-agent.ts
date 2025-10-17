@@ -715,10 +715,13 @@ export function toAcpNotifications(
       case "mcp_tool_use": {
         toolUseCache[chunk.id] = chunk;
         if (chunk.name === "TodoWrite") {
-          update = {
-            sessionUpdate: "plan",
-            entries: planEntries(chunk.input as { todos: ClaudePlanEntry[] }),
-          };
+          // @ts-expect-error - sometimes input is empty object
+          if (Array.isArray(chunk.input.todos)) {
+            update = {
+              sessionUpdate: "plan",
+              entries: planEntries(chunk.input as { todos: ClaudePlanEntry[] }),
+            };
+          }
         } else {
           let rawInput;
           try {

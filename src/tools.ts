@@ -344,7 +344,7 @@ export function toolInfoFromToolUse(
 
     case "TodoWrite":
       return {
-        title: input?.todos
+        title: Array.isArray(input?.todos)
           ? `Update TODOs: ${input.todos.map((todo: any) => todo.content).join(", ")}`
           : "Update TODOs",
         kind: "think",
