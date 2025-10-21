@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.8
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.23
+- Update to @agentclientprotocol/sdk@0.4.9
+
 ## 0.6.7
 
 - Fix for invalid plan input from the model introduced in latest agent-sdk
