@@ -794,14 +794,6 @@ export function streamEventToAcpNotifications(
 ): SessionNotification[] {
   const event = message.event;
   switch (event.type) {
-    case "message_start":
-      return toAcpNotifications(
-        event.message.content,
-        event.message.role,
-        sessionId,
-        toolUseCache,
-        fileContentCache,
-      );
     case "content_block_start":
       return toAcpNotifications(
         [event.content_block],
@@ -818,10 +810,11 @@ export function streamEventToAcpNotifications(
         toolUseCache,
         fileContentCache,
       );
+    // No content
+    case "message_start":
     case "message_delta":
     case "message_stop":
     case "content_block_stop":
-      // do we need stop reason?
       return [];
 
     default:
