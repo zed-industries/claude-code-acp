@@ -335,12 +335,34 @@ export class ClaudeAcpAgent implements Agent {
             case "compact_boundary":
               break;
             case "hook_response":
-              // Hook executed successfully - log for debugging but don't forward to client yet
+              // Hook executed - log for debugging and forward to client
               console.log(
                 `[Hook] ${message.hook_name} executed (exit: ${message.exit_code})${
                   message.exit_code !== 0 ? ` - stderr: ${message.stderr}` : ""
                 }`
               );
+
+              // Forward hook execution details to ACP client via _meta extension
+              await this.client.sessionUpdate({
+                sessionId: params.sessionId,
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: {
+                    type: "text",
+                    text: "", // Empty content - data is in _meta
+                  },
+                },
+                _meta: {
+                  hook_execution: {
+                    hook_name: message.hook_name,
+                    hook_event: message.hook_event,
+                    exit_code: message.exit_code,
+                    stdout: message.stdout,
+                    stderr: message.stderr,
+                    uuid: message.uuid,
+                  },
+                },
+              });
               break;
             default:
               unreachable(message as never);
