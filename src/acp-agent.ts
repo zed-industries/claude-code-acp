@@ -334,6 +334,14 @@ export class ClaudeAcpAgent implements Agent {
               break;
             case "compact_boundary":
               break;
+            case "hook_response":
+              // Hook executed successfully - log for debugging but don't forward to client yet
+              console.log(
+                `[Hook] ${message.hook_name} executed (exit: ${message.exit_code})${
+                  message.exit_code !== 0 ? ` - stderr: ${message.stderr}` : ""
+                }`
+              );
+              break;
             default:
               unreachable(message as never);
           }
