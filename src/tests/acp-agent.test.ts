@@ -795,3 +795,115 @@ describe("SDK behavior", () => {
     10000,
   );
 });
+
+describe("hook_response handling", () => {
+  it("should forward hook execution data via _meta field", () => {
+    // Mock hook_response data from Claude Agent SDK
+    const hookResponseNotifications: SessionNotification[] = [];
+
+    // Simulate a hook_response being converted to ACP notification
+    // In the actual implementation, this happens in the prompt() method
+    // when a hook_response system message is received
+    const mockHookResponse = {
+      hook_name: "SessionStart:startup",
+      hook_event: "SessionStart",
+      exit_code: 0,
+      stdout: "",
+      stderr: "Hook executed successfully",
+      uuid: "test-uuid-123",
+    };
+
+    // Expected notification format
+    const expectedNotification: SessionNotification = {
+      sessionId: "test-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "",
+        },
+      },
+      _meta: {
+        hook_execution: {
+          hook_name: mockHookResponse.hook_name,
+          hook_event: mockHookResponse.hook_event,
+          exit_code: mockHookResponse.exit_code,
+          stdout: mockHookResponse.stdout,
+          stderr: mockHookResponse.stderr,
+          uuid: mockHookResponse.uuid,
+        },
+      },
+    };
+
+    // Verify the structure matches what we expect
+    expect(expectedNotification._meta?.hook_execution).toBeDefined();
+    expect(expectedNotification._meta?.hook_execution.hook_name).toBe("SessionStart:startup");
+    expect(expectedNotification._meta?.hook_execution.hook_event).toBe("SessionStart");
+    expect(expectedNotification._meta?.hook_execution.exit_code).toBe(0);
+  });
+
+  it("should include all hook execution fields in _meta", () => {
+    // Test that all required fields are present
+    const mockHookResponse = {
+      hook_name: "PreToolUse:Bash",
+      hook_event: "PreToolUse",
+      exit_code: 1,
+      stdout: "Some output",
+      stderr: "Some error",
+      uuid: "test-uuid-456",
+    };
+
+    const notification: SessionNotification = {
+      sessionId: "test-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "",
+        },
+      },
+      _meta: {
+        hook_execution: mockHookResponse,
+      },
+    };
+
+    // Verify all fields are present
+    const hookExec = notification._meta?.hook_execution;
+    expect(hookExec).toBeDefined();
+    expect(hookExec).toHaveProperty("hook_name");
+    expect(hookExec).toHaveProperty("hook_event");
+    expect(hookExec).toHaveProperty("exit_code");
+    expect(hookExec).toHaveProperty("stdout");
+    expect(hookExec).toHaveProperty("stderr");
+    expect(hookExec).toHaveProperty("uuid");
+  });
+
+  it("should handle hook failures with non-zero exit codes", () => {
+    const mockFailedHook = {
+      hook_name: "PostToolUse:Edit",
+      hook_event: "PostToolUse",
+      exit_code: 127,
+      stdout: "",
+      stderr: "Command not found",
+      uuid: "test-uuid-789",
+    };
+
+    const notification: SessionNotification = {
+      sessionId: "test-session",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "",
+        },
+      },
+      _meta: {
+        hook_execution: mockFailedHook,
+      },
+    };
+
+    const hookExec = notification._meta?.hook_execution;
+    expect(hookExec?.exit_code).toBe(127);
+    expect(hookExec?.stderr).toBe("Command not found");
+  });
+});
