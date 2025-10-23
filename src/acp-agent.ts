@@ -398,6 +398,11 @@ export class ClaudeAcpAgent implements Agent {
             break;
           }
 
+          // Skip assistant messages with string content - already handled by stream events
+          if (message.type === "assistant" && typeof message.message.content === "string") {
+            break;
+          }
+
           if (
             message.type === "assistant" &&
             message.message.model === "<synthetic>" &&

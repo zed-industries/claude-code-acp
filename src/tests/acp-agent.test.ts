@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "child_process";
 import {
   Agent,
+  AgentSideConnection,
   AvailableCommand,
   Client,
   ClientSideConnection,
@@ -15,10 +16,16 @@ import {
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@agentclientprotocol/sdk";
-import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
+import { nodeToWebWritable, nodeToWebReadable, Pushable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
-import { toAcpNotifications } from "../acp-agent.js";
-import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
+import { ClaudeAcpAgent, toAcpNotifications } from "../acp-agent.js";
+import {
+  query,
+  SDKAssistantMessage,
+  SDKPartialAssistantMessage,
+  SDKResultMessage,
+  Query,
+} from "@anthropic-ai/claude-agent-sdk";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -235,6 +242,93 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
 
     expect(client.takeReceivedText()).toContain("");
   }, 30000);
+});
+
+describe("ClaudeAcpAgent prompt", () => {
+  it("skips assistant strings already emitted by stream events", async () => {
+    const notifications: SessionNotification[] = [];
+    const client = {
+      sessionUpdate: async (n: SessionNotification) => notifications.push(n),
+      readTextFile: async () => ({ content: "" }),
+      writeTextFile: async () => ({}),
+    } as unknown as AgentSideConnection;
+
+    const agent = new ClaudeAcpAgent(client);
+    const sessionId = "test";
+
+    const streamEvent: SDKPartialAssistantMessage = {
+      type: "stream_event",
+      uuid: "1",
+      session_id: sessionId,
+      parent_tool_use_id: null,
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "Hello from stream" },
+      },
+    };
+
+    const assistantMessage = {
+      type: "assistant",
+      uuid: "2",
+      session_id: sessionId,
+      parent_tool_use_id: null,
+      message: {
+        role: "assistant",
+        model: "claude-3-7-sonnet",
+        // @ts-expect-error - SDK occasionally emits string content; reproduce that runtime shape
+        content: "Hello from stream",
+      },
+    } as SDKAssistantMessage;
+
+    const resultMessage: SDKResultMessage = {
+      type: "result",
+      uuid: "3",
+      session_id: sessionId,
+      subtype: "success",
+      result: "ok",
+      is_error: false,
+      num_turns: 1,
+      duration_ms: 1,
+      duration_api_ms: 1,
+      total_cost_usd: 0,
+      usage: {} as any,
+      modelUsage: {},
+      permission_denials: [],
+    };
+
+    const fakeQuery = {
+      messages: [streamEvent, assistantMessage, resultMessage],
+      async next() {
+        return this.messages.length
+          ? { value: this.messages.shift()!, done: false }
+          : { value: undefined, done: true };
+      },
+    };
+
+    agent.sessions[sessionId] = {
+      query: fakeQuery as unknown as Query,
+      input: new Pushable(),
+      cancelled: false,
+      permissionMode: "default",
+    };
+
+    const response = await agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "Hi" }],
+    });
+
+    expect(response.stopReason).toBe("end_turn");
+
+    const textChunks = notifications.filter(
+      (notification) =>
+        notification.update.sessionUpdate === "agent_message_chunk" &&
+        notification.update.content.type === "text",
+    );
+
+    expect(textChunks).toHaveLength(1);
+    expect(textChunks[0].update.content.text).toBe("Hello from stream");
+  });
 });
 
 describe("tool conversions", () => {
