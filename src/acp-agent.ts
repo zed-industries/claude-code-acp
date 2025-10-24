@@ -55,6 +55,7 @@ import {
 } from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
+import packageJson from "../package.json" with { type: "json" };
 
 type Session = {
   query: Query;
@@ -110,7 +111,6 @@ export class ClaudeAcpAgent implements Agent {
     this.clientCapabilities = request.clientCapabilities;
     return {
       protocolVersion: 1,
-      // todo!()
       agentCapabilities: {
         promptCapabilities: {
           image: true,
@@ -120,6 +120,11 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
+      },
+      agentInfo: {
+        name: packageJson.name,
+        title: "Claude Code",
+        version: packageJson.version,
       },
       authMethods: [
         {
