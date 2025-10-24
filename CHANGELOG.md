@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.10
+
+- Provide `agentInfo` on initialization response.
+- Update to @agentclientprotocol/sdk@0.5.1
+- Fix crash when receiving a hook_response event
+- Fix for invalid locations when read call has no path
+
 ## 0.6.9
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.26
