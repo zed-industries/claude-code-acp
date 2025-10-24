@@ -1,7 +1,13 @@
 # Changelog
 
+## 0.6.9
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.26
+- Update to @agentclientprotocol/sdk@0.5.0
+
 ## 0.6.8
 
+- Fix for duplicate tokens appearing in thread with streaming enabled
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.23
 - Update to @agentclientprotocol/sdk@0.4.9
 
