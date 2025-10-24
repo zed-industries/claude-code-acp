@@ -334,8 +334,11 @@ export class ClaudeAcpAgent implements Agent {
               break;
             case "compact_boundary":
               break;
+            case "hook_response":
+              // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
+              break;
             default:
-              unreachable(message as never);
+              unreachable(message);
           }
           break;
         case "result": {
@@ -427,7 +430,7 @@ export class ClaudeAcpAgent implements Agent {
           break;
         }
         default:
-          unreachable(message as never);
+          unreachable(message);
       }
     }
     throw new Error("Session did not end in result");
