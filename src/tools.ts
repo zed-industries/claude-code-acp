@@ -113,12 +113,14 @@ export function toolInfoFromToolUse(
       return {
         title: "Read " + (input.file_path ?? "File") + limit,
         kind: "read",
-        locations: [
-          {
-            path: input.file_path,
-            line: input.offset ?? 0,
-          },
-        ],
+        locations: input.file_path
+          ? [
+              {
+                path: input.file_path,
+                line: input.offset ?? 0,
+              },
+            ]
+          : [],
         content: [],
       };
     }
