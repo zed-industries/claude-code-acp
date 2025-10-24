@@ -4,7 +4,7 @@ on:
     tags:
       - "v*.*.*"
 jobs:
-  build:
+  publish-npm:
     runs-on: ubuntu-latest
     environment: release # Optional: for enhanced security
     permissions:
