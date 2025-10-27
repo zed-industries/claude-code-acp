@@ -543,7 +543,11 @@ export function markdownEscape(text: string): string {
 /* A global variable to store callbacks that should be executed when receiving hooks from Claude Code */
 const toolUseCallbacks: {
   [toolUseId: string]: {
-    onPostToolUseHook?: (toolUseID: string, toolInput: unknown, toolResponse: unknown) => Promise<void>;
+    onPostToolUseHook?: (
+      toolUseID: string,
+      toolInput: unknown,
+      toolResponse: unknown,
+    ) => Promise<void>;
   };
 } = {};
 
@@ -553,7 +557,11 @@ export const registerHookCallback = (
   {
     onPostToolUseHook,
   }: {
-    onPostToolUseHook?: (toolUseID: string, toolInput: unknown, toolResponse: unknown) => Promise<void>;
+    onPostToolUseHook?: (
+      toolUseID: string,
+      toolInput: unknown,
+      toolResponse: unknown,
+    ) => Promise<void>;
   },
 ) => {
   toolUseCallbacks[toolUseID] = {

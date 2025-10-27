@@ -94,7 +94,7 @@ export type ToolUpdateMeta = {
   toolName: string;
   /* The structured output provided by Claude Code. */
   toolResponse?: unknown;
-}
+};
 
 type ToolUseCache = {
   [key: string]: CachedToolUse;
@@ -681,9 +681,7 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 /**
  * Return an ACP update for the tool use if both the structured output from the hook and the raw output have been received.
  */
-function outputUpdateIfReady(
-  toolUse: CachedToolUse,
-): SessionNotification["update"] | undefined {
+function outputUpdateIfReady(toolUse: CachedToolUse): SessionNotification["update"] | undefined {
   if (!toolUse.toolResponse || !toolUse.output) {
     // Wait for both output formats to be available before broadcasting the update.
     return undefined;
@@ -701,7 +699,7 @@ function outputUpdateIfReady(
     status: "is_error" in toolUse.output && toolUse.output.is_error ? "failed" : "completed",
     ...toolUpdateFromToolResult(toolUse.output, toolUse),
   };
-};
+}
 
 /**
  * Convert an SDKAssistantMessage (Claude) to a SessionNotification (ACP).
@@ -794,11 +792,13 @@ export function toAcpNotifications(
                   });
                 }
               } else {
-                console.error(`[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`);
+                console.error(
+                  `[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`,
+                );
               }
             },
           });
-          
+
           let rawInput;
           try {
             rawInput = JSON.parse(JSON.stringify(chunk.input));
@@ -837,7 +837,7 @@ export function toAcpNotifications(
         }
         if (toolUse.name !== "TodoWrite") {
           toolUse.output = chunk;
-          const update = outputUpdateIfReady(toolUse)
+          const update = outputUpdateIfReady(toolUse);
           if (update) {
             output.push({ sessionId, update });
           }
