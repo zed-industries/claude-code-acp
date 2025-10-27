@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+
+- Revert changes to filename for cli entrypoint
+- Provide library entrypoint via lib.ts
+
 ## 0.7.0
 
 - Allow importing from this package as a library in addition to running it as a CLI. Allows for easier integration into existing node applications.
