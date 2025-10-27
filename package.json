@@ -3,12 +3,12 @@
   "publishConfig": {
     "access": "public"
   },
-  "bin": {
-    "claude-code-acp": "./dist/cli.js"
-  },
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
-  "main": "dist/index.js",
+  "main": "dist/lib.js",
+  "bin": {
+    "claude-code-acp": "./dist/index.js"
+  },
   "type": "module",
   "files": [
     "dist/",
@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/cli.js",
+    "start": "node dist/index.js",
     "dev": "npm run build && npm run start",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
