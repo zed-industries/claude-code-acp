@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0
+
+- Allow importing from this package as a library in addition to running it as a CLI. Allows for easier integration into existing node applications.
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.27
+
 ## 0.6.10
 
 - Provide `agentInfo` on initialization response.
