@@ -4,6 +4,7 @@ export {
   runAcp,
   toAcpNotifications,
   streamEventToAcpNotifications,
+  type ToolUpdateMeta,
 } from "./acp-agent.js";
 export {
   loadManagedSettings,
