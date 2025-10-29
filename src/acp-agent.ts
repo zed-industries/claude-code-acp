@@ -561,7 +561,7 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
     })
     .filter(
       (command: AvailableCommand) =>
-        !(command.name.match(/\(MCP\)/) || UNSUPPORTED_COMMANDS.includes(command.name)),
+        !UNSUPPORTED_COMMANDS.includes(command.name),
     );
 }
 
