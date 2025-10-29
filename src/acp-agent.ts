@@ -99,6 +99,7 @@ export class ClaudeAcpAgent implements Agent {
   fileContentCache: { [key: string]: string };
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
+  internalSessionIdToSessionIdMap: { [key: string]: string } = {};
 
   constructor(client: AgentSideConnection) {
     this.sessions = {};
@@ -143,7 +144,7 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    const sessionId = uuidv7();
+    const internalSessionId = uuidv7();
     const input = new Pushable<SDKUserMessage>();
 
     const mcpServers: Record<string, McpServerConfig> = {};
@@ -170,7 +171,7 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    const server = createMcpServer(this, sessionId, this.clientCapabilities);
+    const server = createMcpServer(this, internalSessionId, this.clientCapabilities);
     mcpServers["acp"] = {
       type: "sdk",
       name: "acp",
@@ -178,13 +179,13 @@ export class ClaudeAcpAgent implements Agent {
     };
 
     // Ideally replace with `canUseTool`
-    const permissionServer = await createPermissionMcpServer(this, sessionId);
+    const permissionServer = await createPermissionMcpServer(this, internalSessionId);
     const address = permissionServer.address() as AddressInfo;
     mcpServers["acpPermission"] = {
       type: "http",
       url: "http://127.0.0.1:" + address.port + "/mcp",
       headers: {
-        "x-acp-proxy-session-id": sessionId,
+        "x-acp-proxy-session-id": internalSessionId,
       },
     };
 
@@ -249,6 +250,29 @@ export class ClaudeAcpAgent implements Agent {
       prompt: input,
       options,
     });
+
+    // Get the session id from Claude Code after the session is created
+    const sessionId = await new Promise<string>((resolve) => {
+      (async () => {
+        while (true) {
+          const { value: message, done } = await q.next();
+          if (done || !message) {
+            break;
+          }
+          // Wait for the first system message with init subtype that contains session_id
+          if (message.type === "system" && message.subtype === "init") {
+            resolve(message.session_id);
+            break;
+          }
+        }
+      })();
+    });
+
+    // We need to have an id when configuring the MCP servers, but we only receive Claude Code's session id
+    // after sending the MCP configuration in the initial request.
+    // So we store the internal session id to session id mapping in a map and use it later when we receive the
+    // internal session id from the MCP servers.
+    this.internalSessionIdToSessionIdMap[internalSessionId] = sessionId;
 
     this.sessions[sessionId] = {
       query: q,

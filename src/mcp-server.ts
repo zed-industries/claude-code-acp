@@ -42,7 +42,7 @@ const editToolNames = [toolNames.edit, toolNames.write];
 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
-  sessionId: string,
+  internalSessionId: string,
   clientCapabilities: ClientCapabilities | undefined,
 ): McpServer {
   // Create MCP server
@@ -94,7 +94,8 @@ Usage:
       },
       async (input) => {
         try {
-          const session = agent.sessions[sessionId];
+          const sessionId = agent.internalSessionIdToSessionIdMap[internalSessionId];
+          const session = sessionId ? agent.sessions[sessionId] : undefined;
           if (!session) {
             return {
               content: [
@@ -188,7 +189,8 @@ Usage:
       },
       async (input) => {
         try {
-          const session = agent.sessions[sessionId];
+          const sessionId = agent.internalSessionIdToSessionIdMap[internalSessionId];
+          const session = sessionId ? agent.sessions[sessionId] : undefined;
           if (!session) {
             return {
               content: [
@@ -258,7 +260,8 @@ Usage:
         },
       },
       async (input) => {
-        const session = agent.sessions[sessionId];
+        const sessionId = agent.internalSessionIdToSessionIdMap[internalSessionId];
+        const session = sessionId ? agent.sessions[sessionId] : undefined;
         if (!session) {
           return {
             content: [
@@ -339,7 +342,8 @@ Output: Create directory 'foo'`),
         },
       },
       async (input, extra) => {
-        const session = agent.sessions[sessionId];
+        const sessionId = agent.internalSessionIdToSessionIdMap[internalSessionId];
+        const session = sessionId ? agent.sessions[sessionId] : undefined;
         if (!session) {
           return {
             content: [
@@ -589,7 +593,7 @@ export const PERMISSION_TOOL_NAME = PERMISSION_SERVER_PREFIX + UNQUALIFIED_PERMI
  */
 export function createPermissionMcpServer(
   agent: ClaudeAcpAgent,
-  sessionId: string,
+  internalSessionId: string,
 ): Promise<Server> {
   const server = new McpServer(
     { name: "acpPermission", version: "1.0.0" },
@@ -622,7 +626,8 @@ export function createPermissionMcpServer(
     tool_name: string;
     input?: any;
   }): Promise<PermissionResult> {
-    const session = agent.sessions[sessionId];
+    const sessionId = agent.internalSessionIdToSessionIdMap[internalSessionId];
+    const session = sessionId ? agent.sessions[sessionId] : undefined;
     if (!session) {
       return {
         behavior: "deny",
