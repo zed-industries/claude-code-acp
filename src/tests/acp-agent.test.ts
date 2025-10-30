@@ -17,7 +17,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
-import { toAcpNotifications } from "../acp-agent.js";
+import { toAcpNotifications, promptToClaude } from "../acp-agent.js";
 import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
@@ -780,6 +780,44 @@ describe("escape markdown", () => {
     text = "for example:\n```markdown\nHello *world*!\n```\n";
     escaped = markdownEscape(text);
     expect(escaped).toEqual("````\nfor example:\n```markdown\nHello *world*!\n```\n````");
+  });
+});
+
+describe("prompt conversion", () => {
+  it("should not change built-in slash commands", () => {
+    const message = promptToClaude({
+      sessionId: "test",
+      prompt: [
+        {
+          type: "text",
+          text: "/compact args",
+        },
+      ],
+    });
+    expect(message.message.content).toEqual([
+      {
+        text: "/compact args",
+        type: "text",
+      },
+    ]);
+  });
+
+  it("should remove MCP prefix from MCP slash commands", () => {
+    const message = promptToClaude({
+      sessionId: "test",
+      prompt: [
+        {
+          type: "text",
+          text: "/mcp:server:name args",
+        },
+      ],
+    });
+    expect(message.message.content).toEqual([
+      {
+        text: "/server:name (MCP) args",
+        type: "text",
+      },
+    ]);
   });
 });
 

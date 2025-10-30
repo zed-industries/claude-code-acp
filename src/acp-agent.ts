@@ -553,16 +553,17 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
   return commands
     .map((command) => {
       const input = command.argumentHint ? { hint: command.argumentHint } : null;
+      let name = command.name;
+      if (command.name.endsWith(" (MCP)")) {
+        name = `mcp:${name.replace(" (MCP)", "")}`;
+      }
       return {
-        name: command.name,
+        name,
         description: command.description || "",
         input,
       };
     })
-    .filter(
-      (command: AvailableCommand) =>
-        !UNSUPPORTED_COMMANDS.includes(command.name),
-    );
+    .filter((command: AvailableCommand) => !UNSUPPORTED_COMMANDS.includes(command.name));
 }
 
 function formatUriAsLink(uri: string): string {
@@ -582,15 +583,23 @@ function formatUriAsLink(uri: string): string {
   }
 }
 
-function promptToClaude(prompt: PromptRequest): SDKUserMessage {
+export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
   const content: any[] = [];
   const context: any[] = [];
 
   for (const chunk of prompt.prompt) {
     switch (chunk.type) {
-      case "text":
-        content.push({ type: "text", text: chunk.text });
+      case "text": {
+        let text = chunk.text;
+        // change /mcp:server:command args -> /server:command (MCP) args
+        const mcpMatch = text.match(/^\/mcp:([^:\s]+):(\S+)(\s+.*)?$/);
+        if (mcpMatch) {
+          const [, server, command, args] = mcpMatch;
+          text = `/${server}:${command} (MCP)${args || ""}`;
+        }
+        content.push({ type: "text", text });
         break;
+      }
       case "resource_link": {
         const formattedUri = formatUriAsLink(chunk.uri);
         content.push({
