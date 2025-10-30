@@ -515,38 +515,13 @@ async function getAvailableModels(query: Query): Promise<SessionModelState> {
 
 async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
-    "add-dir",
-    "agents", // Modal
-    "bashes", // Modal
-    "bug", // Modal
-    "clear", // Escape Codes
-    "config", // Modal
-    "context", // Escape Codes
-    "cost", // Escape Codes
-    "doctor", // Escape Codes
-    "exit",
-    "export", // Modal
-    "help", // Modal
-    "hooks", // Modal
-    "ide", // Modal
-    "install-github-app", // Modal
+    "context",
+    "cost",
     "login",
     "logout",
-    "memory",
-    "mcp",
-    "migrate-installer", // Modal
-    "model", // Not supported via SDK?
-    "output-style", // Modal
-    "output-style:new", // Modal
-    "permissions", // Modal
-    "privacy-settings",
-    "release-notes", // Escape Codes
-    "resume",
-    "status", // Not supported via SDK?
-    "statusline", // Not needed
-    "terminal-setup", // Not needed
-    "todos", // Escape Codes
-    "vim", // Not needed
+    "output-style:new",
+    "release-notes",
+    "todos",
   ];
   const commands = await query.supportedCommands();
 
