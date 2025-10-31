@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+- Support slash commands coming from MCP servers (Prompts)
+
 ## 0.8.0
 
 - Revert changes to filename for cli entrypoint
