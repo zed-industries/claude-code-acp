@@ -679,9 +679,10 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 }
 
 /**
- * Return an ACP update for the tool use if both the structured output from the hook and the raw output have been received.
+ * Return an ACP update for the tool use if both the structured output from the hook
+ * and the raw output from `tool_result` have been received.
  */
-function outputUpdateIfReady(toolUse: CachedToolUse): SessionNotification["update"] | undefined {
+function structuredOutputUpdate(toolUse: CachedToolUse): SessionNotification["update"] | undefined {
   if (!toolUse.toolResponse || !toolUse.output) {
     // Wait for both output formats to be available before broadcasting the update.
     return undefined;
@@ -784,7 +785,7 @@ export function toAcpNotifications(
               const toolUse = toolUseCache[toolUseId];
               if (toolUse) {
                 toolUse.toolResponse = toolResponse;
-                const update = outputUpdateIfReady(toolUse);
+                const update = structuredOutputUpdate(toolUse);
                 if (update) {
                   await client.sessionUpdate({
                     sessionId,
@@ -835,11 +836,27 @@ export function toAcpNotifications(
           );
           break;
         }
+
         if (toolUse.name !== "TodoWrite") {
+          update = {
+            _meta: {
+              claudeCode: {
+                toolName: toolUse.name,
+              } satisfies ToolUpdateMeta,
+            },
+            toolCallId: chunk.tool_use_id,
+            sessionUpdate: "tool_call_update",
+            status: "is_error" in chunk && chunk.is_error ? "failed" : "completed",
+            ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
+          };
+          // We expect to receive `tool_result` before the post-tool hook is called based on empirical observation.
+          // But there is no strong guarantee about this ordering.
+          // So here we check if the post-tool hook has already been called, and also send the structured output update if it has.
           toolUse.output = chunk;
-          const update = outputUpdateIfReady(toolUse);
-          if (update) {
+          const additionalUpdate = structuredOutputUpdate(toolUse);
+          if (additionalUpdate) {
             output.push({ sessionId, update });
+            update = additionalUpdate;
           }
         }
         break;
