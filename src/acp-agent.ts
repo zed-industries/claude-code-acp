@@ -77,15 +77,6 @@ type BackgroundTerminal =
       pendingOutput: TerminalOutputResponse;
     };
 
-export type CachedToolUse = {
-  type: "tool_use" | "server_tool_use" | "mcp_tool_use";
-  id: string;
-  name: string;
-  input: any;
-  toolResponse?: unknown;
-  output?: any;
-};
-
 /**
  * Extra metadata that the agent provides for each tool_call / tool_update update, under the `_meta.claudeCode` key.
  */
@@ -97,7 +88,12 @@ export type ToolUpdateMeta = {
 };
 
 type ToolUseCache = {
-  [key: string]: CachedToolUse;
+  [key: string]: {
+    type: "tool_use" | "server_tool_use" | "mcp_tool_use";
+    id: string;
+    name: string;
+    input: any;
+  };
 };
 
 const DEFAULT_MODEL_ID = "default";
@@ -679,30 +675,6 @@ function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 }
 
 /**
- * Return an ACP update for the tool use if both the structured output from the hook
- * and the raw output from `tool_result` have been received.
- */
-function structuredOutputUpdate(toolUse: CachedToolUse): SessionNotification["update"] | undefined {
-  if (!toolUse.toolResponse || !toolUse.output) {
-    // Wait for both output formats to be available before broadcasting the update.
-    return undefined;
-  }
-
-  return {
-    _meta: {
-      claudeCode: {
-        toolResponse: toolUse.toolResponse,
-        toolName: toolUse.name,
-      } satisfies ToolUpdateMeta,
-    },
-    toolCallId: toolUse.output.tool_use_id,
-    sessionUpdate: "tool_call_update",
-    status: "is_error" in toolUse.output && toolUse.output.is_error ? "failed" : "completed",
-    ...toolUpdateFromToolResult(toolUse.output, toolUse),
-  };
-}
-
-/**
  * Convert an SDKAssistantMessage (Claude) to a SessionNotification (ACP).
  * Only handles text, image, and thinking chunks for now.
  */
@@ -730,7 +702,6 @@ export function toAcpNotifications(
   }
 
   const output = [];
-
   // Only handle the first chunk for streaming; extend as needed for batching
   for (const chunk of content) {
     let update: SessionNotification["update"] | null = null;
@@ -784,14 +755,20 @@ export function toAcpNotifications(
             onPostToolUseHook: async (toolUseId, toolInput, toolResponse) => {
               const toolUse = toolUseCache[toolUseId];
               if (toolUse) {
-                toolUse.toolResponse = toolResponse;
-                const update = structuredOutputUpdate(toolUse);
-                if (update) {
-                  await client.sessionUpdate({
-                    sessionId,
-                    update,
-                  });
-                }
+                const update: SessionNotification["update"] = {
+                  _meta: {
+                    claudeCode: {
+                      toolResponse,
+                      toolName: toolUse.name,
+                    } satisfies ToolUpdateMeta,
+                  },
+                  toolCallId: toolUseId,
+                  sessionUpdate: "tool_call_update",
+                };
+                await client.sessionUpdate({
+                  sessionId,
+                  update,
+                });
               } else {
                 console.error(
                   `[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`,
@@ -849,15 +826,6 @@ export function toAcpNotifications(
             status: "is_error" in chunk && chunk.is_error ? "failed" : "completed",
             ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
           };
-          // We expect to receive `tool_result` before the post-tool hook is called based on empirical observation.
-          // But there is no strong guarantee about this ordering.
-          // So here we check if the post-tool hook has already been called, and also send the structured output update if it has.
-          toolUse.output = chunk;
-          const additionalUpdate = structuredOutputUpdate(toolUse);
-          if (additionalUpdate) {
-            output.push({ sessionId, update });
-            update = additionalUpdate;
-          }
         }
         break;
       }
