@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "child_process";
 import {
   Agent,
+  AgentSideConnection,
   AvailableCommand,
   Client,
   ClientSideConnection,
@@ -650,7 +651,14 @@ describe("tool conversions", () => {
       uuid: "b7c3330c-de8f-4bba-ac53-68c7f76ffeb5",
     };
     expect(
-      toAcpNotifications(received.message.content, received.message.role, "test", {}, {}),
+      toAcpNotifications(
+        received.message.content,
+        received.message.role,
+        "test",
+        {},
+        {},
+        {} as AgentSideConnection,
+      ),
     ).toStrictEqual([
       {
         sessionId: "test",

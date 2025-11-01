@@ -9,6 +9,7 @@ import {
   BetaWebFetchToolResultBlockParam,
   BetaWebSearchToolResultBlockParam,
 } from "@anthropic-ai/sdk/resources/beta.mjs";
+import { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 
 interface ToolInfo {
   title: string;
@@ -538,3 +539,50 @@ export function markdownEscape(text: string): string {
   }
   return escape + "\n" + text + (text.endsWith("\n") ? "" : "\n") + escape;
 }
+
+/* A global variable to store callbacks that should be executed when receiving hooks from Claude Code */
+const toolUseCallbacks: {
+  [toolUseId: string]: {
+    onPostToolUseHook?: (
+      toolUseID: string,
+      toolInput: unknown,
+      toolResponse: unknown,
+    ) => Promise<void>;
+  };
+} = {};
+
+/* Setup callbacks that will be called when receiving hooks from Claude Code */
+export const registerHookCallback = (
+  toolUseID: string,
+  {
+    onPostToolUseHook,
+  }: {
+    onPostToolUseHook?: (
+      toolUseID: string,
+      toolInput: unknown,
+      toolResponse: unknown,
+    ) => Promise<void>;
+  },
+) => {
+  toolUseCallbacks[toolUseID] = {
+    onPostToolUseHook,
+  };
+};
+
+/* A callback for Claude Code that is called when receiving a PostToolUse hook */
+export const postToolUseHook: HookCallback = async (
+  input: any,
+  toolUseID: string | undefined,
+): Promise<{ continue: boolean }> => {
+  if (input.hook_event_name === "PostToolUse" && toolUseID) {
+    const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
+    if (onPostToolUseHook) {
+      await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
+      delete toolUseCallbacks[toolUseID]; // Cleanup after execution
+    } else {
+      console.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
+      delete toolUseCallbacks[toolUseID];
+    }
+  }
+  return { continue: true };
+};
