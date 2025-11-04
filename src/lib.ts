@@ -13,12 +13,7 @@ export {
   Pushable,
   unreachable,
 } from "./utils.js";
-export {
-  createMcpServer,
-  createPermissionMcpServer,
-  PERMISSION_TOOL_NAME,
-  toolNames,
-} from "./mcp-server.js";
+export { createMcpServer, toolNames } from "./mcp-server.js";
 export { toolInfoFromToolUse, planEntries, toolUpdateFromToolResult } from "./tools.js";
 
 // Export types
