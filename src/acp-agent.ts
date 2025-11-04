@@ -94,7 +94,6 @@ export class ClaudeAcpAgent implements Agent {
   fileContentCache: { [key: string]: string };
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
-  alwaysAllowedTools: { [key: string]: boolean } = {};
 
   constructor(client: AgentSideConnection) {
     this.sessions = {};
@@ -482,7 +481,7 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   canUseTool(sessionId: string): CanUseTool {
-    return async (toolName, toolInput, { suggestions: _suggestions, toolUseID }) => {
+    return async (toolName, toolInput, { suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
       if (!session) {
         return {
@@ -526,7 +525,7 @@ export class ClaudeAcpAgent implements Agent {
           return {
             behavior: "allow",
             updatedInput: toolInput,
-            updatedPermissions: [
+            updatedPermissions: suggestions ?? [
               { type: "setMode", mode: response.outcome.optionId, destination: "session" },
             ],
           };
@@ -541,12 +540,14 @@ export class ClaudeAcpAgent implements Agent {
 
       if (
         session.permissionMode === "bypassPermissions" ||
-        (session.permissionMode === "acceptEdits" && EDIT_TOOL_NAMES.includes(toolName)) ||
-        this.alwaysAllowedTools[toolName]
+        (session.permissionMode === "acceptEdits" && EDIT_TOOL_NAMES.includes(toolName))
       ) {
         return {
           behavior: "allow",
           updatedInput: toolInput,
+          updatedPermissions: suggestions ?? [
+            { type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "session" },
+          ],
         };
       }
 
@@ -570,8 +571,20 @@ export class ClaudeAcpAgent implements Agent {
         response.outcome?.outcome === "selected" &&
         (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
       ) {
+        // If Claude Code has suggestions, it will update their settings already
         if (response.outcome.optionId === "allow_always") {
-          this.alwaysAllowedTools[toolName] = true;
+          return {
+            behavior: "allow",
+            updatedInput: toolInput,
+            updatedPermissions: suggestions ?? [
+              {
+                type: "addRules",
+                rules: [{ toolName }],
+                behavior: "allow",
+                destination: "session",
+              },
+            ],
+          };
         }
         return {
           behavior: "allow",
