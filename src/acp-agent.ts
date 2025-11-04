@@ -431,6 +431,10 @@ export class ClaudeAcpAgent implements Agent {
           }
           break;
         }
+        case "tool_progress":
+          break;
+        case "auth_status":
+          break;
         default:
           unreachable(message);
       }
