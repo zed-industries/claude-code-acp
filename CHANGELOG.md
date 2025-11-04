@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.30
+- Use `canUseTool` callback instead of launching an HTTP MCP server for permission checks.
+
 ## 0.9.0
 
 - Support slash commands coming from MCP servers (Prompts)

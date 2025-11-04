@@ -1,15 +1,10 @@
-import express from "express";
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { Server } from "node:http";
 import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities, TerminalOutputResponse } from "@agentclientprotocol/sdk";
 import * as diff from "diff";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
-import { PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 
 export const SYSTEM_REMINDER = `
 
@@ -38,7 +33,7 @@ export const toolNames = {
   bashOutput: SERVER_PREFIX + unqualifiedToolNames.bashOutput,
 };
 
-const editToolNames = [toolNames.edit, toolNames.write];
+export const EDIT_TOOL_NAMES = [toolNames.edit, toolNames.write];
 
 export function createMcpServer(
   agent: ClaudeAcpAgent,
@@ -576,189 +571,6 @@ In sessions with ${toolNames.killShell} always use it instead of KillShell.`,
   }
 
   return server;
-}
-
-const UNQUALIFIED_PERMISSION_TOOL_NAME = "permission";
-const PERMISSION_SERVER_PREFIX = "mcp__acpPermission__";
-export const PERMISSION_TOOL_NAME = PERMISSION_SERVER_PREFIX + UNQUALIFIED_PERMISSION_TOOL_NAME;
-
-/**
- * Separate permission tool. Needs to be an HTTP server for now, because Claude Code doesn't
- * support permission tools via SDK servers.
- * Ideally it moves to the `canUseTool` callback in the future.
- */
-export function createPermissionMcpServer(
-  agent: ClaudeAcpAgent,
-  sessionId: string,
-): Promise<Server> {
-  const server = new McpServer(
-    { name: "acpPermission", version: "1.0.0" },
-    { capabilities: { tools: {} } },
-  );
-
-  const alwaysAllowedTools: { [key: string]: boolean } = {};
-  server.registerTool(
-    UNQUALIFIED_PERMISSION_TOOL_NAME,
-    {
-      title: "Permission Tool",
-      description: "Used to request tool permissions",
-      inputSchema: {
-        tool_name: z.string(),
-        input: z.any(),
-        tool_use_id: z.string().optional(),
-      },
-    },
-    async (input) => {
-      const result = await canUseTool(input);
-
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-      };
-    },
-  );
-
-  async function canUseTool(input: {
-    tool_use_id?: string;
-    tool_name: string;
-    input?: any;
-  }): Promise<PermissionResult> {
-    const session = agent.sessions[sessionId];
-    if (!session) {
-      return {
-        behavior: "deny",
-        message: "Session not found",
-      };
-    }
-
-    if (input.tool_name === "ExitPlanMode") {
-      const response = await agent.client.requestPermission({
-        options: [
-          {
-            kind: "allow_always",
-            name: "Yes, and auto-accept edits",
-            optionId: "acceptEdits",
-          },
-          { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
-          { kind: "reject_once", name: "No, keep planning", optionId: "plan" },
-        ],
-        sessionId,
-        toolCall: {
-          toolCallId: input.tool_use_id!,
-          rawInput: input.input,
-        },
-      });
-
-      if (
-        response.outcome?.outcome === "selected" &&
-        (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
-      ) {
-        session.permissionMode = response.outcome.optionId;
-        await agent.client.sessionUpdate({
-          sessionId,
-          update: {
-            sessionUpdate: "current_mode_update",
-            currentModeId: response.outcome.optionId,
-          },
-        });
-
-        return {
-          behavior: "allow",
-          updatedInput: input.input,
-          updatedPermissions: [
-            { type: "setMode", mode: response.outcome.optionId, destination: "session" },
-          ],
-        };
-      } else {
-        return {
-          behavior: "deny",
-          message: "User rejected request to exit plan mode.",
-        };
-      }
-    }
-
-    if (
-      session.permissionMode === "bypassPermissions" ||
-      (session.permissionMode === "acceptEdits" && editToolNames.includes(input.tool_name)) ||
-      alwaysAllowedTools[input.tool_name]
-    ) {
-      return {
-        behavior: "allow",
-        updatedInput: input.input,
-      };
-    }
-
-    const response = await agent.client.requestPermission({
-      options: [
-        {
-          kind: "allow_always",
-          name: "Always Allow",
-          optionId: "allow_always",
-        },
-        { kind: "allow_once", name: "Allow", optionId: "allow" },
-        { kind: "reject_once", name: "Reject", optionId: "reject" },
-      ],
-      sessionId,
-      toolCall: {
-        toolCallId: input.tool_use_id!,
-        rawInput: input.input,
-      },
-    });
-    if (
-      response.outcome?.outcome === "selected" &&
-      (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
-    ) {
-      if (response.outcome.optionId === "allow_always") {
-        alwaysAllowedTools[input.tool_name] = true;
-      }
-      return {
-        behavior: "allow",
-        updatedInput: input.input,
-      };
-    } else {
-      return {
-        behavior: "deny",
-        message: "User refused permission to run tool",
-      };
-    }
-  }
-
-  const app = express();
-  app.use(express.json());
-
-  app.post("/mcp", async (req, res) => {
-    try {
-      const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      res.on("close", () => {
-        transport.close();
-        server.close();
-      });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: {
-            code: -32603,
-            message: `Internal server error: ${error}`,
-          },
-          id: null,
-        });
-      }
-    }
-  });
-
-  return new Promise((resolve, reject) => {
-    const listener = app.listen(0, "127.0.0.1", (error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(listener);
-    });
-  });
 }
 
 function stripCommonPrefix(a: string, b: string): string {

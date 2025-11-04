@@ -26,6 +26,7 @@ import {
   WriteTextFileResponse,
 } from "@agentclientprotocol/sdk";
 import {
+  CanUseTool,
   McpServerConfig,
   Options,
   PermissionMode,
@@ -40,13 +41,7 @@ import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { SessionNotification } from "@agentclientprotocol/sdk";
-import {
-  createMcpServer,
-  createPermissionMcpServer,
-  PERMISSION_TOOL_NAME,
-  toolNames,
-} from "./mcp-server.js";
-import { AddressInfo } from "node:net";
+import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
 import {
   toolInfoFromToolUse,
   planEntries,
@@ -177,17 +172,6 @@ export class ClaudeAcpAgent implements Agent {
       instance: server,
     };
 
-    // Ideally replace with `canUseTool`
-    const permissionServer = await createPermissionMcpServer(this, sessionId);
-    const address = permissionServer.address() as AddressInfo;
-    mcpServers["acpPermission"] = {
-      type: "http",
-      url: "http://127.0.0.1:" + address.port + "/mcp",
-      headers: {
-        "x-acp-proxy-session-id": sessionId,
-      },
-    };
-
     let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
     if (params._meta?.systemPrompt) {
       const customPrompt = params._meta.systemPrompt;
@@ -214,7 +198,7 @@ export class ClaudeAcpAgent implements Agent {
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,
       permissionMode,
-      permissionPromptToolName: PERMISSION_TOOL_NAME,
+      canUseTool: this.canUseTool(sessionId),
       stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
@@ -494,6 +478,126 @@ export class ClaudeAcpAgent implements Agent {
     const response = await this.client.writeTextFile(params);
     this.fileContentCache[params.path] = params.content;
     return response;
+  }
+
+  canUseTool(sessionId: string): CanUseTool {
+    return async (toolName, toolInput, { suggestions, toolUseID }) => {
+      const session = this.sessions[sessionId];
+      if (!session) {
+        return {
+          behavior: "deny",
+          message: "Session not found",
+          interrupt: true,
+        };
+      }
+
+      if (toolName === "ExitPlanMode") {
+        const response = await this.client.requestPermission({
+          options: [
+            {
+              kind: "allow_always",
+              name: "Yes, and auto-accept edits",
+              optionId: "acceptEdits",
+            },
+            { kind: "allow_once", name: "Yes, and manually approve edits", optionId: "default" },
+            { kind: "reject_once", name: "No, keep planning", optionId: "plan" },
+          ],
+          sessionId,
+          toolCall: {
+            toolCallId: toolUseID,
+            rawInput: toolInput,
+          },
+        });
+
+        if (
+          response.outcome?.outcome === "selected" &&
+          (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
+        ) {
+          session.permissionMode = response.outcome.optionId;
+          await this.client.sessionUpdate({
+            sessionId,
+            update: {
+              sessionUpdate: "current_mode_update",
+              currentModeId: response.outcome.optionId,
+            },
+          });
+
+          return {
+            behavior: "allow",
+            updatedInput: toolInput,
+            updatedPermissions: suggestions ?? [
+              { type: "setMode", mode: response.outcome.optionId, destination: "session" },
+            ],
+          };
+        } else {
+          return {
+            behavior: "deny",
+            message: "User rejected request to exit plan mode.",
+            interrupt: true,
+          };
+        }
+      }
+
+      if (
+        session.permissionMode === "bypassPermissions" ||
+        (session.permissionMode === "acceptEdits" && EDIT_TOOL_NAMES.includes(toolName))
+      ) {
+        return {
+          behavior: "allow",
+          updatedInput: toolInput,
+          updatedPermissions: suggestions ?? [
+            { type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "session" },
+          ],
+        };
+      }
+
+      const response = await this.client.requestPermission({
+        options: [
+          {
+            kind: "allow_always",
+            name: "Always Allow",
+            optionId: "allow_always",
+          },
+          { kind: "allow_once", name: "Allow", optionId: "allow" },
+          { kind: "reject_once", name: "Reject", optionId: "reject" },
+        ],
+        sessionId,
+        toolCall: {
+          toolCallId: toolUseID,
+          rawInput: toolInput,
+        },
+      });
+      if (
+        response.outcome?.outcome === "selected" &&
+        (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
+      ) {
+        // If Claude Code has suggestions, it will update their settings already
+        if (response.outcome.optionId === "allow_always") {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput,
+            updatedPermissions: suggestions ?? [
+              {
+                type: "addRules",
+                rules: [{ toolName }],
+                behavior: "allow",
+                destination: "session",
+              },
+            ],
+          };
+        }
+        return {
+          behavior: "allow",
+          updatedInput: toolInput,
+        };
+      } else {
+        return {
+          behavior: "deny",
+          message: "User refused permission to run tool",
+          interrupt: true,
+        };
+      }
+    };
   }
 }
 
