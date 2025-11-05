@@ -104,6 +104,25 @@ export class ClaudeAcpAgent implements Agent {
 
   async initialize(request: InitializeRequest): Promise<InitializeResponse> {
     this.clientCapabilities = request.clientCapabilities;
+
+    // Default authMethod
+    const authMethod: any = {
+      description: "Run `claude /login` in the terminal",
+      name: "Log in with Claude Code",
+      id: "claude-login",
+    };
+
+    // If client supports terminal-auth capability, use that instead.
+    if (request.clientCapabilities?._meta?.["terminal-auth"] === true) {
+      authMethod._meta = {
+        "terminal-auth": {
+          command: "claude",
+          args: ["/login"],
+          label: "Claude Code Login",
+        },
+      };
+    }
+
     return {
       protocolVersion: 1,
       agentCapabilities: {
@@ -121,13 +140,7 @@ export class ClaudeAcpAgent implements Agent {
         title: "Claude Code",
         version: packageJson.version,
       },
-      authMethods: [
-        {
-          description: "Run `claude /login` in the terminal",
-          name: "Log in with Claude Code",
-          id: "claude-login",
-        },
-      ],
+      authMethods: [authMethod],
     };
   }
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
