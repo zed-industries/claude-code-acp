@@ -114,10 +114,14 @@ export class ClaudeAcpAgent implements Agent {
 
     // If client supports terminal-auth capability, use that instead.
     if (request.clientCapabilities?._meta?.["terminal-auth"] === true) {
+      const cliPath = import.meta
+        .resolve("@anthropic-ai/claude-agent-sdk/cli.js")
+        .replace("file://", "");
+
       authMethod._meta = {
         "terminal-auth": {
-          command: "claude",
-          args: ["/login"],
+          command: "node",
+          args: [cliPath, "/login"],
           label: "Claude Code Login",
         },
       };
