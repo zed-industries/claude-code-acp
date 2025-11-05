@@ -94,6 +94,7 @@ export class ClaudeAcpAgent implements Agent {
   fileContentCache: { [key: string]: string };
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
+  claudeSessionIds: { [acpSessionId: string]: string } = {};
 
   constructor(client: AgentSideConnection) {
     this.sessions = {};
@@ -134,6 +135,10 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
+        _meta: {
+          "claude/session/resume": true,
+          "claude/session/fork": true,
+        },
       },
       agentInfo: {
         name: packageJson.name,
@@ -151,157 +156,7 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    const sessionId = uuidv7();
-    const input = new Pushable<SDKUserMessage>();
-
-    const mcpServers: Record<string, McpServerConfig> = {};
-    if (Array.isArray(params.mcpServers)) {
-      for (const server of params.mcpServers) {
-        if ("type" in server) {
-          mcpServers[server.name] = {
-            type: server.type,
-            url: server.url,
-            headers: server.headers
-              ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
-              : undefined,
-          };
-        } else {
-          mcpServers[server.name] = {
-            type: "stdio",
-            command: server.command,
-            args: server.args,
-            env: server.env
-              ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
-              : undefined,
-          };
-        }
-      }
-    }
-
-    const server = createMcpServer(this, sessionId, this.clientCapabilities);
-    mcpServers["acp"] = {
-      type: "sdk",
-      name: "acp",
-      instance: server,
-    };
-
-    let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
-    if (params._meta?.systemPrompt) {
-      const customPrompt = params._meta.systemPrompt;
-      if (typeof customPrompt === "string") {
-        systemPrompt = customPrompt;
-      } else if (
-        typeof customPrompt === "object" &&
-        "append" in customPrompt &&
-        typeof customPrompt.append === "string"
-      ) {
-        systemPrompt.append = customPrompt.append;
-      }
-    }
-
-    const permissionMode = "default";
-
-    const options: Options = {
-      cwd: params.cwd,
-      includePartialMessages: true,
-      mcpServers,
-      systemPrompt,
-      settingSources: ["user", "project", "local"],
-      // If we want bypassPermissions to be an option, we have to allow it here.
-      // But it doesn't work in root mode, so we only activate it if it will work.
-      allowDangerouslySkipPermissions: !IS_ROOT,
-      permissionMode,
-      canUseTool: this.canUseTool(sessionId),
-      stderr: (err) => console.error(err),
-      // note: although not documented by the types, passing an absolute path
-      // here works to find zed's managed node version.
-      executable: process.execPath as any,
-      ...(process.env.CLAUDE_CODE_EXECUTABLE && {
-        pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
-      }),
-    };
-
-    const allowedTools = [];
-    const disallowedTools = [];
-    if (this.clientCapabilities?.fs?.readTextFile) {
-      allowedTools.push(toolNames.read);
-      disallowedTools.push("Read");
-    }
-    if (this.clientCapabilities?.fs?.writeTextFile) {
-      disallowedTools.push("Write", "Edit");
-    }
-    if (this.clientCapabilities?.terminal) {
-      allowedTools.push(toolNames.bashOutput, toolNames.killShell);
-      disallowedTools.push("Bash", "BashOutput", "KillShell");
-    }
-
-    if (allowedTools.length > 0) {
-      options.allowedTools = allowedTools;
-    }
-    if (disallowedTools.length > 0) {
-      options.disallowedTools = disallowedTools;
-    }
-
-    const q = query({
-      prompt: input,
-      options,
-    });
-
-    this.sessions[sessionId] = {
-      query: q,
-      input: input,
-      cancelled: false,
-      permissionMode,
-    };
-
-    const availableCommands = await getAvailableSlashCommands(q);
-    const models = await getAvailableModels(q);
-
-    // Needs to happen after we return the session
-    setTimeout(() => {
-      this.client.sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "available_commands_update",
-          availableCommands,
-        },
-      });
-    }, 0);
-
-    const availableModes = [
-      {
-        id: "default",
-        name: "Always Ask",
-        description: "Prompts for permission on first use of each tool",
-      },
-      {
-        id: "acceptEdits",
-        name: "Accept Edits",
-        description: "Automatically accepts file edit permissions for the session",
-      },
-      {
-        id: "plan",
-        name: "Plan Mode",
-        description: "Claude can analyze but not modify files or execute commands",
-      },
-    ];
-    // Only works in non-root mode
-    if (!IS_ROOT) {
-      availableModes.push({
-        id: "bypassPermissions",
-        name: "Bypass Permissions",
-        description: "Skips all permission prompts",
-      });
-    }
-
-    return {
-      sessionId,
-      models,
-      modes: {
-        currentModeId: permissionMode,
-        availableModes,
-      },
-    };
+    return await this.createSession(params, {});
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<void> {
@@ -326,6 +181,12 @@ export class ClaudeAcpAgent implements Agent {
         }
         break;
       }
+
+      // Track Claude session ID from all messages
+      if (message.session_id) {
+        await this.trackAndNotifyClaudeSessionId(params.sessionId, message.session_id);
+      }
+
       switch (message.type) {
         case "system":
           switch (message.subtype) {
@@ -610,6 +471,214 @@ export class ClaudeAcpAgent implements Agent {
           interrupt: true,
         };
       }
+    };
+  }
+
+  async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    switch (method) {
+      case "claude/session/resume": {
+        const claudeSessionId = params.claudeSessionId as string;
+        if (!claudeSessionId) {
+          throw RequestError.invalidParams(
+            { claudeSessionId: params.claudeSessionId },
+            "Missing or invalid claudeSessionId parameter",
+          );
+        }
+
+        return (await this.createSession(params as unknown as NewSessionRequest, {
+          resume: claudeSessionId,
+        })) as unknown as Record<string, unknown>;
+      }
+
+      case "claude/session/fork": {
+        const acpSessionId = params.sessionId as string;
+        if (!acpSessionId) {
+          throw RequestError.invalidParams(
+            { sessionId: params.sessionId },
+            "Missing or invalid sessionId parameter",
+          );
+        }
+
+        // Look up the Claude session ID from the ACP session ID
+        const claudeSessionId = this.claudeSessionIds[acpSessionId];
+        if (!claudeSessionId) {
+          throw RequestError.resourceNotFound(
+            `Session ${acpSessionId} not found or has no Claude session ID yet`,
+          );
+        }
+
+        return (await this.createSession({} as NewSessionRequest, {
+          resume: claudeSessionId,
+          forkSession: true,
+        })) as unknown as Record<string, unknown>;
+      }
+
+      default:
+        throw RequestError.methodNotFound(method);
+    }
+  }
+
+  private async trackAndNotifyClaudeSessionId(acpSessionId: string, claudeSessionId: string): Promise<void> {
+    // Only update and notify if the session ID has changed
+    if (this.claudeSessionIds[acpSessionId] !== claudeSessionId) {
+      this.claudeSessionIds[acpSessionId] = claudeSessionId;
+      await this.client.extNotification("claude/sessionId", {
+        sessionId: acpSessionId,
+        claudeSessionId: claudeSessionId,
+      });
+    }
+  }
+
+  private async createSession(
+    params: NewSessionRequest,
+    creationOpts: { resume?: string; forkSession?: boolean } = {},
+  ): Promise<NewSessionResponse> {
+    console.error("new session", params);
+    const sessionId = uuidv7();
+    const input = new Pushable<SDKUserMessage>();
+
+    const mcpServers: Record<string, McpServerConfig> = {};
+    if (Array.isArray(params.mcpServers)) {
+      for (const server of params.mcpServers) {
+        if ("type" in server) {
+          mcpServers[server.name] = {
+            type: server.type,
+            url: server.url,
+            headers: server.headers
+              ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        } else {
+          mcpServers[server.name] = {
+            type: "stdio",
+            command: server.command,
+            args: server.args,
+            env: server.env
+              ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        }
+      }
+    }
+
+    const server = createMcpServer(this, sessionId, this.clientCapabilities);
+    mcpServers["acp"] = {
+      type: "sdk",
+      name: "acp",
+      instance: server,
+    };
+
+    let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
+    if (params._meta?.systemPrompt) {
+      const customPrompt = params._meta.systemPrompt;
+      if (typeof customPrompt === "string") {
+        systemPrompt = customPrompt;
+      } else if (
+        typeof customPrompt === "object" &&
+        "append" in customPrompt &&
+        typeof customPrompt.append === "string"
+      ) {
+        systemPrompt.append = customPrompt.append;
+      }
+    }
+
+    const permissionMode = "default";
+
+    const options: Options = {
+      cwd: params.cwd || process.cwd(),
+      includePartialMessages: true,
+      mcpServers,
+      systemPrompt,
+      settingSources: ["user", "project", "local"],
+      allowDangerouslySkipPermissions: !IS_ROOT,
+      permissionMode,
+      canUseTool: this.canUseTool(sessionId),
+      stderr: (err) => console.error(err),
+      executable: process.execPath as any,
+      ...creationOpts,
+      ...(process.env.CLAUDE_CODE_EXECUTABLE && {
+        pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
+      }),
+    };
+
+    const allowedTools = [];
+    const disallowedTools = [];
+    if (this.clientCapabilities?.fs?.readTextFile) {
+      allowedTools.push(toolNames.read);
+      disallowedTools.push("Read");
+    }
+    if (this.clientCapabilities?.fs?.writeTextFile) {
+      disallowedTools.push("Write", "Edit");
+    }
+    if (this.clientCapabilities?.terminal) {
+      allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+      disallowedTools.push("Bash", "BashOutput", "KillShell");
+    }
+
+    if (allowedTools.length > 0) {
+      options.allowedTools = allowedTools;
+    }
+    if (disallowedTools.length > 0) {
+      options.disallowedTools = disallowedTools;
+    }
+
+    const q = query({
+      prompt: input,
+      options,
+    });
+
+    this.sessions[sessionId] = {
+      query: q,
+      input: input,
+      cancelled: false,
+      permissionMode,
+    };
+
+    const availableCommands = await getAvailableSlashCommands(q);
+    const models = await getAvailableModels(q);
+
+    setTimeout(() => {
+      this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands,
+        },
+      });
+    }, 0);
+
+    const availableModes = [
+      {
+        id: "default",
+        name: "Always Ask",
+        description: "Prompts for permission on first use of each tool",
+      },
+      {
+        id: "acceptEdits",
+        name: "Accept Edits",
+        description: "Automatically accepts file edit permissions for the session",
+      },
+      {
+        id: "plan",
+        name: "Plan Mode",
+        description: "Claude can analyze but not modify files or execute commands",
+      },
+    ];
+    if (!IS_ROOT) {
+      availableModes.push({
+        id: "bypassPermissions",
+        name: "Bypass Permissions",
+        description: "Skips all permission prompts",
+      });
+    }
+
+    return {
+      sessionId,
+      models,
+      modes: {
+        currentModeId: permissionMode,
+        availableModes,
+      },
     };
   }
 }
