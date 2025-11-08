@@ -245,16 +245,38 @@ export class ClaudeAcpAgent implements Agent {
 
     const allowedTools = [];
     const disallowedTools = [];
-    if (this.clientCapabilities?.fs?.readTextFile) {
-      allowedTools.push(toolNames.read);
-      disallowedTools.push("Read");
-    }
-    if (this.clientCapabilities?.fs?.writeTextFile) {
-      disallowedTools.push("Write", "Edit");
-    }
-    if (this.clientCapabilities?.terminal) {
-      allowedTools.push(toolNames.bashOutput, toolNames.killShell);
-      disallowedTools.push("Bash", "BashOutput", "KillShell");
+
+    // Check if built-in tools should be disabled
+    const disableBuiltInTools = params._meta?.disableBuiltInTools === true;
+
+    if (!disableBuiltInTools) {
+      if (this.clientCapabilities?.fs?.readTextFile) {
+        allowedTools.push(toolNames.read);
+        disallowedTools.push("Read");
+      }
+      if (this.clientCapabilities?.fs?.writeTextFile) {
+        disallowedTools.push("Write", "Edit");
+      }
+      if (this.clientCapabilities?.terminal) {
+        allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+        disallowedTools.push("Bash", "BashOutput", "KillShell");
+      }
+    } else {
+      // When built-in tools are disabled, explicitly disallow all of them
+      disallowedTools.push(
+        toolNames.read,
+        toolNames.write,
+        toolNames.edit,
+        toolNames.bash,
+        toolNames.bashOutput,
+        toolNames.killShell,
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "BashOutput",
+        "KillShell",
+      );
     }
 
     if (allowedTools.length > 0) {
