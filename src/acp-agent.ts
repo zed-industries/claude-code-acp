@@ -340,6 +340,9 @@ export class ClaudeAcpAgent implements Agent {
             case "hook_response":
               // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
               break;
+            case "status":
+              // Todo: process status messages
+              break;
             default:
               unreachable(message);
           }
