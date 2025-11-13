@@ -47,6 +47,8 @@ import {
   planEntries,
   toolUpdateFromToolResult,
   ClaudePlanEntry,
+  registerHookCallback,
+  postToolUseHook,
 } from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
@@ -69,6 +71,16 @@ type BackgroundTerminal =
       status: "aborted" | "exited" | "killed" | "timedOut";
       pendingOutput: TerminalOutputResponse;
     };
+
+/**
+ * Extra metadata that the agent provides for each tool_call / tool_update update, under the `_meta.claudeCode` key.
+ */
+export type ToolUpdateMeta = {
+  /* The name of the tool that was used in Claude Code. */
+  toolName: string;
+  /* The structured output provided by Claude Code. */
+  toolResponse?: unknown;
+};
 
 type ToolUseCache = {
   [key: string]: {
@@ -223,6 +235,13 @@ export class ClaudeAcpAgent implements Agent {
       ...(process.env.CLAUDE_CODE_EXECUTABLE && {
         pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
       }),
+      hooks: {
+        PostToolUse: [
+          {
+            hooks: [postToolUseHook],
+          },
+        ],
+      },
     };
 
     const allowedTools = [];
@@ -371,6 +390,7 @@ export class ClaudeAcpAgent implements Agent {
             params.sessionId,
             this.toolUseCache,
             this.fileContentCache,
+            this.client,
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -427,6 +447,7 @@ export class ClaudeAcpAgent implements Agent {
             params.sessionId,
             this.toolUseCache,
             this.fileContentCache,
+            this.client,
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -772,6 +793,7 @@ export function toAcpNotifications(
   sessionId: string,
   toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
+  client: AgentSideConnection,
 ): SessionNotification[] {
   if (typeof content === "string") {
     return [
@@ -837,6 +859,33 @@ export function toAcpNotifications(
             };
           }
         } else {
+          // Register hook callback to receive the structured output from the hook
+          registerHookCallback(chunk.id, {
+            onPostToolUseHook: async (toolUseId, toolInput, toolResponse) => {
+              const toolUse = toolUseCache[toolUseId];
+              if (toolUse) {
+                const update: SessionNotification["update"] = {
+                  _meta: {
+                    claudeCode: {
+                      toolResponse,
+                      toolName: toolUse.name,
+                    } satisfies ToolUpdateMeta,
+                  },
+                  toolCallId: toolUseId,
+                  sessionUpdate: "tool_call_update",
+                };
+                await client.sessionUpdate({
+                  sessionId,
+                  update,
+                });
+              } else {
+                console.error(
+                  `[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`,
+                );
+              }
+            },
+          });
+
           let rawInput;
           try {
             rawInput = JSON.parse(JSON.stringify(chunk.input));
@@ -844,6 +893,11 @@ export function toAcpNotifications(
             // ignore if we can't turn it to JSON
           }
           update = {
+            _meta: {
+              claudeCode: {
+                toolName: chunk.name,
+              } satisfies ToolUpdateMeta,
+            },
             toolCallId: chunk.id,
             sessionUpdate: "tool_call",
             rawInput,
@@ -871,6 +925,11 @@ export function toAcpNotifications(
 
         if (toolUse.name !== "TodoWrite") {
           update = {
+            _meta: {
+              claudeCode: {
+                toolName: toolUse.name,
+              } satisfies ToolUpdateMeta,
+            },
             toolCallId: chunk.tool_use_id,
             sessionUpdate: "tool_call_update",
             status: "is_error" in chunk && chunk.is_error ? "failed" : "completed",
@@ -905,6 +964,7 @@ export function streamEventToAcpNotifications(
   sessionId: string,
   toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
+  client: AgentSideConnection,
 ): SessionNotification[] {
   const event = message.event;
   switch (event.type) {
@@ -915,6 +975,7 @@ export function streamEventToAcpNotifications(
         sessionId,
         toolUseCache,
         fileContentCache,
+        client,
       );
     case "content_block_delta":
       return toAcpNotifications(
@@ -923,6 +984,7 @@ export function streamEventToAcpNotifications(
         sessionId,
         toolUseCache,
         fileContentCache,
+        client,
       );
     // No content
     case "message_start":
