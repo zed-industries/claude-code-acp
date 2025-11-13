@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1
+
+- Add additional structured metadata to tool calls
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.37
+
 ## 0.10.0
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.30
