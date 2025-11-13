@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2
+
+- Fix incorrect stop reason for tool call refusals
+
 ## 0.10.1
 
 - Add additional structured metadata to tool calls

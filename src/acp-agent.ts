@@ -377,12 +377,14 @@ export class ClaudeAcpAgent implements Agent {
               return { stopReason: "end_turn" };
             }
             case "error_during_execution":
-              return { stopReason: "refusal" };
+              return { stopReason: "end_turn" };
+            case "error_max_budget_usd":
             case "error_max_turns":
               return { stopReason: "max_turn_requests" };
             default:
-              return { stopReason: "refusal" };
+              unreachable(message);
           }
+          break;
         }
         case "stream_event": {
           for (const notification of streamEventToAcpNotifications(
@@ -420,7 +422,13 @@ export class ClaudeAcpAgent implements Agent {
             break;
           }
           // Skip these user messages for now, since they seem to just be messages we don't want in the feed
-          if (message.type === "user" && typeof message.message.content === "string") {
+          if (
+            message.type === "user" &&
+            (typeof message.message.content === "string" ||
+              (Array.isArray(message.message.content) &&
+                message.message.content.length === 1 &&
+                message.message.content[0].type === "text"))
+          ) {
             break;
           }
 
