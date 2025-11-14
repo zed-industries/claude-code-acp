@@ -193,12 +193,15 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    const server = createMcpServer(this, sessionId, this.clientCapabilities);
-    mcpServers["acp"] = {
-      type: "sdk",
-      name: "acp",
-      instance: server,
-    };
+    // Only add the acp MCP server if built-in tools are not disabled
+    if (!params._meta?.disableBuiltInTools) {
+      const server = createMcpServer(this, sessionId, this.clientCapabilities);
+      mcpServers["acp"] = {
+        type: "sdk",
+        name: "acp",
+        instance: server,
+      };
+    }
 
     let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
     if (params._meta?.systemPrompt) {
@@ -276,6 +279,17 @@ export class ClaudeAcpAgent implements Agent {
         "Bash",
         "BashOutput",
         "KillShell",
+        "Glob",
+        "Grep",
+        "Task",
+        "TodoWrite",
+        "ExitPlanMode",
+        "WebSearch",
+        "WebFetch",
+        "AskUserQuestion",
+        "SlashCommand",
+        "Skill",
+        "NotebookEdit",
       );
     }
 
@@ -377,7 +391,6 @@ export class ClaudeAcpAgent implements Agent {
               break;
             case "compact_boundary":
             case "hook_response":
-            case "status":
               // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
               break;
             default:
