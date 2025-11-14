@@ -53,6 +53,7 @@ import {
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
 import packageJson from "../package.json" with { type: "json" };
+import { fileURLToPath } from "node:url";
 
 type Session = {
   query: Query;
@@ -126,14 +127,12 @@ export class ClaudeAcpAgent implements Agent {
 
     // If client supports terminal-auth capability, use that instead.
     if (request.clientCapabilities?._meta?.["terminal-auth"] === true) {
-      const cliPath = import.meta
-        .resolve("@anthropic-ai/claude-agent-sdk/cli.js")
-        .replace("file://", "");
+      const cliPath = fileURLToPath(import.meta.resolve("@anthropic-ai/claude-agent-sdk/cli.js"));
 
       authMethod._meta = {
         "terminal-auth": {
-          command: "node",
-          args: [cliPath, "/login"],
+          command: cliPath,
+          args: ["/login"],
           label: "Claude Code Login",
         },
       };
