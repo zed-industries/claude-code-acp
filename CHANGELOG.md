@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.3
+
+- Fix for experimental terminal auth support
+
 ## 0.10.2
 
 - Fix incorrect stop reason for tool call refusals
