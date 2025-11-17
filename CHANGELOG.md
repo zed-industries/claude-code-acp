@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.4
+
+- Fix tool call titles not appearing during approval in some cases
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.42
+
 ## 0.10.3
 
 - Fix for experimental terminal auth support
