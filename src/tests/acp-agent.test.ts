@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, spawnSync } from "child_process";
 import {
   Agent,
@@ -18,7 +18,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
-import { toAcpNotifications, promptToClaude, ClaudeAcpAgent } from "../acp-agent.js";
+import { toAcpNotifications, promptToClaude } from "../acp-agent.js";
 import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
