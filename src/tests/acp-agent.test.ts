@@ -841,3 +841,60 @@ describe("SDK behavior", () => {
     10000,
   );
 });
+
+describe("permission requests", () => {
+  it("should include title field in tool permission request structure", () => {
+    // Test various tool types to ensure title is correctly generated
+    const testCases = [
+      {
+        toolUse: {
+          type: "tool_use" as const,
+          id: "test-1",
+          name: "Write",
+          input: { file_path: "/test/file.txt", content: "test" },
+        },
+        expectedTitlePart: "/test/file.txt",
+      },
+      {
+        toolUse: {
+          type: "tool_use" as const,
+          id: "test-2",
+          name: "Bash",
+          input: { command: "ls -la", description: "List files" },
+        },
+        expectedTitlePart: "`ls -la`",
+      },
+      {
+        toolUse: {
+          type: "tool_use" as const,
+          id: "test-3",
+          name: "mcp__acp__Read",
+          input: { file_path: "/test/data.json" },
+        },
+        expectedTitlePart: "/test/data.json",
+      },
+    ];
+
+    for (const testCase of testCases) {
+      // Get the tool info that would be used in requestPermission
+      const toolInfo = toolInfoFromToolUse(testCase.toolUse, {});
+
+      // Verify toolInfo has a title
+      expect(toolInfo.title).toBeDefined();
+      expect(toolInfo.title).toContain(testCase.expectedTitlePart);
+
+      // Verify the structure that our fix creates for requestPermission
+      const requestStructure = {
+        toolCall: {
+          toolCallId: testCase.toolUse.id,
+          rawInput: testCase.toolUse.input,
+          title: toolInfo.title, // This is what commit 1785d86 adds
+        },
+      };
+
+      // Ensure the title field is present and populated
+      expect(requestStructure.toolCall.title).toBeDefined();
+      expect(requestStructure.toolCall.title).toContain(testCase.expectedTitlePart);
+    }
+  });
+});

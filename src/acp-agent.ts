@@ -551,6 +551,8 @@ export class ClaudeAcpAgent implements Agent {
           toolCall: {
             toolCallId: toolUseID,
             rawInput: toolInput,
+            title: toolInfoFromToolUse({ name: toolName, input: toolInput }, this.fileContentCache)
+              .title,
           },
         });
 
@@ -610,6 +612,8 @@ export class ClaudeAcpAgent implements Agent {
         toolCall: {
           toolCallId: toolUseID,
           rawInput: toolInput,
+          title: toolInfoFromToolUse({ name: toolName, input: toolInput }, this.fileContentCache)
+            .title,
         },
       });
       if (
