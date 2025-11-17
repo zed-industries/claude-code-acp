@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.5
+
+- Add experimental support for disabling built-in tools via \_meta flag
+
 ## 0.10.4
 
 - Fix tool call titles not appearing during approval in some cases
