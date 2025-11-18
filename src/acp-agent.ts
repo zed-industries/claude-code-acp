@@ -408,13 +408,28 @@ export class ClaudeAcpAgent implements Agent {
               if (message.result.includes("Please run /login")) {
                 throw RequestError.authRequired();
               }
+              if (message.is_error) {
+                throw RequestError.internalError(undefined, message.result);
+              }
               return { stopReason: "end_turn" };
             }
             case "error_during_execution":
+              if (message.is_error) {
+                throw RequestError.internalError(
+                  undefined,
+                  message.errors.join(", ") || message.subtype,
+                );
+              }
               return { stopReason: "end_turn" };
             case "error_max_budget_usd":
             case "error_max_turns":
             case "error_max_structured_output_retries":
+              if (message.is_error) {
+                throw RequestError.internalError(
+                  undefined,
+                  message.errors.join(", ") || message.subtype,
+                );
+              }
               return { stopReason: "max_turn_requests" };
             default:
               unreachable(message);

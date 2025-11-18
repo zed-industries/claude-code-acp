@@ -2,6 +2,7 @@
 
 ## 0.10.5
 
+- Better error messages at end of turn if there were any
 - Add experimental support for disabling built-in tools via \_meta flag
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.44
 
