@@ -92,8 +92,6 @@ type ToolUseCache = {
   };
 };
 
-const DEFAULT_MODEL_ID = "default";
-
 // Bypass Permissions doesn't work if we are a root/sudo user
 const IS_ROOT = (process.geteuid?.() ?? process.getuid?.()) === 0;
 
@@ -704,9 +702,8 @@ export class ClaudeAcpAgent implements Agent {
 async function getAvailableModels(query: Query): Promise<SessionModelState> {
   const models = await query.supportedModels();
 
-  // Query doesn't give us access to the currently selected model, so we default to "default" if it is there,
-  // otherwise we just choose the first model in the list.
-  const currentModel = models.find((model) => model.value === DEFAULT_MODEL_ID) || models[0];
+  // Query doesn't give us access to the currently selected model, so we just choose the first model in the list.
+  const currentModel = models[0];
   await query.setModel(currentModel.value);
 
   const availableModels = models.map((model) => ({
