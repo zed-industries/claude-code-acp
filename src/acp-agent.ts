@@ -403,7 +403,6 @@ export class ClaudeAcpAgent implements Agent {
             return { stopReason: "cancelled" };
           }
 
-          // todo!() how is rate-limiting handled?
           switch (message.subtype) {
             case "success": {
               if (message.result.includes("Please run /login")) {
@@ -415,6 +414,7 @@ export class ClaudeAcpAgent implements Agent {
               return { stopReason: "end_turn" };
             case "error_max_budget_usd":
             case "error_max_turns":
+            case "error_max_structured_output_retries":
               return { stopReason: "max_turn_requests" };
             default:
               unreachable(message);
