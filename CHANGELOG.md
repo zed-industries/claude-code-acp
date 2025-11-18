@@ -3,6 +3,7 @@
 ## 0.10.5
 
 - Add experimental support for disabling built-in tools via \_meta flag
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.44
 
 ## 0.10.4
 
