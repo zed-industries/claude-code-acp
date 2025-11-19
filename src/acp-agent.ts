@@ -61,6 +61,7 @@ type Session = {
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
+  conversationHistory: SessionNotification[];
 };
 
 type BackgroundTerminal =
@@ -310,6 +311,7 @@ export class ClaudeAcpAgent implements Agent {
       input: input,
       cancelled: false,
       permissionMode,
+      conversationHistory: [],
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
@@ -445,6 +447,10 @@ export class ClaudeAcpAgent implements Agent {
             this.client,
           )) {
             await this.client.sessionUpdate(notification);
+            // Store in conversation history for potential session replay
+            if (this.sessions[params.sessionId]?.conversationHistory) {
+              this.sessions[params.sessionId].conversationHistory.push(notification);
+            }
           }
           break;
         }
@@ -508,6 +514,10 @@ export class ClaudeAcpAgent implements Agent {
             this.client,
           )) {
             await this.client.sessionUpdate(notification);
+            // Store in conversation history for potential session replay
+            if (this.sessions[params.sessionId]?.conversationHistory) {
+              this.sessions[params.sessionId].conversationHistory.push(notification);
+            }
           }
           break;
         }
@@ -578,6 +588,7 @@ export class ClaudeAcpAgent implements Agent {
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
     const { sessionId } = params;
+    console.log("doudou loadSession", sessionId, this.sessions);
 
     if (!this.sessions[sessionId]) {
       const input = new Pushable<SDKUserMessage>();
@@ -645,15 +656,17 @@ export class ClaudeAcpAgent implements Agent {
         options,
       });
 
+      const availableCommands = await getAvailableSlashCommands(q);
+      // const models = await getAvailableModels(q); // Not needed for loadSession response?
+
+      // Store the session in memory
       this.sessions[sessionId] = {
         query: q,
         input: input,
         cancelled: false,
         permissionMode,
+        conversationHistory: [],  // Empty for now, would load from disk in full implementation
       };
-
-      const availableCommands = await getAvailableSlashCommands(q);
-      // const models = await getAvailableModels(q); // Not needed for loadSession response?
 
       setTimeout(() => {
         this.client.sessionUpdate({
@@ -666,10 +679,17 @@ export class ClaudeAcpAgent implements Agent {
       }, 0);
     }
 
-    // TODO: Replay conversation history
-    // The Agent MUST replay the entire conversation to the Client in the form of session/update notifications.
-    // Since we don't have persistence implemented yet, we can't replay history for a fresh session.
-    // If the session was already in memory, we might be able to replay if we stored history.
+    // Replay conversation history if session already exists in memory
+    // Per ACP spec: "The Agent MUST replay the entire conversation to the Client
+    // in the form of session/update notifications."
+    const session = this.sessions[sessionId];
+    if (session && session.conversationHistory.length > 0) {
+      for (const notification of session.conversationHistory) {
+        await this.client.sessionUpdate(notification);
+      }
+    }
+    // Note: For sessions not in memory, you would need to implement persistence
+    // (e.g., database, file system) to load and replay the conversation history.
 
     return {};
   }

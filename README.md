@@ -50,7 +50,7 @@ npm install @zed-industries/claude-code-acp
 
 You can then use `claude-code-acp` as a regular ACP agent:
 
-```
+```bash
 ANTHROPIC_API_KEY=sk-... claude-code-acp
 ```
 
