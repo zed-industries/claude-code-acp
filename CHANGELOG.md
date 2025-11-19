@@ -3,6 +3,7 @@
 ## 0.10.6
 
 - Disable experimental terminal auth support for now, as it was causing issues on Windows. Will revisit with a fix later.
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.46
 
 ## 0.10.5
 
