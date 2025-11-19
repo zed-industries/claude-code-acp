@@ -7,6 +7,8 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  LoadSessionRequest,
+  LoadSessionResponse,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -16,6 +18,7 @@ import {
   ReadTextFileResponse,
   RequestError,
   SessionModelState,
+  SessionNotification,
   SetSessionModelRequest,
   SetSessionModelResponse,
   SetSessionModeRequest,
@@ -23,7 +26,7 @@ import {
   TerminalHandle,
   TerminalOutputResponse,
   WriteTextFileRequest,
-  WriteTextFileResponse,
+  WriteTextFileResponse
 } from "@agentclientprotocol/sdk";
 import {
   CanUseTool,
@@ -35,30 +38,30 @@ import {
   SDKPartialAssistantMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
-import { v7 as uuidv7 } from "uuid";
-import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
-import { SessionNotification } from "@agentclientprotocol/sdk";
-import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
-import {
-  toolInfoFromToolUse,
-  planEntries,
-  toolUpdateFromToolResult,
-  ClaudePlanEntry,
-  registerHookCallback,
-  postToolUseHook,
-} from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { v7 as uuidv7 } from "uuid";
 import packageJson from "../package.json" with { type: "json" };
+import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
+import {
+  ClaudePlanEntry,
+  planEntries,
+  postToolUseHook,
+  registerHookCallback,
+  toolInfoFromToolUse,
+  toolUpdateFromToolResult,
+} from "./tools.js";
+import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 
 type Session = {
   query: Query;
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
+  conversationHistory: SessionNotification[];
 };
 
 type BackgroundTerminal =
@@ -146,6 +149,7 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
+        loadSession: true,
       },
       agentInfo: {
         name: packageJson.name,
@@ -307,6 +311,7 @@ export class ClaudeAcpAgent implements Agent {
       input: input,
       cancelled: false,
       permissionMode,
+      conversationHistory: [],
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
@@ -442,6 +447,10 @@ export class ClaudeAcpAgent implements Agent {
             this.client,
           )) {
             await this.client.sessionUpdate(notification);
+            // Store in conversation history for potential session replay
+            if (this.sessions[params.sessionId]?.conversationHistory) {
+              this.sessions[params.sessionId].conversationHistory.push(notification);
+            }
           }
           break;
         }
@@ -505,6 +514,10 @@ export class ClaudeAcpAgent implements Agent {
             this.client,
           )) {
             await this.client.sessionUpdate(notification);
+            // Store in conversation history for potential session replay
+            if (this.sessions[params.sessionId]?.conversationHistory) {
+              this.sessions[params.sessionId].conversationHistory.push(notification);
+            }
           }
           break;
         }
@@ -571,6 +584,114 @@ export class ClaudeAcpAgent implements Agent {
     const response = await this.client.writeTextFile(params);
     this.fileContentCache[params.path] = params.content;
     return response;
+  }
+
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    const { sessionId } = params;
+    console.log("doudou loadSession", sessionId, this.sessions);
+
+    if (!this.sessions[sessionId]) {
+      const input = new Pushable<SDKUserMessage>();
+
+      const mcpServers: Record<string, McpServerConfig> = {};
+      if (Array.isArray(params.mcpServers)) {
+        for (const server of params.mcpServers) {
+          if ("type" in server) {
+            mcpServers[server.name] = {
+              type: server.type,
+              url: server.url,
+              headers: server.headers
+                ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
+                : undefined,
+            };
+          } else {
+            mcpServers[server.name] = {
+              type: "stdio",
+              command: server.command,
+              args: server.args,
+              env: server.env
+                ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
+                : undefined,
+            };
+          }
+        }
+      }
+
+      const server = createMcpServer(this, sessionId, this.clientCapabilities);
+      mcpServers["acp"] = {
+        type: "sdk",
+        name: "acp",
+        instance: server,
+      };
+
+      const permissionMode = "default";
+
+      // As stated here: https://agentclientprotocol.com/protocol/session-setup#loading-a-session
+      // Clients MUST call the session/load method with: 'The Session ID to resume', 'MCP servers to connect to' and 'The working directory'
+      const options: Options = {
+        cwd: params.cwd,
+        includePartialMessages: true,
+        mcpServers,
+        systemPrompt: { type: "preset", preset: "claude_code" },
+        settingSources: ["user", "project", "local"],
+        allowDangerouslySkipPermissions: !IS_ROOT,
+        permissionMode,
+        canUseTool: this.canUseTool(sessionId),
+        stderr: (err) => console.error(err),
+        executable: process.execPath as any,
+        ...(process.env.CLAUDE_CODE_EXECUTABLE && {
+          pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
+        }),
+        hooks: {
+          PostToolUse: [
+            {
+              hooks: [postToolUseHook],
+            },
+          ],
+        },
+      };
+
+      const q = query({
+        prompt: input,
+        options,
+      });
+
+      const availableCommands = await getAvailableSlashCommands(q);
+      // const models = await getAvailableModels(q); // Not needed for loadSession response?
+
+      // Store the session in memory
+      this.sessions[sessionId] = {
+        query: q,
+        input: input,
+        cancelled: false,
+        permissionMode,
+        conversationHistory: [],  // Empty for now, would load from disk in full implementation
+      };
+
+      setTimeout(() => {
+        this.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands,
+          },
+        });
+      }, 0);
+    }
+
+    // Replay conversation history if session already exists in memory
+    // Per ACP spec: "The Agent MUST replay the entire conversation to the Client
+    // in the form of session/update notifications."
+    const session = this.sessions[sessionId];
+    if (session && session.conversationHistory.length > 0) {
+      for (const notification of session.conversationHistory) {
+        await this.client.sessionUpdate(notification);
+      }
+    }
+    // Note: For sessions not in memory, you would need to implement persistence
+    // (e.g., database, file system) to load and replay the conversation history.
+
+    return {};
   }
 
   canUseTool(sessionId: string): CanUseTool {
