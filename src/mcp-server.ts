@@ -101,15 +101,19 @@ Usage:
             };
           }
 
-          const content = await agent.readTextFile({
+          const readResponse = await agent.readTextFile({
             sessionId,
             path: input.file_path,
             line: input.offset,
             limit: input.limit,
           });
 
+          if (typeof readResponse?.content !== "string") {
+            throw new Error(`Claude Code did not return file contents for ${input.file_path}.`);
+          }
+
           // Extract lines with byte limit enforcement
-          const result = extractLinesWithByteLimit(content.content, defaults.maxFileSize);
+          const result = extractLinesWithByteLimit(readResponse.content, defaults.maxFileSize);
 
           // Construct informative message about what was read
           let readInfo = "";
@@ -253,47 +257,62 @@ Usage:
         },
       },
       async (input) => {
-        const session = agent.sessions[sessionId];
-        if (!session) {
+        try {
+          const session = agent.sessions[sessionId];
+          if (!session) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "The user has left the building",
+                },
+              ],
+            };
+          }
+
+          const readResponse = await agent.readTextFile({
+            sessionId,
+            path: input.file_path,
+          });
+
+          if (typeof readResponse?.content !== "string") {
+            throw new Error(`Claude Code did not return file contents for ${input.file_path}.`);
+          }
+
+          const { newContent } = replaceAndCalculateLocation(readResponse.content, [
+            {
+              oldText: input.old_string,
+              newText: input.new_string,
+              replaceAll: input.replace_all,
+            },
+          ]);
+
+          const patch = diff.createPatch(input.file_path, readResponse.content, newContent);
+
+          await agent.writeTextFile({
+            sessionId,
+            path: input.file_path,
+            content: newContent,
+          });
+
           return {
             content: [
               {
                 type: "text",
-                text: "The user has left the building",
+                text: patch,
+              },
+            ],
+          };
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Editing file failed: " + (error?.message ?? String(error)),
               },
             ],
           };
         }
-
-        const { content } = await agent.readTextFile({
-          sessionId,
-          path: input.file_path,
-        });
-
-        const { newContent } = replaceAndCalculateLocation(content, [
-          {
-            oldText: input.old_string,
-            newText: input.new_string,
-            replaceAll: input.replace_all,
-          },
-        ]);
-
-        const patch = diff.createPatch(input.file_path, content, newContent);
-
-        await agent.writeTextFile({
-          sessionId,
-          path: input.file_path,
-          content: newContent,
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: patch,
-            },
-          ],
-        };
       },
     );
   }
