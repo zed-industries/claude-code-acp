@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.6
+
+- Disable experimental terminal auth support for now, as it was causing issues on Windows. Will revisit with a fix later.
+
 ## 0.10.5
 
 - Better error messages at end of turn if there were any
