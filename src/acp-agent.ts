@@ -73,13 +73,38 @@ type BackgroundTerminal =
     };
 
 /**
- * Extra metadata that the agent provides for each tool_call / tool_update update, under the `_meta.claudeCode` key.
+ * Extra metadata that can be given to Claude Code when creating a new session.
+ */
+export type NewSessionMeta = {
+  claudeCode?: {
+    /**
+     * Options forwarded to Claude Code when starting a new session.
+     * Those parameters will be ignored and managed by ACP:
+     *   - cwd
+     *   - includePartialMessages
+     *   - mcpServers
+     *   - allowDangerouslySkipPermissions
+     *   - permissionMode
+     *   - canUseTool
+     *   - executable
+     * Those parameters will be used and updated to work with ACP: 
+     *   - abortController (handled separately)
+     *   - hooks (merged with default hooks)
+     */
+    options?: Options;
+  }
+};
+
+/**
+ * Extra metadata that the agent provides for each tool_call / tool_update update.
  */
 export type ToolUpdateMeta = {
-  /* The name of the tool that was used in Claude Code. */
-  toolName: string;
-  /* The structured output provided by Claude Code. */
-  toolResponse?: unknown;
+  claudeCode?: {
+    /* The name of the tool that was used in Claude Code. */
+    toolName: string;
+    /* The structured output provided by Claude Code. */
+    toolResponse?: unknown;
+  }
 };
 
 type ToolUseCache = {
@@ -216,18 +241,24 @@ export class ClaudeAcpAgent implements Agent {
 
     const permissionMode = "default";
 
+    // Extract options from _meta if provided
+    const userProvidedOptions = (params._meta as NewSessionMeta).claude_code?.options;
+
     const options: Options = {
-      cwd: params.cwd,
-      includePartialMessages: true,
-      mcpServers,
       systemPrompt,
       settingSources: ["user", "project", "local"],
+      stderr: (err) => console.error(err),
+      ...userProvidedOptions,
+      // Override certain fields that must be controlled by ACP
+      abortController: undefined, // Handled separately
+      cwd: params.cwd,
+      includePartialMessages: true,
+      mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,
       permissionMode,
       canUseTool: this.canUseTool(sessionId),
-      stderr: (err) => console.error(err),
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
       executable: process.execPath as any,
@@ -235,7 +266,9 @@ export class ClaudeAcpAgent implements Agent {
         pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
       }),
       hooks: {
+        ...userProvidedOptions?.hooks,
         PostToolUse: [
+          ...(userProvidedOptions?.hooks?.PostToolUse || []),
           {
             hooks: [postToolUseHook],
           },
@@ -297,9 +330,24 @@ export class ClaudeAcpAgent implements Agent {
       options.disallowedTools = disallowedTools;
     }
 
+    // Handle abort controller from meta options
+    const abortController = userProvidedOptions?.abortController;
+    if (abortController?.signal.aborted) {
+      throw new Error("Cancelled");
+    }
+
     const q = query({
       prompt: input,
       options,
+    });
+
+    // Listen for abort events and interrupt the query
+    abortController?.signal.addEventListener("abort", async () => {
+      try {
+        await q.interrupt();
+      } catch (error) {
+        console.error("Error aborting query", error);
+      }
     });
 
     this.sessions[sessionId] = {
@@ -930,8 +978,8 @@ export function toAcpNotifications(
                     claudeCode: {
                       toolResponse,
                       toolName: toolUse.name,
-                    } satisfies ToolUpdateMeta,
-                  },
+                    }
+                  } satisfies ToolUpdateMeta,
                   toolCallId: toolUseId,
                   sessionUpdate: "tool_call_update",
                 };
@@ -957,8 +1005,8 @@ export function toAcpNotifications(
             _meta: {
               claudeCode: {
                 toolName: chunk.name,
-              } satisfies ToolUpdateMeta,
-            },
+              }
+            } satisfies ToolUpdateMeta,
             toolCallId: chunk.id,
             sessionUpdate: "tool_call",
             rawInput,
@@ -989,8 +1037,8 @@ export function toAcpNotifications(
             _meta: {
               claudeCode: {
                 toolName: toolUse.name,
-              } satisfies ToolUpdateMeta,
-            },
+              }
+            } satisfies ToolUpdateMeta,
             toolCallId: chunk.tool_use_id,
             sessionUpdate: "tool_call_update",
             status: "is_error" in chunk && chunk.is_error ? "failed" : "completed",
