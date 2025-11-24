@@ -572,19 +572,18 @@ export const registerHookCallback = (
 };
 
 /* A callback for Claude Code that is called when receiving a PostToolUse hook */
-export const createPostToolUseHook = (logger: Logger = console): HookCallback => async (
-  input: any,
-  toolUseID: string | undefined,
-): Promise<{ continue: boolean }> => {
-  if (input.hook_event_name === "PostToolUse" && toolUseID) {
-    const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
-    if (onPostToolUseHook) {
-      await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
-      delete toolUseCallbacks[toolUseID]; // Cleanup after execution
-    } else {
-      logger.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
-      delete toolUseCallbacks[toolUseID];
+export const createPostToolUseHook =
+  (logger: Logger = console): HookCallback =>
+  async (input: any, toolUseID: string | undefined): Promise<{ continue: boolean }> => {
+    if (input.hook_event_name === "PostToolUse" && toolUseID) {
+      const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
+      if (onPostToolUseHook) {
+        await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
+        delete toolUseCallbacks[toolUseID]; // Cleanup after execution
+      } else {
+        logger.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
+        delete toolUseCallbacks[toolUseID];
+      }
     }
-  }
-  return { continue: true };
-};
+    return { continue: true };
+  };
