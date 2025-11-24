@@ -109,7 +109,7 @@ Usage:
           });
 
           if (typeof readResponse?.content !== "string") {
-            throw new Error(`Claude Code did not return file contents for ${input.file_path}.`);
+            throw new Error(`No file contents for ${input.file_path}.`);
           }
 
           // Extract lines with byte limit enforcement
@@ -276,7 +276,7 @@ Usage:
           });
 
           if (typeof readResponse?.content !== "string") {
-            throw new Error(`Claude Code did not return file contents for ${input.file_path}.`);
+            throw new Error(`No file contents for ${input.file_path}.`);
           }
 
           const { newContent } = replaceAndCalculateLocation(readResponse.content, [
