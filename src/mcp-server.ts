@@ -582,7 +582,8 @@ In sessions with ${toolNames.killShell} always use it instead of KillShell.`,
               content: [{ type: "text", text: "Command killed by timeout." }],
             };
           default: {
-            return unreachable(bgTerm);
+            unreachable(bgTerm);
+            throw new Error("Unexpected background terminal status");
           }
         }
       },
