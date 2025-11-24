@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.7
+
+- Fix read/edit tool error handling so upstream errors surface
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.50
+
 ## 0.10.6
 
 - Disable experimental terminal auth support for now, as it was causing issues on Windows. Will revisit with a fix later.
