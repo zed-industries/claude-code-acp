@@ -6,6 +6,7 @@ import {
   BetaCodeExecutionToolResultBlockParam,
   BetaRequestMCPToolResultBlockParam,
   BetaTextEditorCodeExecutionToolResultBlockParam,
+  BetaToolSearchToolResultBlockParam,
   BetaWebFetchToolResultBlockParam,
   BetaWebSearchToolResultBlockParam,
 } from "@anthropic-ai/sdk/resources/beta.mjs";
@@ -404,7 +405,8 @@ export function toolUpdateFromToolResult(
     | BetaCodeExecutionToolResultBlockParam
     | BetaBashCodeExecutionToolResultBlockParam
     | BetaTextEditorCodeExecutionToolResultBlockParam
-    | BetaRequestMCPToolResultBlockParam,
+    | BetaRequestMCPToolResultBlockParam
+    | BetaToolSearchToolResultBlockParam,
   toolUse: any | undefined,
 ): ToolUpdate {
   switch (toolUse?.name) {

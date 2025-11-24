@@ -970,6 +970,7 @@ export function toAcpNotifications(
       }
 
       case "tool_result":
+      case "tool_search_tool_result":
       case "web_fetch_tool_result":
       case "web_search_tool_result":
       case "code_execution_tool_result":
