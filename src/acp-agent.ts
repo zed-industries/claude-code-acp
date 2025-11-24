@@ -87,12 +87,12 @@ export type NewSessionMeta = {
      *   - permissionMode
      *   - canUseTool
      *   - executable
-     * Those parameters will be used and updated to work with ACP: 
+     * Those parameters will be used and updated to work with ACP:
      *   - abortController (handled separately)
      *   - hooks (merged with default hooks)
      */
     options?: Options;
-  }
+  };
 };
 
 /**
@@ -104,7 +104,7 @@ export type ToolUpdateMeta = {
     toolName: string;
     /* The structured output provided by Claude Code. */
     toolResponse?: unknown;
-  }
+  };
 };
 
 type ToolUseCache = {
@@ -978,7 +978,7 @@ export function toAcpNotifications(
                     claudeCode: {
                       toolResponse,
                       toolName: toolUse.name,
-                    }
+                    },
                   } satisfies ToolUpdateMeta,
                   toolCallId: toolUseId,
                   sessionUpdate: "tool_call_update",
@@ -1005,7 +1005,7 @@ export function toAcpNotifications(
             _meta: {
               claudeCode: {
                 toolName: chunk.name,
-              }
+              },
             } satisfies ToolUpdateMeta,
             toolCallId: chunk.id,
             sessionUpdate: "tool_call",
@@ -1037,7 +1037,7 @@ export function toAcpNotifications(
             _meta: {
               claudeCode: {
                 toolName: toolUse.name,
-              }
+              },
             } satisfies ToolUpdateMeta,
             toolCallId: chunk.tool_use_id,
             sessionUpdate: "tool_call_update",
