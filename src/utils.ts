@@ -75,14 +75,14 @@ export function nodeToWebReadable(nodeStream: Readable): ReadableStream<Uint8Arr
   });
 }
 
-export function unreachable(value: never): never {
+export function unreachable(value: never) {
   let valueAsString;
   try {
     valueAsString = JSON.stringify(value);
   } catch {
     valueAsString = value;
   }
-  throw new Error(`Unexpected case: ${valueAsString}`);
+  console.error(`Unexpected case: ${valueAsString}`);
 }
 
 export function sleep(time: number): Promise<void> {

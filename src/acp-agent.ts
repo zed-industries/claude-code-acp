@@ -393,6 +393,7 @@ export class ClaudeAcpAgent implements Agent {
               break;
             default:
               unreachable(message);
+              break;
           }
           break;
         case "result": {
@@ -430,6 +431,7 @@ export class ClaudeAcpAgent implements Agent {
               return { stopReason: "max_turn_requests" };
             default:
               unreachable(message);
+              break;
           }
           break;
         }
@@ -514,6 +516,7 @@ export class ClaudeAcpAgent implements Agent {
           break;
         default:
           unreachable(message);
+          break;
       }
     }
     throw new Error("Session did not end in result");
@@ -1008,6 +1011,7 @@ export function toAcpNotifications(
 
       default:
         unreachable(chunk);
+        break;
     }
     if (update) {
       output.push({ sessionId, update });
@@ -1053,6 +1057,7 @@ export function streamEventToAcpNotifications(
 
     default:
       unreachable(event);
+      return [];
   }
 }
 
