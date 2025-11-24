@@ -47,7 +47,7 @@ describe("MCP server read-related tools", () => {
     });
 
     expect(result.content[0].text).toBe(
-      "Reading file failed: Claude Code did not return file contents for /tmp/file.txt.",
+      "Reading file failed: No file contents for /tmp/file.txt.",
     );
   });
 
@@ -69,7 +69,7 @@ describe("MCP server read-related tools", () => {
     });
 
     expect(result.content[0].text).toBe(
-      "Editing file failed: Claude Code did not return file contents for /tmp/file.txt.",
+      "Editing file failed: No file contents for /tmp/file.txt.",
     );
     expect(agent.writeTextFile).not.toHaveBeenCalled();
   });
