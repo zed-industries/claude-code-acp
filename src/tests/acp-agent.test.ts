@@ -658,6 +658,7 @@ describe("tool conversions", () => {
         {},
         {},
         {} as AgentSideConnection,
+        console,
       ),
     ).toStrictEqual([
       {
