@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.8
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.51 (adds support for Opus 4.5)
+
 ## 0.10.7
 
 - Fix read/edit tool error handling so upstream errors surface
