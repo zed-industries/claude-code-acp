@@ -46,9 +46,7 @@ describe("MCP server read-related tools", () => {
       limit: 2000,
     });
 
-    expect(result.content[0].text).toBe(
-      "Reading file failed: No file contents for /tmp/file.txt.",
-    );
+    expect(result.content[0].text).toBe("Reading file failed: No file contents for /tmp/file.txt.");
   });
 
   it("reports missing contents inside the edit tool and skips writes", async () => {
@@ -68,9 +66,7 @@ describe("MCP server read-related tools", () => {
       replace_all: false,
     });
 
-    expect(result.content[0].text).toBe(
-      "Editing file failed: No file contents for /tmp/file.txt.",
-    );
+    expect(result.content[0].text).toBe("Editing file failed: No file contents for /tmp/file.txt.");
     expect(agent.writeTextFile).not.toHaveBeenCalled();
   });
 });
