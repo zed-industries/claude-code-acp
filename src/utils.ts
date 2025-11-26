@@ -4,6 +4,7 @@ import { Readable, Writable } from "node:stream";
 import { WritableStream, ReadableStream } from "node:stream/web";
 import { readFileSync } from "node:fs";
 import { platform } from "node:os";
+import { Logger } from "./acp-agent.js";
 
 // Useful for bridging push-based and async-iterator-based code.
 export class Pushable<T> implements AsyncIterable<T> {
@@ -75,14 +76,14 @@ export function nodeToWebReadable(nodeStream: Readable): ReadableStream<Uint8Arr
   });
 }
 
-export function unreachable(value: never) {
+export function unreachable(value: never, logger: Logger = console) {
   let valueAsString;
   try {
     valueAsString = JSON.stringify(value);
   } catch {
     valueAsString = value;
   }
-  console.error(`Unexpected case: ${valueAsString}`);
+  logger.error(`Unexpected case: ${valueAsString}`);
 }
 
 export function sleep(time: number): Promise<void> {

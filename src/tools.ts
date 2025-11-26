@@ -6,10 +6,12 @@ import {
   BetaCodeExecutionToolResultBlockParam,
   BetaRequestMCPToolResultBlockParam,
   BetaTextEditorCodeExecutionToolResultBlockParam,
+  BetaToolSearchToolResultBlockParam,
   BetaWebFetchToolResultBlockParam,
   BetaWebSearchToolResultBlockParam,
 } from "@anthropic-ai/sdk/resources/beta.mjs";
 import { HookCallback } from "@anthropic-ai/claude-agent-sdk";
+import { Logger } from "./acp-agent.js";
 
 interface ToolInfo {
   title: string;
@@ -27,6 +29,7 @@ interface ToolUpdate {
 export function toolInfoFromToolUse(
   toolUse: any,
   cachedFileContent: { [key: string]: string },
+  logger: Logger = console,
 ): ToolInfo {
   const name = toolUse.name;
   const input = toolUse.input;
@@ -163,7 +166,7 @@ export function toolInfoFromToolUse(
           newText = newContent.newContent;
           affectedLines = newContent.lineNumbers;
         } catch (e) {
-          console.error(e);
+          logger.error(e);
         }
       }
       return {
@@ -404,7 +407,8 @@ export function toolUpdateFromToolResult(
     | BetaCodeExecutionToolResultBlockParam
     | BetaBashCodeExecutionToolResultBlockParam
     | BetaTextEditorCodeExecutionToolResultBlockParam
-    | BetaRequestMCPToolResultBlockParam,
+    | BetaRequestMCPToolResultBlockParam
+    | BetaToolSearchToolResultBlockParam,
   toolUse: any | undefined,
 ): ToolUpdate {
   switch (toolUse?.name) {
@@ -570,19 +574,18 @@ export const registerHookCallback = (
 };
 
 /* A callback for Claude Code that is called when receiving a PostToolUse hook */
-export const postToolUseHook: HookCallback = async (
-  input: any,
-  toolUseID: string | undefined,
-): Promise<{ continue: boolean }> => {
-  if (input.hook_event_name === "PostToolUse" && toolUseID) {
-    const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
-    if (onPostToolUseHook) {
-      await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
-      delete toolUseCallbacks[toolUseID]; // Cleanup after execution
-    } else {
-      console.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
-      delete toolUseCallbacks[toolUseID];
+export const createPostToolUseHook =
+  (logger: Logger = console): HookCallback =>
+  async (input: any, toolUseID: string | undefined): Promise<{ continue: boolean }> => {
+    if (input.hook_event_name === "PostToolUse" && toolUseID) {
+      const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
+      if (onPostToolUseHook) {
+        await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
+        delete toolUseCallbacks[toolUseID]; // Cleanup after execution
+      } else {
+        logger.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
+        delete toolUseCallbacks[toolUseID];
+      }
     }
-  }
-  return { continue: true };
-};
+    return { continue: true };
+  };

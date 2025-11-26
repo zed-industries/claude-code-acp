@@ -48,11 +48,19 @@ import {
   toolUpdateFromToolResult,
   ClaudePlanEntry,
   registerHookCallback,
-  postToolUseHook,
+  createPostToolUseHook,
 } from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
 import packageJson from "../package.json" with { type: "json" };
+
+/**
+ * Logger interface for customizing logging output
+ */
+export interface Logger {
+  log: (...args: any[]) => void;
+  error: (...args: any[]) => void;
+}
 
 type Session = {
   query: Query;
@@ -88,7 +96,6 @@ export type NewSessionMeta = {
      *   - canUseTool
      *   - executable
      * Those parameters will be used and updated to work with ACP:
-     *   - abortController (handled separately)
      *   - hooks (merged with default hooks)
      */
     options?: Options;
@@ -129,12 +136,14 @@ export class ClaudeAcpAgent implements Agent {
   fileContentCache: { [key: string]: string };
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
+  logger: Logger;
 
-  constructor(client: AgentSideConnection) {
+  constructor(client: AgentSideConnection, logger?: Logger) {
     this.sessions = {};
     this.client = client;
     this.toolUseCache = {};
     this.fileContentCache = {};
+    this.logger = logger ?? console;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponse> {
@@ -247,10 +256,9 @@ export class ClaudeAcpAgent implements Agent {
     const options: Options = {
       systemPrompt,
       settingSources: ["user", "project", "local"],
-      stderr: (err) => console.error(err),
+      stderr: (err) => this.logger.error(err),
       ...userProvidedOptions,
       // Override certain fields that must be controlled by ACP
-      abortController: undefined, // Handled separately
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
@@ -270,7 +278,7 @@ export class ClaudeAcpAgent implements Agent {
         PostToolUse: [
           ...(userProvidedOptions?.hooks?.PostToolUse || []),
           {
-            hooks: [postToolUseHook],
+            hooks: [createPostToolUseHook(this.logger)],
           },
         ],
       },
@@ -339,15 +347,6 @@ export class ClaudeAcpAgent implements Agent {
     const q = query({
       prompt: input,
       options,
-    });
-
-    // Listen for abort events and interrupt the query
-    abortController?.signal.addEventListener("abort", async () => {
-      try {
-        await q.interrupt();
-      } catch (error) {
-        console.error("Error aborting query", error);
-      }
     });
 
     this.sessions[sessionId] = {
@@ -440,7 +439,7 @@ export class ClaudeAcpAgent implements Agent {
               // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
               break;
             default:
-              unreachable(message);
+              unreachable(message, this.logger);
               break;
           }
           break;
@@ -478,7 +477,7 @@ export class ClaudeAcpAgent implements Agent {
               }
               return { stopReason: "max_turn_requests" };
             default:
-              unreachable(message);
+              unreachable(message, this.logger);
               break;
           }
           break;
@@ -490,6 +489,7 @@ export class ClaudeAcpAgent implements Agent {
             this.toolUseCache,
             this.fileContentCache,
             this.client,
+            this.logger,
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -507,7 +507,7 @@ export class ClaudeAcpAgent implements Agent {
             typeof message.message.content === "string" &&
             message.message.content.includes("<local-command-stdout>")
           ) {
-            console.log(message.message.content);
+            this.logger.log(message.message.content);
             break;
           }
 
@@ -515,7 +515,7 @@ export class ClaudeAcpAgent implements Agent {
             typeof message.message.content === "string" &&
             message.message.content.includes("<local-command-stderr>")
           ) {
-            console.error(message.message.content);
+            this.logger.error(message.message.content);
             break;
           }
           // Skip these user messages for now, since they seem to just be messages we don't want in the feed
@@ -553,6 +553,7 @@ export class ClaudeAcpAgent implements Agent {
             this.toolUseCache,
             this.fileContentCache,
             this.client,
+            this.logger,
           )) {
             await this.client.sessionUpdate(notification);
           }
@@ -650,8 +651,11 @@ export class ClaudeAcpAgent implements Agent {
           toolCall: {
             toolCallId: toolUseID,
             rawInput: toolInput,
-            title: toolInfoFromToolUse({ name: toolName, input: toolInput }, this.fileContentCache)
-              .title,
+            title: toolInfoFromToolUse(
+              { name: toolName, input: toolInput },
+              this.fileContentCache,
+              this.logger,
+            ).title,
           },
         });
 
@@ -711,8 +715,11 @@ export class ClaudeAcpAgent implements Agent {
         toolCall: {
           toolCallId: toolUseID,
           rawInput: toolInput,
-          title: toolInfoFromToolUse({ name: toolName, input: toolInput }, this.fileContentCache)
-            .title,
+          title: toolInfoFromToolUse(
+            { name: toolName, input: toolInput },
+            this.fileContentCache,
+            this.logger,
+          ).title,
         },
       });
       if (
@@ -903,6 +910,7 @@ export function toAcpNotifications(
   toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
   client: AgentSideConnection,
+  logger: Logger,
 ): SessionNotification[] {
   if (typeof content === "string") {
     return [
@@ -988,7 +996,7 @@ export function toAcpNotifications(
                   update,
                 });
               } else {
-                console.error(
+                logger.error(
                   `[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`,
                 );
               }
@@ -1011,13 +1019,14 @@ export function toAcpNotifications(
             sessionUpdate: "tool_call",
             rawInput,
             status: "pending",
-            ...toolInfoFromToolUse(chunk, fileContentCache),
+            ...toolInfoFromToolUse(chunk, fileContentCache, logger),
           };
         }
         break;
       }
 
       case "tool_result":
+      case "tool_search_tool_result":
       case "web_fetch_tool_result":
       case "web_search_tool_result":
       case "code_execution_tool_result":
@@ -1026,7 +1035,7 @@ export function toAcpNotifications(
       case "mcp_tool_result": {
         const toolUse = toolUseCache[chunk.tool_use_id];
         if (!toolUse) {
-          console.error(
+          logger.error(
             `[claude-code-acp] Got a tool result for tool use that wasn't tracked: ${chunk.tool_use_id}`,
           );
           break;
@@ -1058,7 +1067,7 @@ export function toAcpNotifications(
         break;
 
       default:
-        unreachable(chunk);
+        unreachable(chunk, logger);
         break;
     }
     if (update) {
@@ -1075,6 +1084,7 @@ export function streamEventToAcpNotifications(
   toolUseCache: ToolUseCache,
   fileContentCache: { [key: string]: string },
   client: AgentSideConnection,
+  logger: Logger,
 ): SessionNotification[] {
   const event = message.event;
   switch (event.type) {
@@ -1086,6 +1096,7 @@ export function streamEventToAcpNotifications(
         toolUseCache,
         fileContentCache,
         client,
+        logger,
       );
     case "content_block_delta":
       return toAcpNotifications(
@@ -1095,6 +1106,7 @@ export function streamEventToAcpNotifications(
         toolUseCache,
         fileContentCache,
         client,
+        logger,
       );
     // No content
     case "message_start":
@@ -1104,7 +1116,7 @@ export function streamEventToAcpNotifications(
       return [];
 
     default:
-      unreachable(event);
+      unreachable(event, logger);
       return [];
   }
 }
