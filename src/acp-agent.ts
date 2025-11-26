@@ -90,13 +90,13 @@ export type NewSessionMeta = {
      * Those parameters will be ignored and managed by ACP:
      *   - cwd
      *   - includePartialMessages
-     *   - mcpServers
      *   - allowDangerouslySkipPermissions
      *   - permissionMode
      *   - canUseTool
      *   - executable
      * Those parameters will be used and updated to work with ACP:
-     *   - hooks (merged with default hooks)
+     *   - hooks (merged with ACP's hooks)
+     *   - mcpServers (merged with ACP's mcpServers)
      */
     options?: Options;
   };
