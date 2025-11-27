@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.9
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.55
+- Allow defining a custom logger when used as a library
+- Allow specifying custom options when used as a library
+- Add `CLAUDECODE=1` to terminal invocations to match default Claude Code behavior
+
 ## 0.10.8
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.51 (adds support for Opus 4.5)
