@@ -377,6 +377,7 @@ Output: Create directory 'foo'`),
 
         const handle = await agent.client.createTerminal({
           command: input.command,
+          env: [{ name: "CLAUDECODE", value: "1" }],
           sessionId,
           outputByteLimit: 32_000,
         });
