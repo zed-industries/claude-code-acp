@@ -251,7 +251,7 @@ export class ClaudeAcpAgent implements Agent {
     const permissionMode = "default";
 
     // Extract options from _meta if provided
-    const userProvidedOptions = (params._meta as NewSessionMeta).claudeCode?.options;
+    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
 
     const options: Options = {
       systemPrompt,
