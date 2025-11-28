@@ -5,6 +5,8 @@ import {
   AvailableCommand,
   CancelNotification,
   ClientCapabilities,
+  ForkSessionRequest,
+  ForkSessionResponse,
   InitializeRequest,
   InitializeResponse,
   ndJsonStream,
@@ -67,6 +69,7 @@ type Session = {
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
+  params: NewSessionRequest;
 };
 
 type BackgroundTerminal =
@@ -137,6 +140,7 @@ export class ClaudeAcpAgent implements Agent {
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
   logger: Logger;
+  claudeSessionIds: { [acpSessionId: string]: string } = {};
 
   constructor(client: AgentSideConnection, logger?: Logger) {
     this.sessions = {};
@@ -180,6 +184,9 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
+        sessionCapabilities: {
+          fork: {},
+        },
       },
       agentInfo: {
         name: packageJson.name,
@@ -197,213 +204,7 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    const sessionId = uuidv7();
-    const input = new Pushable<SDKUserMessage>();
-
-    const mcpServers: Record<string, McpServerConfig> = {};
-    if (Array.isArray(params.mcpServers)) {
-      for (const server of params.mcpServers) {
-        if ("type" in server) {
-          mcpServers[server.name] = {
-            type: server.type,
-            url: server.url,
-            headers: server.headers
-              ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
-              : undefined,
-          };
-        } else {
-          mcpServers[server.name] = {
-            type: "stdio",
-            command: server.command,
-            args: server.args,
-            env: server.env
-              ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
-              : undefined,
-          };
-        }
-      }
-    }
-
-    // Only add the acp MCP server if built-in tools are not disabled
-    if (!params._meta?.disableBuiltInTools) {
-      const server = createMcpServer(this, sessionId, this.clientCapabilities);
-      mcpServers["acp"] = {
-        type: "sdk",
-        name: "acp",
-        instance: server,
-      };
-    }
-
-    let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
-    if (params._meta?.systemPrompt) {
-      const customPrompt = params._meta.systemPrompt;
-      if (typeof customPrompt === "string") {
-        systemPrompt = customPrompt;
-      } else if (
-        typeof customPrompt === "object" &&
-        "append" in customPrompt &&
-        typeof customPrompt.append === "string"
-      ) {
-        systemPrompt.append = customPrompt.append;
-      }
-    }
-
-    const permissionMode = "default";
-
-    // Extract options from _meta if provided
-    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
-
-    const options: Options = {
-      systemPrompt,
-      settingSources: ["user", "project", "local"],
-      stderr: (err) => this.logger.error(err),
-      ...userProvidedOptions,
-      // Override certain fields that must be controlled by ACP
-      cwd: params.cwd,
-      includePartialMessages: true,
-      mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
-      // If we want bypassPermissions to be an option, we have to allow it here.
-      // But it doesn't work in root mode, so we only activate it if it will work.
-      allowDangerouslySkipPermissions: !IS_ROOT,
-      permissionMode,
-      canUseTool: this.canUseTool(sessionId),
-      // note: although not documented by the types, passing an absolute path
-      // here works to find zed's managed node version.
-      executable: process.execPath as any,
-      ...(process.env.CLAUDE_CODE_EXECUTABLE && {
-        pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
-      }),
-      hooks: {
-        ...userProvidedOptions?.hooks,
-        PostToolUse: [
-          ...(userProvidedOptions?.hooks?.PostToolUse || []),
-          {
-            hooks: [createPostToolUseHook(this.logger)],
-          },
-        ],
-      },
-    };
-
-    const allowedTools = [];
-    const disallowedTools = [];
-
-    // Check if built-in tools should be disabled
-    const disableBuiltInTools = params._meta?.disableBuiltInTools === true;
-
-    if (!disableBuiltInTools) {
-      if (this.clientCapabilities?.fs?.readTextFile) {
-        allowedTools.push(toolNames.read);
-        disallowedTools.push("Read");
-      }
-      if (this.clientCapabilities?.fs?.writeTextFile) {
-        disallowedTools.push("Write", "Edit");
-      }
-      if (this.clientCapabilities?.terminal) {
-        allowedTools.push(toolNames.bashOutput, toolNames.killShell);
-        disallowedTools.push("Bash", "BashOutput", "KillShell");
-      }
-    } else {
-      // When built-in tools are disabled, explicitly disallow all of them
-      disallowedTools.push(
-        toolNames.read,
-        toolNames.write,
-        toolNames.edit,
-        toolNames.bash,
-        toolNames.bashOutput,
-        toolNames.killShell,
-        "Read",
-        "Write",
-        "Edit",
-        "Bash",
-        "BashOutput",
-        "KillShell",
-        "Glob",
-        "Grep",
-        "Task",
-        "TodoWrite",
-        "ExitPlanMode",
-        "WebSearch",
-        "WebFetch",
-        "AskUserQuestion",
-        "SlashCommand",
-        "Skill",
-        "NotebookEdit",
-      );
-    }
-
-    if (allowedTools.length > 0) {
-      options.allowedTools = allowedTools;
-    }
-    if (disallowedTools.length > 0) {
-      options.disallowedTools = disallowedTools;
-    }
-
-    // Handle abort controller from meta options
-    const abortController = userProvidedOptions?.abortController;
-    if (abortController?.signal.aborted) {
-      throw new Error("Cancelled");
-    }
-
-    const q = query({
-      prompt: input,
-      options,
-    });
-
-    this.sessions[sessionId] = {
-      query: q,
-      input: input,
-      cancelled: false,
-      permissionMode,
-    };
-
-    const availableCommands = await getAvailableSlashCommands(q);
-    const models = await getAvailableModels(q);
-
-    // Needs to happen after we return the session
-    setTimeout(() => {
-      this.client.sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "available_commands_update",
-          availableCommands,
-        },
-      });
-    }, 0);
-
-    const availableModes = [
-      {
-        id: "default",
-        name: "Always Ask",
-        description: "Prompts for permission on first use of each tool",
-      },
-      {
-        id: "acceptEdits",
-        name: "Accept Edits",
-        description: "Automatically accepts file edit permissions for the session",
-      },
-      {
-        id: "plan",
-        name: "Plan Mode",
-        description: "Claude can analyze but not modify files or execute commands",
-      },
-    ];
-    // Only works in non-root mode
-    if (!IS_ROOT) {
-      availableModes.push({
-        id: "bypassPermissions",
-        name: "Bypass Permissions",
-        description: "Skips all permission prompts",
-      });
-    }
-
-    return {
-      sessionId,
-      models,
-      modes: {
-        currentModeId: permissionMode,
-        availableModes,
-      },
-    };
+    return await this.createSession(params, {});
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<void> {
@@ -428,6 +229,12 @@ export class ClaudeAcpAgent implements Agent {
         }
         break;
       }
+
+      // Track Claude session ID from all messages (needed for fork)
+      if (message.session_id) {
+        this.claudeSessionIds[params.sessionId] = message.session_id;
+      }
+
       switch (message.type) {
         case "system":
           switch (message.subtype) {
@@ -625,6 +432,25 @@ export class ClaudeAcpAgent implements Agent {
     return response;
   }
 
+  async forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+    const session = this.sessions[params.sessionId];
+    if (!session) {
+      throw RequestError.resourceNotFound(`Session ${params.sessionId} not found`);
+    }
+
+    const claudeSessionId = this.claudeSessionIds[params.sessionId];
+    if (!claudeSessionId) {
+      throw RequestError.resourceNotFound(
+        `Session ${params.sessionId} has no Claude session ID yet (no prompts sent?)`,
+      );
+    }
+
+    return await this.createSession(session.params, {
+      resume: claudeSessionId,
+      forkSession: true,
+    });
+  }
+
   canUseTool(sessionId: string): CanUseTool {
     return async (toolName, toolInput, { suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
@@ -752,6 +578,222 @@ export class ClaudeAcpAgent implements Agent {
           interrupt: true,
         };
       }
+    };
+  }
+
+  private async createSession(
+    params: NewSessionRequest,
+    creationOpts: { resume?: string; forkSession?: boolean } = {},
+  ): Promise<NewSessionResponse> {
+    console.error("new session", params);
+    const sessionId = uuidv7();
+    const input = new Pushable<SDKUserMessage>();
+
+    const mcpServers: Record<string, McpServerConfig> = {};
+    if (Array.isArray(params.mcpServers)) {
+      for (const server of params.mcpServers) {
+        if ("type" in server) {
+          mcpServers[server.name] = {
+            type: server.type,
+            url: server.url,
+            headers: server.headers
+              ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        } else {
+          mcpServers[server.name] = {
+            type: "stdio",
+            command: server.command,
+            args: server.args,
+            env: server.env
+              ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        }
+      }
+    }
+
+    // Only add the acp MCP server if built-in tools are not disabled
+    if (!params._meta?.disableBuiltInTools) {
+      const server = createMcpServer(this, sessionId, this.clientCapabilities);
+      mcpServers["acp"] = {
+        type: "sdk",
+        name: "acp",
+        instance: server,
+      };
+    }
+
+    let systemPrompt: Options["systemPrompt"] = { type: "preset", preset: "claude_code" };
+    if (params._meta?.systemPrompt) {
+      const customPrompt = params._meta.systemPrompt;
+      if (typeof customPrompt === "string") {
+        systemPrompt = customPrompt;
+      } else if (
+        typeof customPrompt === "object" &&
+        "append" in customPrompt &&
+        typeof customPrompt.append === "string"
+      ) {
+        systemPrompt.append = customPrompt.append;
+      }
+    }
+
+    const permissionMode = "default";
+
+    // Extract options from _meta if provided
+    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+
+    const options: Options = {
+      systemPrompt,
+      settingSources: ["user", "project", "local"],
+      stderr: (err) => this.logger.error(err),
+      ...userProvidedOptions,
+      // Override certain fields that must be controlled by ACP
+      cwd: params.cwd,
+      includePartialMessages: true,
+      mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
+      // If we want bypassPermissions to be an option, we have to allow it here.
+      // But it doesn't work in root mode, so we only activate it if it will work.
+      allowDangerouslySkipPermissions: !IS_ROOT,
+      permissionMode,
+      canUseTool: this.canUseTool(sessionId),
+      // note: although not documented by the types, passing an absolute path
+      // here works to find zed's managed node version.
+      executable: process.execPath as any,
+      ...(process.env.CLAUDE_CODE_EXECUTABLE && {
+        pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
+      }),
+      ...creationOpts,
+      hooks: {
+        ...userProvidedOptions?.hooks,
+        PostToolUse: [
+          ...(userProvidedOptions?.hooks?.PostToolUse || []),
+          {
+            hooks: [createPostToolUseHook(this.logger)],
+          },
+        ],
+      },
+    };
+
+    const allowedTools = [];
+    const disallowedTools = [];
+
+    // Check if built-in tools should be disabled
+    const disableBuiltInTools = params._meta?.disableBuiltInTools === true;
+
+    if (!disableBuiltInTools) {
+      if (this.clientCapabilities?.fs?.readTextFile) {
+        allowedTools.push(toolNames.read);
+        disallowedTools.push("Read");
+      }
+      if (this.clientCapabilities?.fs?.writeTextFile) {
+        disallowedTools.push("Write", "Edit");
+      }
+      if (this.clientCapabilities?.terminal) {
+        allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+        disallowedTools.push("Bash", "BashOutput", "KillShell");
+      }
+    } else {
+      // When built-in tools are disabled, explicitly disallow all of them
+      disallowedTools.push(
+        toolNames.read,
+        toolNames.write,
+        toolNames.edit,
+        toolNames.bash,
+        toolNames.bashOutput,
+        toolNames.killShell,
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "BashOutput",
+        "KillShell",
+        "Glob",
+        "Grep",
+        "Task",
+        "TodoWrite",
+        "ExitPlanMode",
+        "WebSearch",
+        "WebFetch",
+        "AskUserQuestion",
+        "SlashCommand",
+        "Skill",
+        "NotebookEdit",
+      );
+    }
+
+    if (allowedTools.length > 0) {
+      options.allowedTools = allowedTools;
+    }
+    if (disallowedTools.length > 0) {
+      options.disallowedTools = disallowedTools;
+    }
+
+    // Handle abort controller from meta options
+    const abortController = userProvidedOptions?.abortController;
+    if (abortController?.signal.aborted) {
+      throw new Error("Cancelled");
+    }
+
+    const q = query({
+      prompt: input,
+      options,
+    });
+
+    this.sessions[sessionId] = {
+      query: q,
+      input: input,
+      cancelled: false,
+      permissionMode,
+      params,
+    };
+
+    const availableCommands = await getAvailableSlashCommands(q);
+    const models = await getAvailableModels(q);
+
+    // Needs to happen after we return the session
+    setTimeout(() => {
+      this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands,
+        },
+      });
+    }, 0);
+
+    const availableModes = [
+      {
+        id: "default",
+        name: "Always Ask",
+        description: "Prompts for permission on first use of each tool",
+      },
+      {
+        id: "acceptEdits",
+        name: "Accept Edits",
+        description: "Automatically accepts file edit permissions for the session",
+      },
+      {
+        id: "plan",
+        name: "Plan Mode",
+        description: "Claude can analyze but not modify files or execute commands",
+      },
+    ];
+    // Only works in non-root mode
+    if (!IS_ROOT) {
+      availableModes.push({
+        id: "bypassPermissions",
+        name: "Bypass Permissions",
+        description: "Skips all permission prompts",
+      });
+    }
+
+    return {
+      sessionId,
+      models,
+      modes: {
+        currentModeId: permissionMode,
+        availableModes,
+      },
     };
   }
 }
