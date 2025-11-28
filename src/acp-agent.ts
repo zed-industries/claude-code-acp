@@ -5,6 +5,8 @@ import {
   AvailableCommand,
   CancelNotification,
   ClientCapabilities,
+  ForkSessionRequest,
+  ForkSessionResponse,
   InitializeRequest,
   InitializeResponse,
   ndJsonStream,
@@ -67,6 +69,7 @@ type Session = {
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
+  params: NewSessionRequest;
 };
 
 type BackgroundTerminal =
@@ -181,9 +184,8 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
-        _meta: {
-          "claude/session/resume": true,
-          "claude/session/fork": true,
+        sessionCapabilities: {
+          fork: {},
         },
       },
       agentInfo: {
@@ -228,9 +230,9 @@ export class ClaudeAcpAgent implements Agent {
         break;
       }
 
-      // Track Claude session ID from all messages
+      // Track Claude session ID from all messages (needed for fork)
       if (message.session_id) {
-        await this.trackAndNotifyClaudeSessionId(params.sessionId, message.session_id);
+        this.claudeSessionIds[params.sessionId] = message.session_id;
       }
 
       switch (message.type) {
@@ -431,6 +433,25 @@ export class ClaudeAcpAgent implements Agent {
     return response;
   }
 
+  async forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+    const session = this.sessions[params.sessionId];
+    if (!session) {
+      throw RequestError.resourceNotFound(`Session ${params.sessionId} not found`);
+    }
+
+    const claudeSessionId = this.claudeSessionIds[params.sessionId];
+    if (!claudeSessionId) {
+      throw RequestError.resourceNotFound(
+        `Session ${params.sessionId} has no Claude session ID yet (no prompts sent?)`,
+      );
+    }
+
+    return await this.createSession(session.params, {
+      resume: claudeSessionId,
+      forkSession: true,
+    });
+  }
+
   canUseTool(sessionId: string): CanUseTool {
     return async (toolName, toolInput, { suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
@@ -559,61 +580,6 @@ export class ClaudeAcpAgent implements Agent {
         };
       }
     };
-  }
-
-  async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    switch (method) {
-      case "claude/session/resume": {
-        const claudeSessionId = params.claudeSessionId as string;
-        if (!claudeSessionId) {
-          throw RequestError.invalidParams(
-            { claudeSessionId: params.claudeSessionId },
-            "Missing or invalid claudeSessionId parameter",
-          );
-        }
-
-        return (await this.createSession(params as unknown as NewSessionRequest, {
-          resume: claudeSessionId,
-        })) as unknown as Record<string, unknown>;
-      }
-
-      case "claude/session/fork": {
-        const acpSessionId = params.sessionId as string;
-        if (!acpSessionId) {
-          throw RequestError.invalidParams(
-            { sessionId: params.sessionId },
-            "Missing or invalid sessionId parameter",
-          );
-        }
-
-        // Look up the Claude session ID from the ACP session ID
-        const claudeSessionId = this.claudeSessionIds[acpSessionId];
-        if (!claudeSessionId) {
-          throw RequestError.resourceNotFound(
-            `Session ${acpSessionId} not found or has no Claude session ID yet`,
-          );
-        }
-
-        return (await this.createSession({} as NewSessionRequest, {
-          resume: claudeSessionId,
-          forkSession: true,
-        })) as unknown as Record<string, unknown>;
-      }
-
-      default:
-        throw RequestError.methodNotFound(method);
-    }
-  }
-
-  private async trackAndNotifyClaudeSessionId(acpSessionId: string, claudeSessionId: string): Promise<void> {
-    // Only update and notify if the session ID has changed
-    if (this.claudeSessionIds[acpSessionId] !== claudeSessionId) {
-      this.claudeSessionIds[acpSessionId] = claudeSessionId;
-      await this.client.extNotification("claude/sessionId", {
-        sessionId: acpSessionId,
-        claudeSessionId: claudeSessionId,
-      });
-    }
   }
 
   private async createSession(
@@ -780,6 +746,7 @@ export class ClaudeAcpAgent implements Agent {
       input: input,
       cancelled: false,
       permissionMode,
+      params,
     };
 
     const availableCommands = await getAvailableSlashCommands(q);

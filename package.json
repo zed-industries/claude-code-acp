@@ -51,7 +51,7 @@
   "author": "Zed Industries",
   "license": "Apache-2.0",
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.8.0",
+    "@agentclientprotocol/sdk": "github:SteffenDE/acp-typescript-sdk#sd-session-fork-dist",
     "@anthropic-ai/claude-agent-sdk": "0.1.61",
     "@modelcontextprotocol/sdk": "1.24.3",
     "diff": "8.0.2"
