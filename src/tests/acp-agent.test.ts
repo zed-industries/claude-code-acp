@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import type { Mock } from "vitest";
 import { spawn, spawnSync } from "child_process";
 import {
   Agent,
@@ -18,8 +19,16 @@ import {
 } from "@agentclientprotocol/sdk";
 import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
-import { toAcpNotifications, promptToClaude } from "../acp-agent.js";
+import { toAcpNotifications, promptToClaude, ClaudeAcpAgent } from "../acp-agent.js";
 import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
+
+vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
+  const actual = await vi.importActual("@anthropic-ai/claude-agent-sdk");
+  return {
+    ...actual,
+    query: vi.fn(),
+  };
+});
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -899,3 +908,134 @@ describe("permission requests", () => {
     }
   });
 });
+
+describe("ClaudeAcpAgent unit tests", () => {
+  it("should disallow all built-in tools when disableBuiltInTools is true", async () => {
+    const mockQuery = {
+      supportedModels: vi
+        .fn()
+        .mockResolvedValue([
+          { value: "default", displayName: "Default", description: "Default model" },
+        ]),
+      setModel: vi.fn().mockResolvedValue(undefined),
+      supportedCommands: vi.fn().mockResolvedValue([]),
+    };
+    (query as Mock).mockReturnValue(mockQuery);
+
+    const mockClient = {
+      sessionUpdate: () => Promise.resolve(),
+    } as any;
+
+    const agent = new ClaudeAcpAgent(mockClient);
+
+    await agent.newSession({
+      cwd: "/test",
+      mcpServers: [],
+      _meta: {
+        disableBuiltInTools: true,
+      },
+    });
+
+    const queryOptions = (query as Mock).mock.calls[0][0].options;
+
+    expect(queryOptions.disallowedTools).toEqual(
+      expect.arrayContaining([
+        "mcp__acp__Read",
+        "mcp__acp__Write",
+        "mcp__acp__Edit",
+        "mcp__acp__Bash",
+        "mcp__acp__BashOutput",
+        "mcp__acp__KillShell",
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "BashOutput",
+        "KillShell",
+        "Glob",
+        "Grep",
+        "Task",
+        "TodoWrite",
+        "ExitPlanMode",
+        "WebSearch",
+        "WebFetch",
+        "AskUserQuestion",
+        "SlashCommand",
+        "Skill",
+        "NotebookEdit",
+      ]),
+    );
+  });
+
+  it("should enable built-in tools by default", async () => {
+    const mockQuery = {
+      supportedModels: vi
+        .fn()
+        .mockResolvedValue([
+          { value: "default", displayName: "Default", description: "Default model" },
+        ]),
+      setModel: vi.fn().mockResolvedValue(undefined),
+      supportedCommands: vi.fn().mockResolvedValue([]),
+    };
+    (query as Mock).mockReturnValue(mockQuery);
+
+    const mockClient = {
+      sessionUpdate: () => Promise.resolve(),
+    } as any;
+
+    const agent = new ClaudeAcpAgent(mockClient);
+    agent.clientCapabilities = {
+      fs: {
+        readTextFile: true,
+        writeTextFile: true,
+      },
+      terminal: true,
+    };
+
+    await agent.newSession({
+      cwd: "/test",
+      mcpServers: [],
+    });
+
+    const queryOptions = (query as Mock).mock.calls[1][0].options;
+
+    expect(queryOptions.allowedTools).toEqual(
+      expect.arrayContaining(["mcp__acp__Read", "mcp__acp__BashOutput", "mcp__acp__KillShell"]),
+    );
+    expect(queryOptions.disallowedTools).toEqual(
+      expect.arrayContaining(["Read", "Write", "Edit", "Bash", "BashOutput", "KillShell"]),
+    );
+  });
+});
+
+describe("setSessionMode", () => {
+  it("should set a valid permission mode", async () => {
+    const mockQuery = {
+      setPermissionMode: vi.fn().mockResolvedValue(undefined),
+    };
+    const agent = new ClaudeAcpAgent({} as any);
+    agent.sessions["test-session"] = {
+      query: mockQuery,
+    } as any;
+
+    await agent.setSessionMode({ sessionId: "test-session", modeId: "acceptEdits" });
+
+    expect(agent.sessions["test-session"].permissionMode).toBe("acceptEdits");
+    expect(mockQuery.setPermissionMode).toHaveBeenCalledWith("acceptEdits");
+  });
+
+  it("should throw an error for an invalid mode", async () => {
+    const agent = new ClaudeAcpAgent({} as any);
+    agent.sessions["test-session"] = {
+      query: {
+        setPermissionMode: vi.fn(),
+      },
+    } as any;
+
+    await expect(
+      agent.setSessionMode({ sessionId: "test-session", modeId: "invalid-mode" as any }),
+    ).rejects.toThrow("Invalid Mode");
+  });
+});
+
+
