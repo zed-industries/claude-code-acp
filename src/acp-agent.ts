@@ -7,6 +7,8 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  LoadSessionRequest,
+  LoadSessionResponse,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -39,6 +41,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
+import { SessionLoader } from "./session-loader.js";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { SessionNotification } from "@agentclientprotocol/sdk";
 import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
@@ -180,6 +183,7 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
+        loadSession: true,
       },
       agentInfo: {
         name: packageJson.name,
@@ -401,6 +405,101 @@ export class ClaudeAcpAgent implements Agent {
       models,
       modes: {
         currentModeId: permissionMode,
+        availableModes,
+      },
+    };
+  }
+
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    const sessionLoader = new SessionLoader(this.logger);
+    // last param is `canUseTool` which is not available in this version of the file
+    const sessionHistory = await sessionLoader.loadSession(params.sessionId, params.cwd);
+
+    if (!sessionHistory) {
+      throw RequestError.resourceNotFound(params.sessionId);
+    }
+
+    const { messages, options } = sessionHistory;
+
+    // Create a new session with the loaded history
+    const sessionId = params.sessionId;
+    const input = new Pushable<SDKUserMessage>();
+
+    const q = query({
+      prompt: input,
+      options,
+    });
+
+    this.sessions[sessionId] = {
+      query: q,
+      input: input,
+      cancelled: false,
+      permissionMode: options.permissionMode || "default",
+    };
+
+    // Replay messages to the client
+    for (const message of messages) {
+      // Only process user and assistant messages (not stream events)
+      if ("message" in message && message.message && "role" in message.message) {
+        const content = message.message.content;
+        for (const notification of toAcpNotifications(
+          content,
+          message.message.role,
+          sessionId,
+          this.toolUseCache,
+          this.fileContentCache,
+          this.client,
+          this.logger,
+        )) {
+          await this.client.sessionUpdate(notification);
+        }
+      }
+    }
+
+    const availableCommands = await getAvailableSlashCommands(q);
+    const models = await getAvailableModels(q);
+
+    // Needs to happen after we return the session
+    setTimeout(() => {
+      this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands,
+        },
+      });
+    }, 0);
+
+    const availableModes = [
+      {
+        id: "default",
+        name: "Always Ask",
+        description: "Prompts for permission on first use of each tool",
+      },
+      {
+        id: "acceptEdits",
+        name: "Accept Edits",
+        description: "Automatically accepts file edit permissions for the session",
+      },
+      {
+        id: "plan",
+        name: "Plan Mode",
+        description: "Claude can analyze but not modify files or execute commands",
+      },
+    ];
+    // Only works in non-root mode
+    if (!IS_ROOT) {
+      availableModes.push({
+        id: "bypassPermissions",
+        name: "Bypass Permissions",
+        description: "Skips all permission prompts",
+      });
+    }
+
+    return {
+      models,
+      modes: {
+        currentModeId: options.permissionMode || "default",
         availableModes,
       },
     };
