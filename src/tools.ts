@@ -134,7 +134,14 @@ export function toolInfoFromToolUse(
         title: "Read File",
         kind: "read",
         content: [],
-        locations: [{ path: input.file_path, line: input.offset ?? 0 }],
+        locations: input.file_path
+          ? [
+              {
+                path: input.file_path,
+                line: input.offset ?? 0,
+              },
+            ]
+          : [],
       };
 
     case "LS":
