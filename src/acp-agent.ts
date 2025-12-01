@@ -16,6 +16,7 @@ import {
   ReadTextFileResponse,
   RequestError,
   SessionModelState,
+  SessionNotification,
   SetSessionModelRequest,
   SetSessionModelResponse,
   SetSessionModeRequest,
@@ -40,7 +41,6 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
-import { SessionNotification } from "@agentclientprotocol/sdk";
 import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
 import {
   toolInfoFromToolUse,
