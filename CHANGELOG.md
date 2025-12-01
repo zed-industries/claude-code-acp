@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.10
+
+- Update to @agentclientprotocol/sdk@0.7.0
+
 ## 0.10.9
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.55
