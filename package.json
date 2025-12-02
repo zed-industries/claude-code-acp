@@ -54,7 +54,7 @@
     "@agentclientprotocol/sdk": "0.7.0",
     "@anthropic-ai/claude-agent-sdk": "0.1.55",
     "@anthropic-ai/claude-code": "2.0.55",
-    "@modelcontextprotocol/sdk": "1.23.0",
+    "@modelcontextprotocol/sdk": "1.24.0",
     "diff": "8.0.2",
     "uuid": "13.0.0"
   },
