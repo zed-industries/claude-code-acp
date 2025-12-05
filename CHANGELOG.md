@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.59
+  - Brings Opus to Claude Pro plans
+  - Support "Don't Ask" profile
+- Unify ACP + Claude Code session ids
+
 ## 0.11.0
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.57

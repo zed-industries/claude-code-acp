@@ -39,7 +39,6 @@ import {
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { v7 as uuidv7 } from "uuid";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
 import {
@@ -53,6 +52,7 @@ import {
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
 import packageJson from "../package.json" with { type: "json" };
+import { randomUUID } from "node:crypto";
 
 /**
  * Logger interface for customizing logging output
@@ -197,7 +197,7 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    const sessionId = uuidv7();
+    const sessionId = randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
     const mcpServers: Record<string, McpServerConfig> = {};
@@ -262,6 +262,8 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
+      // Set our own session id
+      extraArgs: { ...userProvidedOptions?.extraArgs, "session-id": sessionId },
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,
