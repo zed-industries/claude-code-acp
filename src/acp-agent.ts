@@ -7,6 +7,8 @@ import {
   ClientCapabilities,
   InitializeRequest,
   InitializeResponse,
+  LoadSessionRequest,
+  LoadSessionResponse,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -172,6 +174,9 @@ export class ClaudeAcpAgent implements Agent {
     return {
       protocolVersion: 1,
       agentCapabilities: {
+        // TODO: Migrate to session/resume once it's added to the ACP schema.
+        // See: https://github.com/agentclientprotocol/agent-client-protocol/pull/234
+        loadSession: true,
         promptCapabilities: {
           image: true,
           embeddedContext: true,
@@ -283,6 +288,12 @@ export class ClaudeAcpAgent implements Agent {
             hooks: [createPostToolUseHook(this.logger)],
           },
         ],
+      },
+      extraArgs: {
+        // NOTE: --session-id is not part of the public SDK API.
+        // We use it to synchronize session IDs between ACP and Claude Code SDK
+        // for session persistence. This may break in future SDK versions.
+        "session-id": sessionId,
       },
     };
 
@@ -405,6 +416,157 @@ export class ClaudeAcpAgent implements Agent {
 
     return {
       sessionId,
+      models,
+      modes: {
+        currentModeId: permissionMode,
+        availableModes,
+      },
+    };
+  }
+
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    if (
+      fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
+      !fs.existsSync(path.resolve(os.homedir(), ".claude.json"))
+    ) {
+      throw RequestError.authRequired();
+    }
+
+    // Use session ID from request instead of generating a new one
+    const sessionId = params.sessionId;
+    const input = new Pushable<SDKUserMessage>();
+
+    const mcpServers: Record<string, McpServerConfig> = {};
+    if (Array.isArray(params.mcpServers)) {
+      for (const server of params.mcpServers) {
+        if ("type" in server) {
+          mcpServers[server.name] = {
+            type: server.type,
+            url: server.url,
+            headers: server.headers
+              ? Object.fromEntries(server.headers.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        } else {
+          mcpServers[server.name] = {
+            type: "stdio",
+            command: server.command,
+            args: server.args,
+            env: server.env
+              ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
+              : undefined,
+          };
+        }
+      }
+    }
+
+    const server = createMcpServer(this, sessionId, this.clientCapabilities);
+    mcpServers["acp"] = {
+      type: "sdk",
+      name: "acp",
+      instance: server,
+    };
+
+    const permissionMode = "default";
+
+    const options: Options = {
+      systemPrompt: { type: "preset", preset: "claude_code" },
+      settingSources: ["user", "project", "local"],
+      stderr: (err) => this.logger.error(err),
+      cwd: params.cwd,
+      includePartialMessages: true,
+      mcpServers,
+      allowDangerouslySkipPermissions: !IS_ROOT,
+      permissionMode,
+      canUseTool: this.canUseTool(sessionId),
+      executable: process.execPath as any,
+      ...(process.env.CLAUDE_CODE_EXECUTABLE && {
+        pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
+      }),
+      // Resume the existing session instead of creating new
+      resume: sessionId,
+      hooks: {
+        PostToolUse: [
+          {
+            hooks: [createPostToolUseHook(this.logger)],
+          },
+        ],
+      },
+    };
+
+    const allowedTools = [];
+    const disallowedTools = [];
+
+    if (this.clientCapabilities?.fs?.readTextFile) {
+      allowedTools.push(toolNames.read);
+      disallowedTools.push("Read");
+    }
+    if (this.clientCapabilities?.fs?.writeTextFile) {
+      disallowedTools.push("Write", "Edit");
+    }
+    if (this.clientCapabilities?.terminal) {
+      allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+      disallowedTools.push("Bash", "BashOutput", "KillShell");
+    }
+
+    if (allowedTools.length > 0) {
+      options.allowedTools = allowedTools;
+    }
+    if (disallowedTools.length > 0) {
+      options.disallowedTools = disallowedTools;
+    }
+
+    const q = query({
+      prompt: input,
+      options,
+    });
+
+    this.sessions[sessionId] = {
+      query: q,
+      input: input,
+      cancelled: false,
+      permissionMode,
+    };
+
+    const availableCommands = await getAvailableSlashCommands(q);
+    const models = await getAvailableModels(q);
+
+    setTimeout(() => {
+      this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands,
+        },
+      });
+    }, 0);
+
+    const availableModes = [
+      {
+        id: "default",
+        name: "Always Ask",
+        description: "Prompts for permission on first use of each tool",
+      },
+      {
+        id: "acceptEdits",
+        name: "Accept Edits",
+        description: "Automatically accepts file edit permissions for the session",
+      },
+      {
+        id: "plan",
+        name: "Plan Mode",
+        description: "Claude can analyze but not modify files or execute commands",
+      },
+    ];
+    if (!IS_ROOT) {
+      availableModes.push({
+        id: "bypassPermissions",
+        name: "Bypass Permissions",
+        description: "Skips all permission prompts",
+      });
+    }
+
+    return {
       models,
       modes: {
         currentModeId: permissionMode,
