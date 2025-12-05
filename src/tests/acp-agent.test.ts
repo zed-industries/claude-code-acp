@@ -912,3 +912,161 @@ describe("permission requests", () => {
     }
   });
 });
+
+describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("session/load integration", () => {
+  class TestClient implements Client {
+    agent: Agent;
+    files: Map<string, string> = new Map();
+    receivedText: string = "";
+    resolveAvailableCommands: (commands: AvailableCommand[]) => void;
+    availableCommandsPromise: Promise<AvailableCommand[]>;
+
+    constructor(agent: Agent) {
+      this.agent = agent;
+      this.resolveAvailableCommands = () => {};
+      this.availableCommandsPromise = new Promise((resolve) => {
+        this.resolveAvailableCommands = resolve;
+      });
+    }
+
+    takeReceivedText() {
+      const text = this.receivedText;
+      this.receivedText = "";
+      return text;
+    }
+
+    async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+      const optionId = params.options.find((p) => p.kind === "allow_once")!.optionId;
+      return { outcome: { outcome: "selected", optionId } };
+    }
+
+    async sessionUpdate(params: SessionNotification): Promise<void> {
+      switch (params.update.sessionUpdate) {
+        case "agent_message_chunk": {
+          if (params.update.content.type === "text") {
+            this.receivedText += params.update.content.text;
+          }
+          break;
+        }
+        case "available_commands_update":
+          this.resolveAvailableCommands(params.update.availableCommands);
+          break;
+        default:
+          break;
+      }
+    }
+
+    async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
+      this.files.set(params.path, params.content);
+      return {};
+    }
+
+    async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> {
+      const content = this.files.get(params.path) ?? "";
+      return { content };
+    }
+  }
+
+  function startSubprocess() {
+    const child = spawn("npm", ["run", "--silent", "dev"], {
+      stdio: ["pipe", "pipe", "inherit"],
+      env: process.env,
+    });
+    return child;
+  }
+
+  function killAndWait(child: ReturnType<typeof spawn>): Promise<void> {
+    return new Promise((resolve) => {
+      if (child.exitCode !== null) {
+        resolve();
+        return;
+      }
+      child.on("exit", () => resolve());
+      child.kill();
+    });
+  }
+
+  it("should resume session with loadSession after process restart", async () => {
+    // Compile first
+    const valid = spawnSync("tsc", { stdio: "inherit" });
+    if (valid.status) {
+      throw new Error("failed to compile");
+    }
+
+    let child1: ReturnType<typeof spawn> | null = null;
+    let child2: ReturnType<typeof spawn> | null = null;
+
+    try {
+      // Create initial session and establish context
+      child1 = startSubprocess();
+      let client1: TestClient;
+      const input1 = nodeToWebWritable(child1.stdin!);
+      const output1 = nodeToWebReadable(child1.stdout!);
+      const stream1 = ndJsonStream(input1, output1);
+      const connection1 = new ClientSideConnection((agent) => {
+        client1 = new TestClient(agent);
+        return client1;
+      }, stream1);
+
+      await connection1.initialize({
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      });
+
+      const newSessionResponse = await connection1.newSession({
+        cwd: __dirname,
+        mcpServers: [],
+      });
+      const sessionId = newSessionResponse.sessionId;
+
+      // Send a message to establish context
+      await connection1.prompt({
+        prompt: [{ type: "text", text: "I am storing the code XYZ-789 in this conversation. Reply with exactly: 'Code stored: XYZ-789'" }],
+        sessionId,
+      });
+      const firstResponse = client1!.takeReceivedText();
+      expect(firstResponse).toContain("XYZ-789");
+
+      // Kill the subprocess (simulating disconnection)
+      await killAndWait(child1);
+      child1 = null;
+
+      // Start new subprocess and load the session
+      child2 = startSubprocess();
+      let client2: TestClient;
+      const input2 = nodeToWebWritable(child2.stdin!);
+      const output2 = nodeToWebReadable(child2.stdout!);
+      const stream2 = ndJsonStream(input2, output2);
+      const connection2 = new ClientSideConnection((agent) => {
+        client2 = new TestClient(agent);
+        return client2;
+      }, stream2);
+
+      await connection2.initialize({
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      });
+
+      // Load the same session using original sessionId
+      const loadResponse = await connection2.loadSession({
+        sessionId,
+        cwd: __dirname,
+        mcpServers: [],
+      });
+
+      expect(loadResponse.modes).toBeDefined();
+
+      // Verify context is preserved by asking about the stored code
+      await connection2.prompt({
+        prompt: [{ type: "text", text: "What code did I store in this conversation? Reply with just the code." }],
+        sessionId,
+      });
+
+      const response = client2!.takeReceivedText();
+      expect(response).toContain("XYZ-789");
+    } finally {
+      if (child1) await killAndWait(child1);
+      if (child2) await killAndWait(child2);
+    }
+  }, 120000);
+});
