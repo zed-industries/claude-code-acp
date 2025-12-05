@@ -20,6 +20,7 @@ import { nodeToWebWritable, nodeToWebReadable } from "../utils.js";
 import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from "../tools.js";
 import { toAcpNotifications, promptToClaude } from "../acp-agent.js";
 import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
+import { randomUUID } from "crypto";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -830,17 +831,29 @@ describe("prompt conversion", () => {
   });
 });
 
-describe("SDK behavior", () => {
-  it.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
-    "query has a 'default' model",
-    async () => {
-      const q = query({ prompt: "hi" });
-      const models = await q.supportedModels();
-      const defaultModel = models.find((m) => m.value === "default");
-      expect(defaultModel).toBeDefined();
-    },
-    10000,
-  );
+describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("SDK behavior", () => {
+  it("query has a 'default' model", async () => {
+    const q = query({ prompt: "hi" });
+    const models = await q.supportedModels();
+    const defaultModel = models.find((m) => m.value === "default");
+    expect(defaultModel).toBeDefined();
+  }, 10000);
+
+  it("custom session id", async () => {
+    const sessionId = randomUUID();
+    const q = query({
+      prompt: "hi",
+      options: {
+        systemPrompt: { type: "preset", preset: "claude_code" },
+        extraArgs: { "session-id": sessionId },
+        settingSources: ["user", "project", "local"],
+        includePartialMessages: true,
+      },
+    });
+
+    const { value } = await q.next();
+    expect(value).toMatchObject({ type: "system", subtype: "init", session_id: sessionId });
+  }, 10000);
 });
 
 describe("permission requests", () => {
