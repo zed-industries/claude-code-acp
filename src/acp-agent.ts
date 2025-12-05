@@ -373,18 +373,23 @@ export class ClaudeAcpAgent implements Agent {
     const availableModes = [
       {
         id: "default",
-        name: "Always Ask",
-        description: "Prompts for permission on first use of each tool",
+        name: "Default",
+        description: "Standard behavior, prompts for dangerous operations",
       },
       {
         id: "acceptEdits",
         name: "Accept Edits",
-        description: "Automatically accepts file edit permissions for the session",
+        description: "Auto-accept file edit operations",
       },
       {
         id: "plan",
         name: "Plan Mode",
-        description: "Claude can analyze but not modify files or execute commands",
+        description: "Planning mode, no actual tool execution",
+      },
+      {
+        id: "dontAsk",
+        name: "Don't Ask",
+        description: "Don't prompt for permissions, deny if not pre-approved",
       },
     ];
     // Only works in non-root mode
@@ -392,7 +397,7 @@ export class ClaudeAcpAgent implements Agent {
       availableModes.push({
         id: "bypassPermissions",
         name: "Bypass Permissions",
-        description: "Skips all permission prompts",
+        description: "Bypass all permission checks",
       });
     }
 
@@ -595,6 +600,7 @@ export class ClaudeAcpAgent implements Agent {
       case "default":
       case "acceptEdits":
       case "bypassPermissions":
+      case "dontAsk":
       case "plan":
         this.sessions[params.sessionId].permissionMode = params.modeId;
         try {
