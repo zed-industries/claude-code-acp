@@ -203,7 +203,6 @@ export class ClaudeAcpAgent implements Agent {
     const sessionId = randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
-    // Initialize settings manager for this session
     const settingsManager = new SettingsManager(params.cwd, {
       logger: this.logger,
     });
@@ -725,7 +724,10 @@ export class ClaudeAcpAgent implements Agent {
         };
       }
 
-      // In dontAsk mode, deny any tool use that wasn't already allowed by settings
+      // In dontAsk mode, deny any tool use that wasn't already allowed by
+      // settings. The SDK handles this internally, but since we do custom
+      // permission checks in our pre-tool-use hook, we have to handle this
+      // manually here as well.
       if (session.permissionMode === "dontAsk") {
         return {
           behavior: "deny",
