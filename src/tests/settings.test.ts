@@ -189,6 +189,62 @@ describe("SettingsManager", () => {
       expect(installResult.decision).toBe("ask");
     });
 
+    it("should not allow shell operators to bypass prefix matching", async () => {
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          permissions: {
+            allow: ["Bash(safe-cmd:*)"],
+          },
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      // Normal prefix match should work
+      const normalResult = settingsManager.checkPermission("Bash", { command: "safe-cmd --flag" });
+      expect(normalResult.decision).toBe("allow");
+
+      // Shell operators should NOT be allowed (per docs: Claude Code is aware of shell operators)
+      const andResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd && malicious-cmd",
+      });
+      expect(andResult.decision).toBe("ask");
+
+      const orResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd || malicious-cmd",
+      });
+      expect(orResult.decision).toBe("ask");
+
+      const semicolonResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd; malicious-cmd",
+      });
+      expect(semicolonResult.decision).toBe("ask");
+
+      const pipeResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd | malicious-cmd",
+      });
+      expect(pipeResult.decision).toBe("ask");
+
+      const subshellResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd $(malicious-cmd)",
+      });
+      expect(subshellResult.decision).toBe("ask");
+
+      const backtickResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd `malicious-cmd`",
+      });
+      expect(backtickResult.decision).toBe("ask");
+
+      const newlineResult = settingsManager.checkPermission("Bash", {
+        command: "safe-cmd\nmalicious-cmd",
+      });
+      expect(newlineResult.decision).toBe("ask");
+    });
+
     it("should deny dangerous Bash commands", async () => {
       const claudeDir = path.join(tempDir, ".claude");
       await fs.promises.mkdir(claudeDir, { recursive: true });

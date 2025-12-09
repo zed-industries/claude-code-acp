@@ -57,6 +57,25 @@ function getClaudeCodeToolName(acpToolName: string): string {
 }
 
 /**
+ * Shell operators that can be used for command chaining/injection
+ * These should cause a prefix match to fail to prevent bypasses like:
+ * - "safe-cmd && malicious-cmd"
+ * - "safe-cmd; malicious-cmd"
+ * - "safe-cmd | malicious-cmd"
+ * - "safe-cmd || malicious-cmd"
+ * - "$(malicious-cmd)"
+ * - "`malicious-cmd`"
+ */
+const SHELL_OPERATORS = ["&&", "||", ";", "|", "$(", "`", "\n"];
+
+/**
+ * Checks if a string contains shell operators that could allow command chaining
+ */
+function containsShellOperator(str: string): boolean {
+  return SHELL_OPERATORS.some((op) => str.includes(op));
+}
+
+/**
  * Functions to extract the relevant argument from tool input for permission matching
  */
 const TOOL_ARG_ACCESSORS: Record<string, (input: unknown) => string | undefined> = {
@@ -152,8 +171,20 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
     // - Bash(npm run build) matches the EXACT command "npm run build"
     // - Bash(npm run test:*) matches commands STARTING WITH "npm run test"
     // The :* suffix enables prefix matching, without it the match is exact
+    //
+    // Also from docs: "Claude Code is aware of shell operators (like &&) so a prefix match
+    // rule like Bash(safe-cmd:*) won't give it permission to run the command safe-cmd && other-cmd"
     if (rule.isWildcard) {
-      return actualArg.startsWith(rule.argument);
+      if (!actualArg.startsWith(rule.argument)) {
+        return false;
+      }
+      // Check that the matched prefix isn't followed by shell operators that could
+      // allow command chaining/injection
+      const remainder = actualArg.slice(rule.argument.length);
+      if (containsShellOperator(remainder)) {
+        return false;
+      }
+      return true;
     }
     return actualArg === rule.argument;
   }
