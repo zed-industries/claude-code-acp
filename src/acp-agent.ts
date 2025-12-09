@@ -634,7 +634,7 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   canUseTool(sessionId: string): CanUseTool {
-    return async (toolName, toolInput, { suggestions, toolUseID }) => {
+    return async (toolName, toolInput, { signal, suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
       if (!session) {
         return {
@@ -667,6 +667,9 @@ export class ClaudeAcpAgent implements Agent {
           },
         });
 
+        if (signal.aborted || response.outcome?.outcome === "cancelled") {
+          throw new Error("Tool use aborted");
+        }
         if (
           response.outcome?.outcome === "selected" &&
           (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
@@ -730,6 +733,9 @@ export class ClaudeAcpAgent implements Agent {
           ).title,
         },
       });
+      if (signal.aborted || response.outcome?.outcome === "cancelled") {
+        throw new Error("Tool use aborted");
+      }
       if (
         response.outcome?.outcome === "selected" &&
         (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
