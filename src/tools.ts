@@ -12,6 +12,7 @@ import {
 } from "@anthropic-ai/sdk/resources/beta.mjs";
 import { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { Logger } from "./acp-agent.js";
+import { SettingsManager } from "./settings.js";
 
 interface ToolInfo {
   title: string;
@@ -595,4 +596,62 @@ export const createPostToolUseHook =
       }
     }
     return { continue: true };
+  };
+
+/**
+ * Creates a PreToolUse hook that checks permissions using the SettingsManager.
+ * This runs before the SDK's built-in permission rules, allowing us to enforce
+ * our own permission settings for ACP-prefixed tools.
+ *
+ * Per the SDK docs, the permission flow is:
+ * PreToolUse Hook → Deny Rules → Allow Rules → Ask Rules → Permission Mode Check → canUseTool Callback
+ *
+ * So this hook is the right place to enforce settings-based permissions.
+ */
+export const createPreToolUseHook =
+  (settingsManager: SettingsManager, logger: Logger = console): HookCallback =>
+  async (input: any, _toolUseID: string | undefined) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return { continue: true };
+    }
+
+    const toolName = input.tool_name;
+    const toolInput = input.tool_input;
+
+    // Check permissions using our settings manager
+    const permissionCheck = settingsManager.checkPermission(toolName, toolInput);
+
+    // Only log when a rule matches (allow or deny), not for every tool call
+    if (permissionCheck.decision !== "ask") {
+      logger.log(
+        `[PreToolUseHook] Tool: ${toolName}, Decision: ${permissionCheck.decision}, Rule: ${permissionCheck.rule}`,
+      );
+    }
+
+    switch (permissionCheck.decision) {
+      case "allow":
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse" as const,
+            permissionDecision: "allow" as const,
+            permissionDecisionReason: `Allowed by settings rule: ${permissionCheck.rule}`,
+          },
+        };
+
+      case "deny":
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse" as const,
+            permissionDecision: "deny" as const,
+            permissionDecisionReason: `Denied by settings rule: ${permissionCheck.rule}`,
+          },
+        };
+
+      case "ask":
+      default:
+        // Let the normal permission flow continue (canUseTool will be called)
+        return { continue: true };
+    }
   };

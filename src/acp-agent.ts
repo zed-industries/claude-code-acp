@@ -49,6 +49,7 @@ import {
   ClaudePlanEntry,
   registerHookCallback,
   createPostToolUseHook,
+  createPreToolUseHook,
 } from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
@@ -285,6 +286,12 @@ export class ClaudeAcpAgent implements Agent {
       }),
       hooks: {
         ...userProvidedOptions?.hooks,
+        PreToolUse: [
+          ...(userProvidedOptions?.hooks?.PreToolUse || []),
+          {
+            hooks: [createPreToolUseHook(settingsManager, this.logger)],
+          },
+        ],
         PostToolUse: [
           ...(userProvidedOptions?.hooks?.PostToolUse || []),
           {
@@ -651,26 +658,6 @@ export class ClaudeAcpAgent implements Agent {
           message: "Session not found",
           interrupt: true,
         };
-      }
-
-      // Check settings-based permissions first (except for special tools like ExitPlanMode)
-      if (toolName !== "ExitPlanMode") {
-        const permissionCheck = session.settingsManager.checkPermission(toolName, toolInput);
-
-        if (permissionCheck.decision === "deny") {
-          return {
-            behavior: "deny",
-            message: `Tool use denied by settings rule: ${permissionCheck.rule}`,
-            interrupt: false,
-          };
-        }
-
-        if (permissionCheck.decision === "allow") {
-          return {
-            behavior: "allow",
-            updatedInput: toolInput,
-          };
-        }
       }
 
       if (toolName === "ExitPlanMode") {
