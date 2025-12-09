@@ -140,7 +140,6 @@ export class ClaudeAcpAgent implements Agent {
   backgroundTerminals: { [key: string]: BackgroundTerminal } = {};
   clientCapabilities?: ClientCapabilities;
   logger: Logger;
-  claudeSessionIds: { [acpSessionId: string]: string } = {};
 
   constructor(client: AgentSideConnection, logger?: Logger) {
     this.sessions = {};
@@ -228,11 +227,6 @@ export class ClaudeAcpAgent implements Agent {
           return { stopReason: "cancelled" };
         }
         break;
-      }
-
-      // Track Claude session ID from all messages (needed for fork)
-      if (message.session_id) {
-        this.claudeSessionIds[params.sessionId] = message.session_id;
       }
 
       switch (message.type) {
@@ -439,15 +433,8 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.resourceNotFound(`Session ${params.sessionId} not found`);
     }
 
-    const claudeSessionId = this.claudeSessionIds[params.sessionId];
-    if (!claudeSessionId) {
-      throw RequestError.resourceNotFound(
-        `Session ${params.sessionId} has no Claude session ID yet (no prompts sent?)`,
-      );
-    }
-
     return await this.createSession(session.params, {
-      resume: claudeSessionId,
+      resume: params.sessionId,
       forkSession: true,
     });
   }
@@ -652,7 +639,8 @@ export class ClaudeAcpAgent implements Agent {
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
       // Set our own session id
-      extraArgs: { ...userProvidedOptions?.extraArgs, "session-id": sessionId },
+      // TODO: find a way to make this work for fork
+      extraArgs: { ...userProvidedOptions?.extraArgs, ...(creationOpts.resume ? {} : {"session-id": sessionId }) },
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,
