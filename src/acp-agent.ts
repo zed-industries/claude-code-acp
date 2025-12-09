@@ -267,7 +267,9 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
-      // Set our own session id
+      // NOTE: --session-id is not part of the public SDK API.
+      // We use it to synchronize session IDs between ACP and Claude Code SDK
+      // for session persistence. This may break in future SDK versions.
       extraArgs: { ...userProvidedOptions?.extraArgs, "session-id": sessionId },
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
@@ -288,12 +290,6 @@ export class ClaudeAcpAgent implements Agent {
             hooks: [createPostToolUseHook(this.logger)],
           },
         ],
-      },
-      extraArgs: {
-        // NOTE: --session-id is not part of the public SDK API.
-        // We use it to synchronize session IDs between ACP and Claude Code SDK
-        // for session persistence. This may break in future SDK versions.
-        "session-id": sessionId,
       },
     };
 
