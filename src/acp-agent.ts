@@ -60,8 +60,8 @@ import { randomUUID } from "node:crypto";
  * Logger interface for customizing logging output
  */
 export interface Logger {
-  log: (...args: unknown[]) => void;
-  error: (...args: unknown[]) => void;
+  log: (...args: any[]) => void;
+  error: (...args: any[]) => void;
 }
 
 type Session = {

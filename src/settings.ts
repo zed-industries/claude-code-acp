@@ -237,7 +237,7 @@ function getEnterpriseSettingsPath(): string | null {
 
 export interface SettingsManagerOptions {
   onChange?: () => void;
-  logger?: { log: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+  logger?: { log: (...args: any[]) => void; error: (...args: any[]) => void };
 }
 
 /**
@@ -260,7 +260,7 @@ export class SettingsManager {
   private mergedSettings: ClaudeCodeSettings = {};
   private watchers: fs.FSWatcher[] = [];
   private onChange?: () => void;
-  private logger: { log: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+  private logger: { log: (...args: any[]) => void; error: (...args: any[]) => void };
   private initialized = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
