@@ -26,6 +26,7 @@ import {
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@agentclientprotocol/sdk";
+import { SettingsManager } from "./settings.js";
 import {
   CanUseTool,
   McpServerConfig,
@@ -58,8 +59,8 @@ import { randomUUID } from "node:crypto";
  * Logger interface for customizing logging output
  */
 export interface Logger {
-  log: (...args: any[]) => void;
-  error: (...args: any[]) => void;
+  log: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
 }
 
 type Session = {
@@ -67,6 +68,7 @@ type Session = {
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
+  settingsManager: SettingsManager;
 };
 
 type BackgroundTerminal =
@@ -199,6 +201,12 @@ export class ClaudeAcpAgent implements Agent {
 
     const sessionId = randomUUID();
     const input = new Pushable<SDKUserMessage>();
+
+    // Initialize settings manager for this session
+    const settingsManager = new SettingsManager(params.cwd, {
+      logger: this.logger,
+    });
+    await settingsManager.initialize();
 
     const mcpServers: Record<string, McpServerConfig> = {};
     if (Array.isArray(params.mcpServers)) {
@@ -356,6 +364,7 @@ export class ClaudeAcpAgent implements Agent {
       input: input,
       cancelled: false,
       permissionMode,
+      settingsManager,
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
@@ -644,6 +653,26 @@ export class ClaudeAcpAgent implements Agent {
         };
       }
 
+      // Check settings-based permissions first (except for special tools like ExitPlanMode)
+      if (toolName !== "ExitPlanMode") {
+        const permissionCheck = session.settingsManager.checkPermission(toolName, toolInput);
+
+        if (permissionCheck.decision === "deny") {
+          return {
+            behavior: "deny",
+            message: `Tool use denied by settings rule: ${permissionCheck.rule}`,
+            interrupt: false,
+          };
+        }
+
+        if (permissionCheck.decision === "allow") {
+          return {
+            behavior: "allow",
+            updatedInput: toolInput,
+          };
+        }
+      }
+
       if (toolName === "ExitPlanMode") {
         const response = await this.client.requestPermission({
           options: [
@@ -706,6 +735,15 @@ export class ClaudeAcpAgent implements Agent {
           updatedPermissions: suggestions ?? [
             { type: "addRules", rules: [{ toolName }], behavior: "allow", destination: "session" },
           ],
+        };
+      }
+
+      // In dontAsk mode, deny any tool use that wasn't already allowed by settings
+      if (session.permissionMode === "dontAsk") {
+        return {
+          behavior: "deny",
+          message: "Tool use denied: no matching allow rule in settings",
+          interrupt: false,
         };
       }
 
