@@ -76,12 +76,31 @@ function containsShellOperator(str: string): boolean {
 }
 
 /**
+ * Tools that modify files. Per Claude Code docs:
+ * "Edit rules apply to all built-in tools that edit files."
+ * This means an Edit(...) rule should match Write, MultiEdit, etc.
+ */
+const FILE_EDITING_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+/**
+ * Tools that read files. Per Claude Code docs:
+ * "Claude will make a best-effort attempt to apply Read rules to all built-in tools
+ * that read files like Grep and Glob."
+ * This means a Read(...) rule should match Grep, Glob, etc.
+ */
+const FILE_READING_TOOLS = ["Read", "Grep", "Glob"];
+
+/**
  * Functions to extract the relevant argument from tool input for permission matching
  */
 const TOOL_ARG_ACCESSORS: Record<string, (input: unknown) => string | undefined> = {
   Read: (input) => (input as { file_path?: string })?.file_path,
   Edit: (input) => (input as { file_path?: string })?.file_path,
   Write: (input) => (input as { file_path?: string })?.file_path,
+  MultiEdit: (input) => (input as { file_path?: string })?.file_path,
+  NotebookEdit: (input) => (input as { notebook_path?: string })?.notebook_path,
+  Grep: (input) => (input as { path?: string })?.path,
+  Glob: (input) => (input as { path?: string })?.path,
   Bash: (input) => (input as { command?: string })?.command,
   WebFetch: (input) => (input as { url?: string })?.url,
   WebSearch: (input) => (input as { query?: string })?.query,
@@ -148,7 +167,16 @@ function matchesGlob(pattern: string, filePath: string, cwd: string): boolean {
  * Checks if a tool invocation matches a parsed permission rule
  */
 function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd: string): boolean {
-  if (rule.toolName !== toolName) {
+  // Per Claude Code docs:
+  // - "Edit rules apply to all built-in tools that edit files."
+  // - "Claude will make a best-effort attempt to apply Read rules to all built-in tools
+  //    that read files like Grep, Glob, and LS."
+  const ruleAppliesToTool =
+    rule.toolName === toolName ||
+    (rule.toolName === "Edit" && FILE_EDITING_TOOLS.includes(toolName)) ||
+    (rule.toolName === "Read" && FILE_READING_TOOLS.includes(toolName));
+
+  if (!ruleAppliesToTool) {
     return false;
   }
 
@@ -189,7 +217,7 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
     return actualArg === rule.argument;
   }
 
-  if (toolName === "Read" || toolName === "Edit" || toolName === "Write") {
+  if (FILE_READING_TOOLS.includes(toolName) || FILE_EDITING_TOOLS.includes(toolName)) {
     return matchesGlob(rule.argument, actualArg, cwd);
   }
 

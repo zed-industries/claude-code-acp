@@ -365,6 +365,77 @@ describe("SettingsManager", () => {
       expect(otherResult.decision).toBe("ask");
     });
 
+    it("should apply Read rules to Grep and Glob tools (per Claude Code docs)", async () => {
+      // Per Claude Code docs: "Claude will make a best-effort attempt to apply Read rules
+      // to all built-in tools that read files like Grep and Glob."
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          permissions: {
+            deny: ["Read(./.env*)"],
+            allow: ["Read(./src/**)"],
+          },
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      // Read rule should deny Grep on .env files
+      const grepEnvResult = settingsManager.checkPermission("Grep", {
+        path: path.join(tempDir, ".env.local"),
+      });
+      expect(grepEnvResult.decision).toBe("deny");
+
+      // Read rule should allow Grep on src files
+      const grepSrcResult = settingsManager.checkPermission("Grep", {
+        path: path.join(tempDir, "src", "index.ts"),
+      });
+      expect(grepSrcResult.decision).toBe("allow");
+
+      // Read rule should deny Glob on .env files
+      const globEnvResult = settingsManager.checkPermission("Glob", {
+        path: path.join(tempDir, ".env.production"),
+      });
+      expect(globEnvResult.decision).toBe("deny");
+
+      // Read rule should allow Glob on src files
+      const globSrcResult = settingsManager.checkPermission("Glob", {
+        path: path.join(tempDir, "src", "components", "Button.tsx"),
+      });
+      expect(globSrcResult.decision).toBe("allow");
+    });
+
+    it("should apply Read rules to mcp__acp__ prefixed reading tools", async () => {
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          permissions: {
+            deny: ["Read(./secrets/**)"],
+          },
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      // Read rule should deny mcp__acp__Grep on secrets files
+      const grepResult = settingsManager.checkPermission("mcp__acp__Grep", {
+        path: path.join(tempDir, "secrets", "api-key.txt"),
+      });
+      expect(grepResult.decision).toBe("deny");
+
+      // Read rule should deny mcp__acp__Glob on secrets files
+      const globResult = settingsManager.checkPermission("mcp__acp__Glob", {
+        path: path.join(tempDir, "secrets", "keys", "private.pem"),
+      });
+      expect(globResult.decision).toBe("deny");
+    });
+
     it("should handle home directory expansion", async () => {
       const claudeDir = path.join(tempDir, ".claude");
       await fs.promises.mkdir(claudeDir, { recursive: true });
@@ -476,6 +547,70 @@ describe("SettingsManager", () => {
         file_path: path.join(tempDir, "package.json"),
       });
       expect(otherResult.decision).toBe("ask");
+    });
+
+    it("should apply Edit rules to Write tool (per Claude Code docs)", async () => {
+      // Per Claude Code docs: "Edit rules apply to all built-in tools that edit files."
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          permissions: {
+            deny: ["Edit(./package-lock.json)"],
+            allow: ["Edit(./src/**)"],
+          },
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      // Edit rule should deny Write to package-lock.json
+      const writeLockFileResult = settingsManager.checkPermission("Write", {
+        file_path: path.join(tempDir, "package-lock.json"),
+      });
+      expect(writeLockFileResult.decision).toBe("deny");
+
+      // Edit rule should allow Write to src files
+      const writeSrcResult = settingsManager.checkPermission("Write", {
+        file_path: path.join(tempDir, "src", "index.ts"),
+      });
+      expect(writeSrcResult.decision).toBe("allow");
+
+      // Edit rule should also apply to MultiEdit
+      const multiEditLockFileResult = settingsManager.checkPermission("MultiEdit", {
+        file_path: path.join(tempDir, "package-lock.json"),
+      });
+      expect(multiEditLockFileResult.decision).toBe("deny");
+
+      // Edit rule should also apply to NotebookEdit
+      const notebookEditResult = settingsManager.checkPermission("NotebookEdit", {
+        file_path: path.join(tempDir, "package-lock.json"),
+      });
+      expect(notebookEditResult.decision).toBe("deny");
+    });
+
+    it("should apply Edit rules to mcp__acp__Write tool", async () => {
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          permissions: {
+            deny: ["Edit(./package-lock.json)"],
+          },
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      // Edit rule should deny mcp__acp__Write to package-lock.json
+      const result = settingsManager.checkPermission("mcp__acp__Write", {
+        file_path: path.join(tempDir, "package-lock.json"),
+      });
+      expect(result.decision).toBe("deny");
     });
 
     it("should handle Write tool permissions", async () => {
