@@ -586,7 +586,7 @@ describe("SettingsManager", () => {
 
       // Edit rule should also apply to NotebookEdit
       const notebookEditResult = settingsManager.checkPermission("NotebookEdit", {
-        file_path: path.join(tempDir, "package-lock.json"),
+        notebook_path: path.join(tempDir, "package-lock.json"),
       });
       expect(notebookEditResult.decision).toBe("deny");
     });
