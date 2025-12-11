@@ -11,8 +11,6 @@ import { minimatch } from "minimatch";
  * - "Read(./secrets/**)" - recursive glob
  * - "Bash(npm run lint)" - exact command prefix
  * - "Bash(npm run:*)" - command prefix with wildcard
- * - "WebFetch" - matches all WebFetch tool calls
- * - "WebFetch(https://example.com/*)" - matches specific URL patterns
  *
  * Docs: https://code.claude.com/docs/en/iam#tool-specific-permission-rules
  */
@@ -102,8 +100,6 @@ const TOOL_ARG_ACCESSORS: Record<string, (input: unknown) => string | undefined>
   Grep: (input) => (input as { path?: string })?.path,
   Glob: (input) => (input as { path?: string })?.path,
   Bash: (input) => (input as { command?: string })?.command,
-  WebFetch: (input) => (input as { url?: string })?.url,
-  WebSearch: (input) => (input as { query?: string })?.query,
 };
 
 /**
@@ -221,14 +217,7 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
     return matchesGlob(rule.argument, actualArg, cwd);
   }
 
-  if (toolName === "WebFetch" || toolName === "WebSearch") {
-    if (rule.isWildcard) {
-      return actualArg.startsWith(rule.argument);
-    }
-    return minimatch(actualArg, rule.argument, { dot: true });
-  }
-
-  return actualArg === rule.argument;
+  return false;
 }
 
 /**

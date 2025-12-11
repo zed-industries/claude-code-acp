@@ -666,29 +666,6 @@ describe("SettingsManager", () => {
     });
   });
 
-  describe("WebFetch and WebSearch", () => {
-    it("should handle WebFetch permissions", async () => {
-      const claudeDir = path.join(tempDir, ".claude");
-      await fs.promises.mkdir(claudeDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(claudeDir, "settings.json"),
-        JSON.stringify({
-          permissions: {
-            deny: ["WebFetch"],
-          },
-        }),
-      );
-
-      settingsManager = new SettingsManager(tempDir);
-      await settingsManager.initialize();
-
-      const result = settingsManager.checkPermission("WebFetch", {
-        url: "https://example.com",
-      });
-      expect(result.decision).toBe("deny");
-    });
-  });
-
   describe("getSettings", () => {
     it("should return merged settings", async () => {
       const claudeDir = path.join(tempDir, ".claude");
