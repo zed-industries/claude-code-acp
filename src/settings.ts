@@ -78,7 +78,7 @@ function containsShellOperator(str: string): boolean {
  * "Edit rules apply to all built-in tools that edit files."
  * This means an Edit(...) rule should match Write, MultiEdit, etc.
  */
-const FILE_EDITING_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+const FILE_EDITING_TOOLS = ["Edit", "Write", "NotebookEdit"];
 
 /**
  * Tools that read files. Per Claude Code docs:
@@ -95,7 +95,6 @@ const TOOL_ARG_ACCESSORS: Record<string, (input: unknown) => string | undefined>
   Read: (input) => (input as { file_path?: string })?.file_path,
   Edit: (input) => (input as { file_path?: string })?.file_path,
   Write: (input) => (input as { file_path?: string })?.file_path,
-  MultiEdit: (input) => (input as { file_path?: string })?.file_path,
   NotebookEdit: (input) => (input as { notebook_path?: string })?.notebook_path,
   Grep: (input) => (input as { path?: string })?.path,
   Glob: (input) => (input as { path?: string })?.path,
