@@ -8,9 +8,15 @@ import {
   KillShellInput,
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools.js";
 import { z } from "zod";
-import { ClaudeAcpAgent } from "./acp-agent.js";
-import { ClientCapabilities, TerminalOutputResponse } from "@agentclientprotocol/sdk";
+import { CLAUDE_CONFIG_DIR, ClaudeAcpAgent } from "./acp-agent.js";
+import {
+  ClientCapabilities,
+  ReadTextFileResponse,
+  TerminalOutputResponse,
+} from "@agentclientprotocol/sdk";
 import * as diff from "diff";
+import * as path from "node:path";
+import * as fs from "node:fs/promises";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
 
@@ -48,6 +54,62 @@ export function createMcpServer(
   sessionId: string,
   clientCapabilities: ClientCapabilities | undefined,
 ): McpServer {
+  /**
+   * This checks if a given path is related to internal agent persistence and if the agent should be allowed to read/write from here.
+   * We let the agent do normal fs operations on these paths so that it can persist its state.
+   * However, we block access to settings files for security reasons.
+   */
+  function internalPath(file_path: string) {
+    return (
+      file_path.startsWith(CLAUDE_CONFIG_DIR) &&
+      !file_path.startsWith(path.join(CLAUDE_CONFIG_DIR, "settings.json")) &&
+      !file_path.startsWith(path.join(CLAUDE_CONFIG_DIR, "session-env"))
+    );
+  }
+
+  async function readTextFile(input: FileReadInput): Promise<ReadTextFileResponse> {
+    if (internalPath(input.file_path)) {
+      const content = await fs.readFile(input.file_path, "utf8");
+
+      // eslint-disable-next-line eqeqeq
+      if (input.offset != null || input.limit != null) {
+        const lines = content.split("\n");
+
+        // Apply offset and limit if provided
+        const offset = input.offset ?? 1;
+        const limit = input.limit ?? lines.length;
+
+        // Extract the requested lines (offset is 1-based)
+        const startIndex = Math.max(0, offset - 1);
+        const endIndex = Math.min(lines.length, startIndex + limit);
+        const selectedLines = lines.slice(startIndex, endIndex);
+
+        return { content: selectedLines.join("\n") };
+      } else {
+        return { content };
+      }
+    }
+
+    return agent.readTextFile({
+      sessionId,
+      path: input.file_path,
+      line: input.offset,
+      limit: input.limit,
+    });
+  }
+
+  async function writeTextFile(input: FileWriteInput): Promise<void> {
+    if (internalPath(input.file_path)) {
+      await fs.writeFile(input.file_path, input.content, "utf8");
+    } else {
+      await agent.writeTextFile({
+        sessionId,
+        path: input.file_path,
+        content: input.content,
+      });
+    }
+  }
+
   // Create MCP server
   const server = new McpServer({ name: "acp", version: "1.0.0" }, { capabilities: { tools: {} } });
 
@@ -109,12 +171,7 @@ Usage:
             };
           }
 
-          const readResponse = await agent.readTextFile({
-            sessionId,
-            path: input.file_path,
-            line: input.offset,
-            limit: input.limit,
-          });
+          const readResponse = await readTextFile(input);
 
           if (typeof readResponse?.content !== "string") {
             throw new Error(`No file contents for ${input.file_path}.`);
@@ -206,11 +263,7 @@ Usage:
               ],
             };
           }
-          await agent.writeTextFile({
-            sessionId,
-            path: input.file_path,
-            content: input.content,
-          });
+          await writeTextFile(input);
 
           return {
             content: [],
@@ -278,9 +331,8 @@ Usage:
             };
           }
 
-          const readResponse = await agent.readTextFile({
-            sessionId,
-            path: input.file_path,
+          const readResponse = await readTextFile({
+            file_path: input.file_path,
           });
 
           if (typeof readResponse?.content !== "string") {
@@ -297,11 +349,7 @@ Usage:
 
           const patch = diff.createPatch(input.file_path, readResponse.content, newContent);
 
-          await agent.writeTextFile({
-            sessionId,
-            path: input.file_path,
-            content: newContent,
-          });
+          await writeTextFile({ file_path: input.file_path, content: newContent });
 
           return {
             content: [

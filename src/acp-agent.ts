@@ -54,6 +54,8 @@ import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/re
 import packageJson from "../package.json" with { type: "json" };
 import { randomUUID } from "node:crypto";
 
+export const CLAUDE_CONFIG_DIR = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
+
 /**
  * Logger interface for customizing logging output
  */
