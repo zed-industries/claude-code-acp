@@ -26,6 +26,7 @@ import {
   WriteTextFileRequest,
   WriteTextFileResponse,
 } from "@agentclientprotocol/sdk";
+import { SettingsManager } from "./settings.js";
 import {
   CanUseTool,
   McpServerConfig,
@@ -40,7 +41,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
-import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
+import { createMcpServer } from "./mcp-server.js";
+import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
 import {
   toolInfoFromToolUse,
   planEntries,
@@ -48,6 +50,7 @@ import {
   ClaudePlanEntry,
   registerHookCallback,
   createPostToolUseHook,
+  createPreToolUseHook,
 } from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
@@ -69,6 +72,7 @@ type Session = {
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
+  settingsManager: SettingsManager;
 };
 
 type BackgroundTerminal =
@@ -205,6 +209,11 @@ export class ClaudeAcpAgent implements Agent {
     const sessionId = userProvidedOptions?.resume || randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
+    const settingsManager = new SettingsManager(params.cwd, {
+      logger: this.logger,
+    });
+    await settingsManager.initialize();
+
     const mcpServers: Record<string, McpServerConfig> = {};
     if (Array.isArray(params.mcpServers)) {
       for (const server of params.mcpServers) {
@@ -284,6 +293,12 @@ export class ClaudeAcpAgent implements Agent {
       }),
       hooks: {
         ...userProvidedOptions?.hooks,
+        PreToolUse: [
+          ...(userProvidedOptions?.hooks?.PreToolUse || []),
+          {
+            hooks: [createPreToolUseHook(settingsManager, this.logger)],
+          },
+        ],
         PostToolUse: [
           ...(userProvidedOptions?.hooks?.PostToolUse || []),
           {
@@ -301,25 +316,25 @@ export class ClaudeAcpAgent implements Agent {
 
     if (!disableBuiltInTools) {
       if (this.clientCapabilities?.fs?.readTextFile) {
-        allowedTools.push(toolNames.read);
+        allowedTools.push(acpToolNames.read);
         disallowedTools.push("Read");
       }
       if (this.clientCapabilities?.fs?.writeTextFile) {
         disallowedTools.push("Write", "Edit");
       }
       if (this.clientCapabilities?.terminal) {
-        allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+        allowedTools.push(acpToolNames.bashOutput, acpToolNames.killShell);
         disallowedTools.push("Bash", "BashOutput", "KillShell");
       }
     } else {
       // When built-in tools are disabled, explicitly disallow all of them
       disallowedTools.push(
-        toolNames.read,
-        toolNames.write,
-        toolNames.edit,
-        toolNames.bash,
-        toolNames.bashOutput,
-        toolNames.killShell,
+        acpToolNames.read,
+        acpToolNames.write,
+        acpToolNames.edit,
+        acpToolNames.bash,
+        acpToolNames.bashOutput,
+        acpToolNames.killShell,
         "Read",
         "Write",
         "Edit",
@@ -363,6 +378,7 @@ export class ClaudeAcpAgent implements Agent {
       input: input,
       cancelled: false,
       permissionMode,
+      settingsManager,
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
