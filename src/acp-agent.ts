@@ -725,18 +725,6 @@ export class ClaudeAcpAgent implements Agent {
         };
       }
 
-      // In dontAsk mode, deny any tool use that wasn't already allowed by
-      // settings. The SDK handles this internally, but since we do custom
-      // permission checks in our pre-tool-use hook, we have to handle this
-      // manually here as well.
-      if (session.permissionMode === "dontAsk") {
-        return {
-          behavior: "deny",
-          message: "Tool use denied: no matching allow rule in settings",
-          interrupt: false,
-        };
-      }
-
       const response = await this.client.requestPermission({
         options: [
           {
