@@ -198,9 +198,9 @@ export class ClaudeAcpAgent implements Agent {
     }
 
     // Extract options from _meta if provided
-		const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options
+    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
 
-		const sessionId = userProvidedOptions?.resume || randomUUID()
+    const sessionId = userProvidedOptions?.resume || randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
     const mcpServers: Record<string, McpServerConfig> = {};
@@ -253,11 +253,11 @@ export class ClaudeAcpAgent implements Agent {
 
     const permissionMode = "default";
 
-		const extraArgs = { ...userProvidedOptions?.extraArgs }
-		if (userProvidedOptions?.resume === undefined) {
-			// Set our own session id if not resuming an existing session.
-			extraArgs["session-id"] = sessionId
-		}
+    const extraArgs = { ...userProvidedOptions?.extraArgs };
+    if (userProvidedOptions?.resume === undefined) {
+      // Set our own session id if not resuming an existing session.
+      extraArgs["session-id"] = sessionId;
+    }
 
     const options: Options = {
       systemPrompt,
