@@ -1,8 +1,21 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  BashInput,
+  FileEditInput,
+  FileReadInput,
+  FileWriteInput,
+  KillShellInput,
+} from "@anthropic-ai/claude-agent-sdk/sdk-tools.js";
 import { z } from "zod";
-import { ClaudeAcpAgent } from "./acp-agent.js";
-import { ClientCapabilities, TerminalOutputResponse } from "@agentclientprotocol/sdk";
+import { CLAUDE_CONFIG_DIR, ClaudeAcpAgent } from "./acp-agent.js";
+import {
+  ClientCapabilities,
+  ReadTextFileResponse,
+  TerminalOutputResponse,
+} from "@agentclientprotocol/sdk";
 import * as diff from "diff";
+import * as path from "node:path";
+import * as fs from "node:fs/promises";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
 
@@ -40,6 +53,62 @@ export function createMcpServer(
   sessionId: string,
   clientCapabilities: ClientCapabilities | undefined,
 ): McpServer {
+  /**
+   * This checks if a given path is related to internal agent persistence and if the agent should be allowed to read/write from here.
+   * We let the agent do normal fs operations on these paths so that it can persist its state.
+   * However, we block access to settings files for security reasons.
+   */
+  function internalPath(file_path: string) {
+    return (
+      file_path.startsWith(CLAUDE_CONFIG_DIR) &&
+      !file_path.startsWith(path.join(CLAUDE_CONFIG_DIR, "settings.json")) &&
+      !file_path.startsWith(path.join(CLAUDE_CONFIG_DIR, "session-env"))
+    );
+  }
+
+  async function readTextFile(input: FileReadInput): Promise<ReadTextFileResponse> {
+    if (internalPath(input.file_path)) {
+      const content = await fs.readFile(input.file_path, "utf8");
+
+      // eslint-disable-next-line eqeqeq
+      if (input.offset != null || input.limit != null) {
+        const lines = content.split("\n");
+
+        // Apply offset and limit if provided
+        const offset = input.offset ?? 1;
+        const limit = input.limit ?? lines.length;
+
+        // Extract the requested lines (offset is 1-based)
+        const startIndex = Math.max(0, offset - 1);
+        const endIndex = Math.min(lines.length, startIndex + limit);
+        const selectedLines = lines.slice(startIndex, endIndex);
+
+        return { content: selectedLines.join("\n") };
+      } else {
+        return { content };
+      }
+    }
+
+    return agent.readTextFile({
+      sessionId,
+      path: input.file_path,
+      line: input.offset,
+      limit: input.limit,
+    });
+  }
+
+  async function writeTextFile(input: FileWriteInput): Promise<void> {
+    if (internalPath(input.file_path)) {
+      await fs.writeFile(input.file_path, input.content, "utf8");
+    } else {
+      await agent.writeTextFile({
+        sessionId,
+        path: input.file_path,
+        content: input.content,
+      });
+    }
+  }
+
   // Create MCP server
   const server = new McpServer({ name: "acp", version: "1.0.0" }, { capabilities: { tools: {} } });
 
@@ -87,7 +156,7 @@ Usage:
           idempotentHint: false,
         },
       },
-      async (input) => {
+      async (input: FileReadInput) => {
         try {
           const session = agent.sessions[sessionId];
           if (!session) {
@@ -101,12 +170,7 @@ Usage:
             };
           }
 
-          const readResponse = await agent.readTextFile({
-            sessionId,
-            path: input.file_path,
-            line: input.offset,
-            limit: input.limit,
-          });
+          const readResponse = await readTextFile(input);
 
           if (typeof readResponse?.content !== "string") {
             throw new Error(`No file contents for ${input.file_path}.`);
@@ -117,7 +181,7 @@ Usage:
 
           // Construct informative message about what was read
           let readInfo = "";
-          if (input.offset > 1 || result.wasLimited) {
+          if ((input.offset && input.offset > 1) || result.wasLimited) {
             readInfo = "\n\n<file-read-info>";
 
             if (result.wasLimited) {
@@ -185,7 +249,7 @@ Usage:
           idempotentHint: false,
         },
       },
-      async (input) => {
+      async (input: FileWriteInput) => {
         try {
           const session = agent.sessions[sessionId];
           if (!session) {
@@ -198,11 +262,7 @@ Usage:
               ],
             };
           }
-          await agent.writeTextFile({
-            sessionId,
-            path: input.file_path,
-            content: input.content,
-          });
+          await writeTextFile(input);
 
           return {
             content: [],
@@ -246,7 +306,7 @@ Usage:
             .boolean()
             .default(false)
             .optional()
-            .describe("Replace all occurences of old_string (default false)"),
+            .describe("Replace all occurrences of old_string (default false)"),
         },
         annotations: {
           title: "Edit file",
@@ -256,7 +316,7 @@ Usage:
           idempotentHint: false,
         },
       },
-      async (input) => {
+      async (input: FileEditInput) => {
         try {
           const session = agent.sessions[sessionId];
           if (!session) {
@@ -270,9 +330,8 @@ Usage:
             };
           }
 
-          const readResponse = await agent.readTextFile({
-            sessionId,
-            path: input.file_path,
+          const readResponse = await readTextFile({
+            file_path: input.file_path,
           });
 
           if (typeof readResponse?.content !== "string") {
@@ -289,11 +348,7 @@ Usage:
 
           const patch = diff.createPatch(input.file_path, readResponse.content, newContent);
 
-          await agent.writeTextFile({
-            sessionId,
-            path: input.file_path,
-            content: newContent,
-          });
+          await writeTextFile({ file_path: input.file_path, content: newContent });
 
           return {
             content: [
@@ -327,10 +382,7 @@ Usage:
 In sessions with ${toolNames.bash} always use it instead of Bash`,
         inputSchema: {
           command: z.string().describe("The command to execute"),
-          timeout: z
-            .number()
-            .default(2 * 60 * 1000)
-            .describe(`Optional timeout in milliseconds (max ${2 * 60 * 1000})`),
+          timeout: z.number().describe(`Optional timeout in milliseconds (max ${2 * 60 * 1000})`),
           description: z.string().optional()
             .describe(`Clear, concise description of what this command does in 5-10 words, in active voice. Examples:
 Input: ls
@@ -352,7 +404,7 @@ Output: Create directory 'foo'`),
             ),
         },
       },
-      async (input, extra) => {
+      async (input: BashInput, extra) => {
         const session = agent.sessions[sessionId];
         if (!session) {
           return {
@@ -406,7 +458,7 @@ Output: Create directory 'foo'`),
         const statusPromise = Promise.race([
           handle.waitForExit().then((exitStatus) => ({ status: "exited" as const, exitStatus })),
           abortPromise.then(() => ({ status: "aborted" as const, exitStatus: null })),
-          sleep(input.timeout).then(async () => {
+          sleep(input.timeout ?? 2 * 60 * 1000).then(async () => {
             if (agent.backgroundTerminals[handle.id]?.status === "started") {
               await handle.kill();
             }
@@ -475,23 +527,23 @@ Output: Create directory 'foo'`),
       {
         title: unqualifiedToolNames.bashOutput,
         description: `- Retrieves output from a running or completed background bash shell
-- Takes a shell_id parameter identifying the shell
+- Takes a bash_id parameter identifying the shell
 - Always returns only new output since the last check
 - Returns stdout and stderr output along with shell status
 - Use this tool when you need to monitor or check the output of a long-running shell
 
-In sessions with ${toolNames.bashOutput} always use it instead of BashOutput.`,
+In sessions with ${toolNames.bashOutput} always use it for output from Bash commands instead of TaskOutput.`,
         inputSchema: {
-          shell_id: z
+          bash_id: z
             .string()
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
       async (input) => {
-        const bgTerm = agent.backgroundTerminals[input.shell_id];
+        const bgTerm = agent.backgroundTerminals[input.bash_id];
 
         if (!bgTerm) {
-          throw new Error(`Unknown shell ${input.shell_id}`);
+          throw new Error(`Unknown shell ${input.bash_id}`);
         }
 
         if (bgTerm.status === "started") {
@@ -542,7 +594,7 @@ In sessions with ${toolNames.killShell} always use it instead of KillShell.`,
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
-      async (input) => {
+      async (input: KillShellInput) => {
         const bgTerm = agent.backgroundTerminals[input.shell_id];
 
         if (!bgTerm) {
