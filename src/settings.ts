@@ -239,7 +239,7 @@ async function loadSettingsFile(filePath: string | null): Promise<ClaudeCodeSett
 /**
  * Gets the enterprise settings path based on the current platform
  */
-function getEnterpriseSettingsPath(): string | null {
+export function getManagedSettingsPath(): string {
   switch (process.platform) {
     case "darwin":
       return "/Library/Application Support/ClaudeCode/managed-settings.json";
@@ -248,7 +248,7 @@ function getEnterpriseSettingsPath(): string | null {
     case "win32":
       return "C:\\Program Files\\ClaudeCode\\managed-settings.json";
     default:
-      return null;
+      return "/etc/claude-code/managed-settings.json";
   }
 }
 
@@ -329,7 +329,7 @@ export class SettingsManager {
       loadSettingsFile(this.getUserSettingsPath()),
       loadSettingsFile(this.getProjectSettingsPath()),
       loadSettingsFile(this.getLocalSettingsPath()),
-      loadSettingsFile(getEnterpriseSettingsPath()),
+      loadSettingsFile(getManagedSettingsPath()),
     ]);
 
     this.userSettings = userSettings;
@@ -399,7 +399,7 @@ export class SettingsManager {
       this.getUserSettingsPath(),
       this.getProjectSettingsPath(),
       this.getLocalSettingsPath(),
-      getEnterpriseSettingsPath(),
+      getManagedSettingsPath(),
     ];
 
     for (const filePath of paths) {
