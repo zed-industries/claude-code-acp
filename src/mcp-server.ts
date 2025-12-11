@@ -23,14 +23,14 @@ const unqualifiedToolNames = {
   bashOutput: "BashOutput",
 };
 
-const SERVER_PREFIX = "mcp__acp__";
+export const ACP_TOOL_NAME_PREFIX = "mcp__acp__";
 export const toolNames = {
-  read: SERVER_PREFIX + unqualifiedToolNames.read,
-  edit: SERVER_PREFIX + unqualifiedToolNames.edit,
-  write: SERVER_PREFIX + unqualifiedToolNames.write,
-  bash: SERVER_PREFIX + unqualifiedToolNames.bash,
-  killShell: SERVER_PREFIX + unqualifiedToolNames.killShell,
-  bashOutput: SERVER_PREFIX + unqualifiedToolNames.bashOutput,
+  read: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.read,
+  edit: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.edit,
+  write: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.write,
+  bash: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.bash,
+  killShell: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.killShell,
+  bashOutput: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.bashOutput,
 };
 
 export const EDIT_TOOL_NAMES = [toolNames.edit, toolNames.write];

@@ -22,6 +22,28 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
+      const result = settingsManager.checkPermission("mcp__acp__Read", {
+        file_path: "/some/file.txt",
+      });
+      expect(result.decision).toBe("ask");
+    });
+
+    it("should return 'ask' for non-ACP tools (permission checks only apply to mcp__acp__* tools)", async () => {
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          permissions: {
+            deny: ["Read"],
+          },
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      // Non-ACP tools should always return 'ask' regardless of rules
       const result = settingsManager.checkPermission("Read", { file_path: "/some/file.txt" });
       expect(result.decision).toBe("ask");
     });
@@ -41,7 +63,9 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const result = settingsManager.checkPermission("Read", { file_path: "/some/file.txt" });
+      const result = settingsManager.checkPermission("mcp__acp__Read", {
+        file_path: "/some/file.txt",
+      });
       expect(result.decision).toBe("allow");
       expect(result.rule).toBe("Read");
     });
@@ -61,7 +85,7 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const result = settingsManager.checkPermission("Read", {
+      const result = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env"),
       });
       expect(result.decision).toBe("deny");
@@ -85,13 +109,13 @@ describe("SettingsManager", () => {
       await settingsManager.initialize();
 
       // .env should be denied
-      const envResult = settingsManager.checkPermission("Read", {
+      const envResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env"),
       });
       expect(envResult.decision).toBe("deny");
 
       // other files should be allowed
-      const otherResult = settingsManager.checkPermission("Read", {
+      const otherResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, "other.txt"),
       });
       expect(otherResult.decision).toBe("allow");
@@ -137,21 +161,27 @@ describe("SettingsManager", () => {
       await settingsManager.initialize();
 
       // Exact match should be allowed
-      const exactResult = settingsManager.checkPermission("Bash", { command: "npm run lint" });
+      const exactResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "npm run lint",
+      });
       expect(exactResult.decision).toBe("allow");
 
       // Command with extra arguments should NOT match (exact match only)
-      const withArgsResult = settingsManager.checkPermission("Bash", {
+      const withArgsResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "npm run lint --fix",
       });
       expect(withArgsResult.decision).toBe("ask");
 
       // Similar command should NOT match (exact match only)
-      const similarResult = settingsManager.checkPermission("Bash", { command: "npm run linting" });
+      const similarResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "npm run linting",
+      });
       expect(similarResult.decision).toBe("ask");
 
       // Different command should not match
-      const differentResult = settingsManager.checkPermission("Bash", { command: "npm run test" });
+      const differentResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "npm run test",
+      });
       expect(differentResult.decision).toBe("ask");
     });
 
@@ -172,20 +202,26 @@ describe("SettingsManager", () => {
       await settingsManager.initialize();
 
       // Any command starting with "npm run" should match (prefix matching with :*)
-      const lintResult = settingsManager.checkPermission("Bash", { command: "npm run lint" });
+      const lintResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "npm run lint",
+      });
       expect(lintResult.decision).toBe("allow");
 
-      const testResult = settingsManager.checkPermission("Bash", { command: "npm run test" });
+      const testResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "npm run test",
+      });
       expect(testResult.decision).toBe("allow");
 
       // Commands with additional args also match
-      const withArgsResult = settingsManager.checkPermission("Bash", {
+      const withArgsResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "npm run test --watch",
       });
       expect(withArgsResult.decision).toBe("allow");
 
       // Non-matching command
-      const installResult = settingsManager.checkPermission("Bash", { command: "npm install" });
+      const installResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "npm install",
+      });
       expect(installResult.decision).toBe("ask");
     });
 
@@ -205,41 +241,43 @@ describe("SettingsManager", () => {
       await settingsManager.initialize();
 
       // Normal prefix match should work
-      const normalResult = settingsManager.checkPermission("Bash", { command: "safe-cmd --flag" });
+      const normalResult = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "safe-cmd --flag",
+      });
       expect(normalResult.decision).toBe("allow");
 
       // Shell operators should NOT be allowed (per docs: Claude Code is aware of shell operators)
-      const andResult = settingsManager.checkPermission("Bash", {
+      const andResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd && malicious-cmd",
       });
       expect(andResult.decision).toBe("ask");
 
-      const orResult = settingsManager.checkPermission("Bash", {
+      const orResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd || malicious-cmd",
       });
       expect(orResult.decision).toBe("ask");
 
-      const semicolonResult = settingsManager.checkPermission("Bash", {
+      const semicolonResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd; malicious-cmd",
       });
       expect(semicolonResult.decision).toBe("ask");
 
-      const pipeResult = settingsManager.checkPermission("Bash", {
+      const pipeResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd | malicious-cmd",
       });
       expect(pipeResult.decision).toBe("ask");
 
-      const subshellResult = settingsManager.checkPermission("Bash", {
+      const subshellResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd $(malicious-cmd)",
       });
       expect(subshellResult.decision).toBe("ask");
 
-      const backtickResult = settingsManager.checkPermission("Bash", {
+      const backtickResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd `malicious-cmd`",
       });
       expect(backtickResult.decision).toBe("ask");
 
-      const newlineResult = settingsManager.checkPermission("Bash", {
+      const newlineResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "safe-cmd\nmalicious-cmd",
       });
       expect(newlineResult.decision).toBe("ask");
@@ -260,17 +298,17 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const curlResult = settingsManager.checkPermission("Bash", {
+      const curlResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "curl https://example.com",
       });
       expect(curlResult.decision).toBe("deny");
 
-      const wgetResult = settingsManager.checkPermission("Bash", {
+      const wgetResult = settingsManager.checkPermission("mcp__acp__Bash", {
         command: "wget https://example.com",
       });
       expect(wgetResult.decision).toBe("deny");
 
-      const lsResult = settingsManager.checkPermission("Bash", { command: "ls -la" });
+      const lsResult = settingsManager.checkPermission("mcp__acp__Bash", { command: "ls -la" });
       expect(lsResult.decision).toBe("ask");
     });
   });
@@ -291,12 +329,12 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const envResult = settingsManager.checkPermission("Read", {
+      const envResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env"),
       });
       expect(envResult.decision).toBe("deny");
 
-      const otherResult = settingsManager.checkPermission("Read", {
+      const otherResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".envrc"),
       });
       expect(otherResult.decision).toBe("ask");
@@ -317,18 +355,18 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const envLocalResult = settingsManager.checkPermission("Read", {
+      const envLocalResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env.local"),
       });
       expect(envLocalResult.decision).toBe("deny");
 
-      const envProdResult = settingsManager.checkPermission("Read", {
+      const envProdResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env.production"),
       });
       expect(envProdResult.decision).toBe("deny");
 
       // Plain .env should not match .env.*
-      const plainEnvResult = settingsManager.checkPermission("Read", {
+      const plainEnvResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env"),
       });
       expect(plainEnvResult.decision).toBe("ask");
@@ -349,91 +387,20 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const secretResult = settingsManager.checkPermission("Read", {
+      const secretResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, "secrets", "api-key.txt"),
       });
       expect(secretResult.decision).toBe("deny");
 
-      const nestedSecretResult = settingsManager.checkPermission("Read", {
+      const nestedSecretResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, "secrets", "deep", "nested", "key.txt"),
       });
       expect(nestedSecretResult.decision).toBe("deny");
 
-      const otherResult = settingsManager.checkPermission("Read", {
+      const otherResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, "public", "file.txt"),
       });
       expect(otherResult.decision).toBe("ask");
-    });
-
-    it("should apply Read rules to Grep and Glob tools (per Claude Code docs)", async () => {
-      // Per Claude Code docs: "Claude will make a best-effort attempt to apply Read rules
-      // to all built-in tools that read files like Grep and Glob."
-      const claudeDir = path.join(tempDir, ".claude");
-      await fs.promises.mkdir(claudeDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(claudeDir, "settings.json"),
-        JSON.stringify({
-          permissions: {
-            deny: ["Read(./.env*)"],
-            allow: ["Read(./src/**)"],
-          },
-        }),
-      );
-
-      settingsManager = new SettingsManager(tempDir);
-      await settingsManager.initialize();
-
-      // Read rule should deny Grep on .env files
-      const grepEnvResult = settingsManager.checkPermission("Grep", {
-        path: path.join(tempDir, ".env.local"),
-      });
-      expect(grepEnvResult.decision).toBe("deny");
-
-      // Read rule should allow Grep on src files
-      const grepSrcResult = settingsManager.checkPermission("Grep", {
-        path: path.join(tempDir, "src", "index.ts"),
-      });
-      expect(grepSrcResult.decision).toBe("allow");
-
-      // Read rule should deny Glob on .env files
-      const globEnvResult = settingsManager.checkPermission("Glob", {
-        path: path.join(tempDir, ".env.production"),
-      });
-      expect(globEnvResult.decision).toBe("deny");
-
-      // Read rule should allow Glob on src files
-      const globSrcResult = settingsManager.checkPermission("Glob", {
-        path: path.join(tempDir, "src", "components", "Button.tsx"),
-      });
-      expect(globSrcResult.decision).toBe("allow");
-    });
-
-    it("should apply Read rules to mcp__acp__ prefixed reading tools", async () => {
-      const claudeDir = path.join(tempDir, ".claude");
-      await fs.promises.mkdir(claudeDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(claudeDir, "settings.json"),
-        JSON.stringify({
-          permissions: {
-            deny: ["Read(./secrets/**)"],
-          },
-        }),
-      );
-
-      settingsManager = new SettingsManager(tempDir);
-      await settingsManager.initialize();
-
-      // Read rule should deny mcp__acp__Grep on secrets files
-      const grepResult = settingsManager.checkPermission("mcp__acp__Grep", {
-        path: path.join(tempDir, "secrets", "api-key.txt"),
-      });
-      expect(grepResult.decision).toBe("deny");
-
-      // Read rule should deny mcp__acp__Glob on secrets files
-      const globResult = settingsManager.checkPermission("mcp__acp__Glob", {
-        path: path.join(tempDir, "secrets", "keys", "private.pem"),
-      });
-      expect(globResult.decision).toBe("deny");
     });
 
     it("should handle home directory expansion", async () => {
@@ -451,7 +418,7 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const zshrcResult = settingsManager.checkPermission("Read", {
+      const zshrcResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(os.homedir(), ".zshrc"),
       });
       expect(zshrcResult.decision).toBe("allow");
@@ -487,13 +454,13 @@ describe("SettingsManager", () => {
       await settingsManager.initialize();
 
       // Read should be allowed in general
-      const readResult = settingsManager.checkPermission("Read", {
+      const readResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, "file.txt"),
       });
       expect(readResult.decision).toBe("allow");
 
       // But .env should be denied (local settings take precedence)
-      const envResult = settingsManager.checkPermission("Read", {
+      const envResult = settingsManager.checkPermission("mcp__acp__Read", {
         file_path: path.join(tempDir, ".env"),
       });
       expect(envResult.decision).toBe("deny");
@@ -516,7 +483,9 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const result = settingsManager.checkPermission("Bash", { command: "git push origin main" });
+      const result = settingsManager.checkPermission("mcp__acp__Bash", {
+        command: "git push origin main",
+      });
       expect(result.decision).toBe("ask");
       expect(result.rule).toBe("Bash(git push:*)");
     });
@@ -538,105 +507,15 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      const lockFileResult = settingsManager.checkPermission("Edit", {
+      const lockFileResult = settingsManager.checkPermission("mcp__acp__Edit", {
         file_path: path.join(tempDir, "package-lock.json"),
       });
       expect(lockFileResult.decision).toBe("deny");
 
-      const otherResult = settingsManager.checkPermission("Edit", {
+      const otherResult = settingsManager.checkPermission("mcp__acp__Edit", {
         file_path: path.join(tempDir, "package.json"),
       });
       expect(otherResult.decision).toBe("ask");
-    });
-
-    it("should apply Edit rules to Write tool (per Claude Code docs)", async () => {
-      // Per Claude Code docs: "Edit rules apply to all built-in tools that edit files."
-      const claudeDir = path.join(tempDir, ".claude");
-      await fs.promises.mkdir(claudeDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(claudeDir, "settings.json"),
-        JSON.stringify({
-          permissions: {
-            deny: ["Edit(./package-lock.json)"],
-            allow: ["Edit(./src/**)"],
-          },
-        }),
-      );
-
-      settingsManager = new SettingsManager(tempDir);
-      await settingsManager.initialize();
-
-      // Edit rule should deny Write to package-lock.json
-      const writeLockFileResult = settingsManager.checkPermission("Write", {
-        file_path: path.join(tempDir, "package-lock.json"),
-      });
-      expect(writeLockFileResult.decision).toBe("deny");
-
-      // Edit rule should allow Write to src files
-      const writeSrcResult = settingsManager.checkPermission("Write", {
-        file_path: path.join(tempDir, "src", "index.ts"),
-      });
-      expect(writeSrcResult.decision).toBe("allow");
-
-      // Edit rule should also apply to MultiEdit
-      const multiEditLockFileResult = settingsManager.checkPermission("MultiEdit", {
-        file_path: path.join(tempDir, "package-lock.json"),
-      });
-      expect(multiEditLockFileResult.decision).toBe("deny");
-
-      // Edit rule should also apply to NotebookEdit
-      const notebookEditResult = settingsManager.checkPermission("NotebookEdit", {
-        notebook_path: path.join(tempDir, "package-lock.json"),
-      });
-      expect(notebookEditResult.decision).toBe("deny");
-    });
-
-    it("should apply Edit rules to mcp__acp__Write tool", async () => {
-      const claudeDir = path.join(tempDir, ".claude");
-      await fs.promises.mkdir(claudeDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(claudeDir, "settings.json"),
-        JSON.stringify({
-          permissions: {
-            deny: ["Edit(./package-lock.json)"],
-          },
-        }),
-      );
-
-      settingsManager = new SettingsManager(tempDir);
-      await settingsManager.initialize();
-
-      // Edit rule should deny mcp__acp__Write to package-lock.json
-      const result = settingsManager.checkPermission("mcp__acp__Write", {
-        file_path: path.join(tempDir, "package-lock.json"),
-      });
-      expect(result.decision).toBe("deny");
-    });
-
-    it("should handle Write tool permissions", async () => {
-      const claudeDir = path.join(tempDir, ".claude");
-      await fs.promises.mkdir(claudeDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(claudeDir, "settings.json"),
-        JSON.stringify({
-          permissions: {
-            allow: ["Write(./src/**)"],
-          },
-        }),
-      );
-
-      settingsManager = new SettingsManager(tempDir);
-      await settingsManager.initialize();
-
-      const srcResult = settingsManager.checkPermission("Write", {
-        file_path: path.join(tempDir, "src", "index.ts"),
-      });
-      expect(srcResult.decision).toBe("allow");
-
-      const rootResult = settingsManager.checkPermission("Write", {
-        file_path: path.join(tempDir, "index.ts"),
-      });
-      expect(rootResult.decision).toBe("ask");
     });
 
     it("should handle mcp__acp__Edit and mcp__acp__Write tool names", async () => {
@@ -710,7 +589,7 @@ describe("SettingsManager", () => {
       settingsManager = new SettingsManager(tempDir);
       await settingsManager.initialize();
 
-      let result = settingsManager.checkPermission("Read", { file_path: "/file.txt" });
+      let result = settingsManager.checkPermission("mcp__acp__Read", { file_path: "/file.txt" });
       expect(result.decision).toBe("allow");
 
       // Create a new temp directory with different settings
@@ -728,7 +607,7 @@ describe("SettingsManager", () => {
 
       await settingsManager.setCwd(tempDir2);
 
-      result = settingsManager.checkPermission("Read", { file_path: "/file.txt" });
+      result = settingsManager.checkPermission("mcp__acp__Read", { file_path: "/file.txt" });
       expect(result.decision).toBe("deny");
 
       // Cleanup second temp dir

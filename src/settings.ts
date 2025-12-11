@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { minimatch } from "minimatch";
+import { ACP_TOOL_NAME_PREFIX, toolNames } from "./mcp-server.js";
 
 /**
  * Permission rule format examples:
@@ -42,16 +43,14 @@ interface ParsedRule {
   isWildcard?: boolean;
 }
 
-const ACP_PREFIX = "mcp__acp__";
-
 /**
  * Maps ACP tool names (e.g., mcp__acp__Read) to Claude Code tool names (e.g., Read)
  */
-function getClaudeCodeToolName(acpToolName: string): string {
-  if (acpToolName.startsWith(ACP_PREFIX)) {
-    return acpToolName.slice(ACP_PREFIX.length);
+function getAcpToolName(acpToolName: string): string | undefined {
+  if (!acpToolName.startsWith(ACP_TOOL_NAME_PREFIX)) {
+    return undefined;
   }
-  return acpToolName;
+  return acpToolName.slice(ACP_TOOL_NAME_PREFIX.length);
 }
 
 /**
@@ -73,12 +72,12 @@ function containsShellOperator(str: string): boolean {
   return SHELL_OPERATORS.some((op) => str.includes(op));
 }
 
-/**
+/*
  * Tools that modify files. Per Claude Code docs:
  * "Edit rules apply to all built-in tools that edit files."
  * This means an Edit(...) rule should match Write, MultiEdit, etc.
  */
-const FILE_EDITING_TOOLS = ["Edit", "Write", "NotebookEdit"];
+const FILE_EDITING_TOOLS = [toolNames.edit, toolNames.write];
 
 /**
  * Tools that read files. Per Claude Code docs:
@@ -86,19 +85,16 @@ const FILE_EDITING_TOOLS = ["Edit", "Write", "NotebookEdit"];
  * that read files like Grep and Glob."
  * This means a Read(...) rule should match Grep, Glob, etc.
  */
-const FILE_READING_TOOLS = ["Read", "Grep", "Glob"];
+const FILE_READING_TOOLS = [toolNames.read];
 
 /**
  * Functions to extract the relevant argument from tool input for permission matching
  */
 const TOOL_ARG_ACCESSORS: Record<string, (input: unknown) => string | undefined> = {
-  Read: (input) => (input as { file_path?: string })?.file_path,
-  Edit: (input) => (input as { file_path?: string })?.file_path,
-  Write: (input) => (input as { file_path?: string })?.file_path,
-  NotebookEdit: (input) => (input as { notebook_path?: string })?.notebook_path,
-  Grep: (input) => (input as { path?: string })?.path,
-  Glob: (input) => (input as { path?: string })?.path,
-  Bash: (input) => (input as { command?: string })?.command,
+  mcp__acp__Read: (input) => (input as { file_path?: string })?.file_path,
+  mcp__acp__Edit: (input) => (input as { file_path?: string })?.file_path,
+  mcp__acp__Write: (input) => (input as { file_path?: string })?.file_path,
+  mcp__acp__Bash: (input) => (input as { command?: string })?.command,
 };
 
 /**
@@ -167,7 +163,7 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
   // - "Claude will make a best-effort attempt to apply Read rules to all built-in tools
   //    that read files like Grep, Glob, and LS."
   const ruleAppliesToTool =
-    rule.toolName === toolName ||
+    rule.toolName === "Bash" ||
     (rule.toolName === "Edit" && FILE_EDITING_TOOLS.includes(toolName)) ||
     (rule.toolName === "Read" && FILE_READING_TOOLS.includes(toolName));
 
@@ -189,7 +185,7 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
     return false;
   }
 
-  if (toolName === "Bash") {
+  if (toolName === toolNames.bash) {
     // Per Claude Code docs: https://code.claude.com/docs/en/iam#tool-specific-permission-rules
     // - Bash(npm run build) matches the EXACT command "npm run build"
     // - Bash(npm run test:*) matches commands STARTING WITH "npm run test"
@@ -212,11 +208,8 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
     return actualArg === rule.argument;
   }
 
-  if (FILE_READING_TOOLS.includes(toolName) || FILE_EDITING_TOOLS.includes(toolName)) {
-    return matchesGlob(rule.argument, actualArg, cwd);
-  }
-
-  return false;
+  // For file-based tools (Read, Edit, Write), use glob matching
+  return matchesGlob(rule.argument, actualArg, cwd);
 }
 
 /**
@@ -454,7 +447,10 @@ export class SettingsManager {
    * @returns The permission decision and matching rule info
    */
   checkPermission(toolName: string, toolInput: unknown): PermissionCheckResult {
-    const claudeToolName = getClaudeCodeToolName(toolName);
+    if (!toolName.startsWith(ACP_TOOL_NAME_PREFIX)) {
+      return { decision: "ask" };
+    }
+
     const permissions = this.mergedSettings.permissions;
 
     if (!permissions) {
@@ -464,7 +460,7 @@ export class SettingsManager {
     // Check deny rules first (highest priority)
     for (const rule of permissions.deny || []) {
       const parsed = parseRule(rule);
-      if (matchesRule(parsed, claudeToolName, toolInput, this.cwd)) {
+      if (matchesRule(parsed, toolName, toolInput, this.cwd)) {
         return { decision: "deny", rule, source: "deny" };
       }
     }
@@ -472,7 +468,7 @@ export class SettingsManager {
     // Check allow rules
     for (const rule of permissions.allow || []) {
       const parsed = parseRule(rule);
-      if (matchesRule(parsed, claudeToolName, toolInput, this.cwd)) {
+      if (matchesRule(parsed, toolName, toolInput, this.cwd)) {
         return { decision: "allow", rule, source: "allow" };
       }
     }
@@ -480,7 +476,7 @@ export class SettingsManager {
     // Check ask rules
     for (const rule of permissions.ask || []) {
       const parsed = parseRule(rule);
-      if (matchesRule(parsed, claudeToolName, toolInput, this.cwd)) {
+      if (matchesRule(parsed, toolName, toolInput, this.cwd)) {
         return { decision: "ask", rule, source: "ask" };
       }
     }
