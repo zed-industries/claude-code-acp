@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { minimatch } from "minimatch";
 import { ACP_TOOL_NAME_PREFIX, acpToolNames } from "./tools.js";
+import { CLAUDE_CONFIG_DIR } from "./acp-agent.js";
 
 /**
  * Permission rule format examples:
@@ -41,16 +42,6 @@ interface ParsedRule {
   toolName: string;
   argument?: string;
   isWildcard?: boolean;
-}
-
-/**
- * Maps ACP tool names (e.g., mcp__acp__Read) to Claude Code tool names (e.g., Read)
- */
-function getAcpToolName(acpToolName: string): string | undefined {
-  if (!acpToolName.startsWith(ACP_TOOL_NAME_PREFIX)) {
-    return undefined;
-  }
-  return acpToolName.slice(ACP_TOOL_NAME_PREFIX.length);
 }
 
 /**
@@ -296,7 +287,7 @@ export class SettingsManager {
    * Returns the path to the user settings file
    */
   private getUserSettingsPath(): string {
-    return path.join(os.homedir(), ".claude", "settings.json");
+    return path.join(CLAUDE_CONFIG_DIR, "settings.json");
   }
 
   /**
