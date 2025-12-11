@@ -197,7 +197,10 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    const sessionId = randomUUID();
+    // Extract options from _meta if provided
+    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+
+    const sessionId = userProvidedOptions?.resume || randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
     const mcpServers: Record<string, McpServerConfig> = {};
@@ -250,8 +253,11 @@ export class ClaudeAcpAgent implements Agent {
 
     const permissionMode = "default";
 
-    // Extract options from _meta if provided
-    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+    const extraArgs = { ...userProvidedOptions?.extraArgs };
+    if (userProvidedOptions?.resume === undefined) {
+      // Set our own session id if not resuming an existing session.
+      extraArgs["session-id"] = sessionId;
+    }
 
     const options: Options = {
       systemPrompt,
@@ -262,8 +268,7 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
-      // Set our own session id
-      extraArgs: { ...userProvidedOptions?.extraArgs, "session-id": sessionId },
+      extraArgs,
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,
