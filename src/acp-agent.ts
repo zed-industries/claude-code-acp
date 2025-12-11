@@ -57,6 +57,8 @@ import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/re
 import packageJson from "../package.json" with { type: "json" };
 import { randomUUID } from "node:crypto";
 
+export const CLAUDE_CONFIG_DIR = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
+
 /**
  * Logger interface for customizing logging output
  */
@@ -201,7 +203,10 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    const sessionId = randomUUID();
+    // Extract options from _meta if provided
+    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+
+    const sessionId = userProvidedOptions?.resume || randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
     const settingsManager = new SettingsManager(params.cwd, {
@@ -259,8 +264,11 @@ export class ClaudeAcpAgent implements Agent {
 
     const permissionMode = "default";
 
-    // Extract options from _meta if provided
-    const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+    const extraArgs = { ...userProvidedOptions?.extraArgs };
+    if (userProvidedOptions?.resume === undefined) {
+      // Set our own session id if not resuming an existing session.
+      extraArgs["session-id"] = sessionId;
+    }
 
     const options: Options = {
       systemPrompt,
@@ -271,8 +279,7 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
-      // Set our own session id
-      extraArgs: { ...userProvidedOptions?.extraArgs, "session-id": sessionId },
+      extraArgs,
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,
@@ -650,7 +657,7 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   canUseTool(sessionId: string): CanUseTool {
-    return async (toolName, toolInput, { suggestions, toolUseID }) => {
+    return async (toolName, toolInput, { signal, suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
       if (!session) {
         return {
@@ -683,6 +690,9 @@ export class ClaudeAcpAgent implements Agent {
           },
         });
 
+        if (signal.aborted || response.outcome?.outcome === "cancelled") {
+          throw new Error("Tool use aborted");
+        }
         if (
           response.outcome?.outcome === "selected" &&
           (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
@@ -746,6 +756,9 @@ export class ClaudeAcpAgent implements Agent {
           ).title,
         },
       });
+      if (signal.aborted || response.outcome?.outcome === "cancelled") {
+        throw new Error("Tool use aborted");
+      }
       if (
         response.outcome?.outcome === "selected" &&
         (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
