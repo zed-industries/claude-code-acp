@@ -41,7 +41,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
-import { createMcpServer, EDIT_TOOL_NAMES, toolNames } from "./mcp-server.js";
+import { createMcpServer } from "./mcp-server.js";
+import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
 import {
   toolInfoFromToolUse,
   planEntries,
@@ -308,25 +309,25 @@ export class ClaudeAcpAgent implements Agent {
 
     if (!disableBuiltInTools) {
       if (this.clientCapabilities?.fs?.readTextFile) {
-        allowedTools.push(toolNames.read);
+        allowedTools.push(acpToolNames.read);
         disallowedTools.push("Read");
       }
       if (this.clientCapabilities?.fs?.writeTextFile) {
         disallowedTools.push("Write", "Edit");
       }
       if (this.clientCapabilities?.terminal) {
-        allowedTools.push(toolNames.bashOutput, toolNames.killShell);
+        allowedTools.push(acpToolNames.bashOutput, acpToolNames.killShell);
         disallowedTools.push("Bash", "BashOutput", "KillShell");
       }
     } else {
       // When built-in tools are disabled, explicitly disallow all of them
       disallowedTools.push(
-        toolNames.read,
-        toolNames.write,
-        toolNames.edit,
-        toolNames.bash,
-        toolNames.bashOutput,
-        toolNames.killShell,
+        acpToolNames.read,
+        acpToolNames.write,
+        acpToolNames.edit,
+        acpToolNames.bash,
+        acpToolNames.bashOutput,
+        acpToolNames.killShell,
         "Read",
         "Write",
         "Edit",

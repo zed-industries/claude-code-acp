@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { minimatch } from "minimatch";
-import { ACP_TOOL_NAME_PREFIX, toolNames } from "./mcp-server.js";
+import { ACP_TOOL_NAME_PREFIX, acpToolNames } from "./tools.js";
 
 /**
  * Permission rule format examples:
@@ -77,7 +77,7 @@ function containsShellOperator(str: string): boolean {
  * "Edit rules apply to all built-in tools that edit files."
  * This means an Edit(...) rule should match Write, MultiEdit, etc.
  */
-const FILE_EDITING_TOOLS = [toolNames.edit, toolNames.write];
+const FILE_EDITING_TOOLS = [acpToolNames.edit, acpToolNames.write];
 
 /**
  * Tools that read files. Per Claude Code docs:
@@ -85,7 +85,7 @@ const FILE_EDITING_TOOLS = [toolNames.edit, toolNames.write];
  * that read files like Grep and Glob."
  * This means a Read(...) rule should match Grep, Glob, etc.
  */
-const FILE_READING_TOOLS = [toolNames.read];
+const FILE_READING_TOOLS = [acpToolNames.read];
 
 /**
  * Functions to extract the relevant argument from tool input for permission matching
@@ -185,7 +185,7 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
     return false;
   }
 
-  if (toolName === toolNames.bash) {
+  if (toolName === acpToolNames.bash) {
     // Per Claude Code docs: https://code.claude.com/docs/en/iam#tool-specific-permission-rules
     // - Bash(npm run build) matches the EXACT command "npm run build"
     // - Bash(npm run test:*) matches commands STARTING WITH "npm run test"

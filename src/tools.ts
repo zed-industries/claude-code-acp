@@ -1,6 +1,28 @@
 import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
-import { replaceAndCalculateLocation, SYSTEM_REMINDER, toolNames } from "./mcp-server.js";
+import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
 import { ToolResultBlockParam, WebSearchToolResultBlockParam } from "@anthropic-ai/sdk/resources";
+
+const acpUnqualifiedToolNames = {
+  read: "Read",
+  edit: "Edit",
+  write: "Write",
+  bash: "Bash",
+  killShell: "KillShell",
+  bashOutput: "BashOutput",
+};
+
+export const ACP_TOOL_NAME_PREFIX = "mcp__acp__";
+export const acpToolNames = {
+  read: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.read,
+  edit: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.edit,
+  write: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.write,
+  bash: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.bash,
+  killShell: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.killShell,
+  bashOutput: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.bashOutput,
+};
+
+export const EDIT_TOOL_NAMES = [acpToolNames.edit, acpToolNames.write];
+
 import {
   BetaBashCodeExecutionToolResultBlockParam,
   BetaCodeExecutionToolResultBlockParam,
@@ -76,7 +98,7 @@ export function toolInfoFromToolUse(
       };
 
     case "Bash":
-    case toolNames.bash:
+    case acpToolNames.bash:
       return {
         title: input?.command ? "`" + input.command.replaceAll("`", "\\`") + "`" : "Terminal",
         kind: "execute",
@@ -92,7 +114,7 @@ export function toolInfoFromToolUse(
       };
 
     case "BashOutput":
-    case toolNames.bashOutput:
+    case acpToolNames.bashOutput:
       return {
         title: "Tail Logs",
         kind: "execute",
@@ -100,14 +122,14 @@ export function toolInfoFromToolUse(
       };
 
     case "KillShell":
-    case toolNames.killShell:
+    case acpToolNames.killShell:
       return {
         title: "Kill Process",
         kind: "execute",
         content: [],
       };
 
-    case toolNames.read: {
+    case acpToolNames.read: {
       let limit = "";
       if (input.limit) {
         limit =
@@ -153,7 +175,7 @@ export function toolInfoFromToolUse(
         locations: [],
       };
 
-    case toolNames.edit:
+    case acpToolNames.edit:
     case "Edit": {
       const path = input?.file_path ?? input?.file_path;
       let oldText = input.old_string ?? null;
@@ -199,7 +221,7 @@ export function toolInfoFromToolUse(
       };
     }
 
-    case toolNames.write: {
+    case acpToolNames.write: {
       let content: ToolCallContent[] = [];
       if (input && input.file_path) {
         content = [
@@ -421,7 +443,7 @@ export function toolUpdateFromToolResult(
 ): ToolUpdate {
   switch (toolUse?.name) {
     case "Read":
-    case toolNames.read:
+    case acpToolNames.read:
       if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
         return {
           content: toolResult.content.map((content: any) => ({
@@ -450,11 +472,11 @@ export function toolUpdateFromToolResult(
       }
       return {};
 
-    case toolNames.bash:
+    case acpToolNames.bash:
     case "edit":
     case "Edit":
-    case toolNames.edit:
-    case toolNames.write:
+    case acpToolNames.edit:
+    case acpToolNames.write:
     case "Write": {
       if (
         "is_error" in toolResult &&

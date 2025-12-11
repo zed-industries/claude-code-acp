@@ -5,6 +5,7 @@ import { ClientCapabilities, TerminalOutputResponse } from "@agentclientprotocol
 import * as diff from "diff";
 
 import { sleep, unreachable, extractLinesWithByteLimit } from "./utils.js";
+import { acpToolNames } from "./tools.js";
 
 export const SYSTEM_REMINDER = `
 
@@ -23,18 +24,6 @@ const unqualifiedToolNames = {
   bashOutput: "BashOutput",
 };
 
-export const ACP_TOOL_NAME_PREFIX = "mcp__acp__";
-export const toolNames = {
-  read: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.read,
-  edit: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.edit,
-  write: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.write,
-  bash: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.bash,
-  killShell: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.killShell,
-  bashOutput: ACP_TOOL_NAME_PREFIX + unqualifiedToolNames.bashOutput,
-};
-
-export const EDIT_TOOL_NAMES = [toolNames.edit, toolNames.write];
-
 export function createMcpServer(
   agent: ClaudeAcpAgent,
   sessionId: string,
@@ -50,7 +39,7 @@ export function createMcpServer(
         title: unqualifiedToolNames.read,
         description: `Reads the content of the given file in the project.
 
-In sessions with ${toolNames.read} always use it instead of Read as it contains the most up-to-date contents.
+In sessions with ${acpToolNames.read} always use it instead of Read as it contains the most up-to-date contents.
 
 Reads a file from the local filesystem. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 
@@ -60,7 +49,7 @@ Usage:
 - You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
 - Any files larger than ${defaults.maxFileSize} bytes will be truncated
 - This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.
-- This tool can only read files, not directories. To read a directory, use an ls command via the ${toolNames.bash} tool.
+- This tool can only read files, not directories. To read a directory, use an ls command via the ${acpToolNames.bash} tool.
 - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.`,
         inputSchema: {
           file_path: z.string().describe("The absolute path to the file to read"),
@@ -162,12 +151,12 @@ Usage:
         title: unqualifiedToolNames.write,
         description: `Writes a file to the local filesystem..
 
-In sessions with ${toolNames.write} always use it instead of Write as it will
+In sessions with ${acpToolNames.write} always use it instead of Write as it will
 allow the user to conveniently review changes.
 
 Usage:
 - This tool will overwrite the existing file if there is one at the provided path.
-- If this is an existing file, you MUST use the ${toolNames.read} tool first to read the file's contents. This tool will fail if you did not read the file first.
+- If this is an existing file, you MUST use the ${acpToolNames.read} tool first to read the file's contents. This tool will fail if you did not read the file first.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.`,
@@ -226,11 +215,11 @@ Usage:
         title: unqualifiedToolNames.edit,
         description: `Performs exact string replacements in files.
 
-In sessions with ${toolNames.edit} always use it instead of Edit as it will
+In sessions with ${acpToolNames.edit} always use it instead of Edit as it will
 allow the user to conveniently review changes.
 
 Usage:
-- You must use your \`${toolNames.read}\` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- You must use your \`${acpToolNames.read}\` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
 - When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
@@ -324,7 +313,7 @@ Usage:
         title: unqualifiedToolNames.bash,
         description: `Executes a bash command
 
-In sessions with ${toolNames.bash} always use it instead of Bash`,
+In sessions with ${acpToolNames.bash} always use it instead of Bash`,
         inputSchema: {
           command: z.string().describe("The command to execute"),
           timeout: z
@@ -348,7 +337,7 @@ Output: Create directory 'foo'`),
             .boolean()
             .default(false)
             .describe(
-              `Set to true to run this command in the background. The tool returns an \`id\` that can be used with the \`${toolNames.bashOutput}\` tool to retrieve the current output, or the \`${toolNames.killShell}\` tool to stop it early.`,
+              `Set to true to run this command in the background. The tool returns an \`id\` that can be used with the \`${acpToolNames.bashOutput}\` tool to retrieve the current output, or the \`${acpToolNames.killShell}\` tool to stop it early.`,
             ),
         },
       },
@@ -480,11 +469,13 @@ Output: Create directory 'foo'`),
 - Returns stdout and stderr output along with shell status
 - Use this tool when you need to monitor or check the output of a long-running shell
 
-In sessions with ${toolNames.bashOutput} always use it instead of BashOutput.`,
+In sessions with ${acpToolNames.bashOutput} always use it instead of BashOutput.`,
         inputSchema: {
           shell_id: z
             .string()
-            .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
+            .describe(
+              `The id of the background bash command as returned by \`${acpToolNames.bash}\``,
+            ),
         },
       },
       async (input) => {
@@ -535,11 +526,13 @@ In sessions with ${toolNames.bashOutput} always use it instead of BashOutput.`,
 - Returns a success or failure status
 - Use this tool when you need to terminate a long-running shell
 
-In sessions with ${toolNames.killShell} always use it instead of KillShell.`,
+In sessions with ${acpToolNames.killShell} always use it instead of KillShell.`,
         inputSchema: {
           shell_id: z
             .string()
-            .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
+            .describe(
+              `The id of the background bash command as returned by \`${acpToolNames.bash}\``,
+            ),
         },
       },
       async (input) => {
