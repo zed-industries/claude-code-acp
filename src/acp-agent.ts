@@ -203,7 +203,10 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    return await this.createSession(params, {});
+    return await this.createSession(params, {
+      // Revisit these meta values once we support resume
+      resume: (params._meta as NewSessionMeta | undefined)?.claudeCode?.options?.resume,
+    });
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<void> {
@@ -440,7 +443,7 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   canUseTool(sessionId: string): CanUseTool {
-    return async (toolName, toolInput, { suggestions, toolUseID }) => {
+    return async (toolName, toolInput, { signal, suggestions, toolUseID }) => {
       const session = this.sessions[sessionId];
       if (!session) {
         return {
@@ -473,6 +476,9 @@ export class ClaudeAcpAgent implements Agent {
           },
         });
 
+        if (signal.aborted || response.outcome?.outcome === "cancelled") {
+          throw new Error("Tool use aborted");
+        }
         if (
           response.outcome?.outcome === "selected" &&
           (response.outcome.optionId === "default" || response.outcome.optionId === "acceptEdits")
@@ -536,6 +542,9 @@ export class ClaudeAcpAgent implements Agent {
           ).title,
         },
       });
+      if (signal.aborted || response.outcome?.outcome === "cancelled") {
+        throw new Error("Tool use aborted");
+      }
       if (
         response.outcome?.outcome === "selected" &&
         (response.outcome.optionId === "allow" || response.outcome.optionId === "allow_always")
@@ -573,7 +582,7 @@ export class ClaudeAcpAgent implements Agent {
     params: NewSessionRequest,
     creationOpts: { resume?: string; forkSession?: boolean } = {},
   ): Promise<NewSessionResponse> {
-    const sessionId = randomUUID();
+    const sessionId = creationOpts.resume ?? randomUUID();
     const input = new Pushable<SDKUserMessage>();
 
     const mcpServers: Record<string, McpServerConfig> = {};
@@ -628,6 +637,12 @@ export class ClaudeAcpAgent implements Agent {
 
     // Extract options from _meta if provided
     const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+    const extraArgs = { ...userProvidedOptions?.extraArgs };
+    if (creationOpts?.resume === undefined) {
+      // Set our own session id if not resuming an existing session.
+      // TODO: find a way to make this work for fork
+      extraArgs["session-id"] = sessionId;
+    }
 
     const options: Options = {
       systemPrompt,
@@ -638,9 +653,7 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
-      // Set our own session id
-      // TODO: find a way to make this work for fork
-      extraArgs: { ...userProvidedOptions?.extraArgs, ...(creationOpts.resume ? {} : {"session-id": sessionId }) },
+      extraArgs,
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: !IS_ROOT,

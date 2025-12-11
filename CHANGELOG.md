@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.2
+
+- Fix duplicate tool use IDs error
+
 ## 0.12.1
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.61
