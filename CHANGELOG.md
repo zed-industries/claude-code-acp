@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.3
+
+- Allow agent to write plans and todos to its config directory
+- Fix experimental resume ids
+
 ## 0.12.2
 
 - Fix duplicate tool use IDs error
