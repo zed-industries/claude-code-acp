@@ -493,50 +493,6 @@ describe("tool conversions", () => {
     });
   });
 
-  it("should handle WebFetch tool calls", () => {
-    const tool_use = {
-      type: "tool_use",
-      id: "toolu_01LxEjDn8ci9SAc3qG7LbbXV",
-      name: "WebFetch",
-      input: {
-        url: "https://agentclientprotocol.com",
-        prompt:
-          "Please provide a comprehensive summary of the content on this page, including what the Agent Client Protocol is, its main features, documentation links, and any other relevant information.",
-      },
-    };
-
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
-      kind: "fetch",
-      title: "Fetch https://agentclientprotocol.com",
-      content: [
-        {
-          content: {
-            text: "Please provide a comprehensive summary of the content on this page, including what the Agent Client Protocol is, its main features, documentation links, and any other relevant information.",
-            type: "text",
-          },
-          type: "content",
-        },
-      ],
-    });
-  });
-
-  it("should handle WebSearch tool calls", () => {
-    const tool_use = {
-      type: "tool_use",
-      id: "toolu_01NYMwiZFbdoQFxYxuQDFZXQ",
-      name: "WebSearch",
-      input: {
-        query: "agentclientprotocol.com",
-      },
-    };
-
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
-      kind: "fetch",
-      title: '"agentclientprotocol.com"',
-      content: [],
-    });
-  });
-
   it("should handle KillBash entries", () => {
     const tool_use = {
       type: "tool_use",

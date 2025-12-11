@@ -1,6 +1,28 @@
 import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
-import { replaceAndCalculateLocation, SYSTEM_REMINDER, toolNames } from "./mcp-server.js";
+import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
 import { ToolResultBlockParam, WebSearchToolResultBlockParam } from "@anthropic-ai/sdk/resources";
+
+const acpUnqualifiedToolNames = {
+  read: "Read",
+  edit: "Edit",
+  write: "Write",
+  bash: "Bash",
+  killShell: "KillShell",
+  bashOutput: "BashOutput",
+};
+
+export const ACP_TOOL_NAME_PREFIX = "mcp__acp__";
+export const acpToolNames = {
+  read: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.read,
+  edit: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.edit,
+  write: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.write,
+  bash: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.bash,
+  killShell: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.killShell,
+  bashOutput: ACP_TOOL_NAME_PREFIX + acpUnqualifiedToolNames.bashOutput,
+};
+
+export const EDIT_TOOL_NAMES = [acpToolNames.edit, acpToolNames.write];
+
 import {
   BetaBashCodeExecutionToolResultBlockParam,
   BetaCodeExecutionToolResultBlockParam,
@@ -12,6 +34,7 @@ import {
 } from "@anthropic-ai/sdk/resources/beta.mjs";
 import { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { Logger } from "./acp-agent.js";
+import { SettingsManager } from "./settings.js";
 
 interface ToolInfo {
   title: string;
@@ -75,7 +98,7 @@ export function toolInfoFromToolUse(
       };
 
     case "Bash":
-    case toolNames.bash:
+    case acpToolNames.bash:
       return {
         title: input?.command ? "`" + input.command.replaceAll("`", "\\`") + "`" : "Terminal",
         kind: "execute",
@@ -91,7 +114,7 @@ export function toolInfoFromToolUse(
       };
 
     case "BashOutput":
-    case toolNames.bashOutput:
+    case acpToolNames.bashOutput:
       return {
         title: "Tail Logs",
         kind: "execute",
@@ -99,14 +122,14 @@ export function toolInfoFromToolUse(
       };
 
     case "KillShell":
-    case toolNames.killShell:
+    case acpToolNames.killShell:
       return {
         title: "Kill Process",
         kind: "execute",
         content: [],
       };
 
-    case toolNames.read: {
+    case acpToolNames.read: {
       let limit = "";
       if (input.limit) {
         limit =
@@ -152,7 +175,7 @@ export function toolInfoFromToolUse(
         locations: [],
       };
 
-    case toolNames.edit:
+    case acpToolNames.edit:
     case "Edit": {
       const path = input?.file_path ?? input?.file_path;
       let oldText = input.old_string ?? null;
@@ -198,7 +221,7 @@ export function toolInfoFromToolUse(
       };
     }
 
-    case toolNames.write: {
+    case acpToolNames.write: {
       let content: ToolCallContent[] = [];
       if (input && input.file_path) {
         content = [
@@ -420,7 +443,7 @@ export function toolUpdateFromToolResult(
 ): ToolUpdate {
   switch (toolUse?.name) {
     case "Read":
-    case toolNames.read:
+    case acpToolNames.read:
       if (Array.isArray(toolResult.content) && toolResult.content.length > 0) {
         return {
           content: toolResult.content.map((content: any) => ({
@@ -449,11 +472,11 @@ export function toolUpdateFromToolResult(
       }
       return {};
 
-    case toolNames.bash:
+    case acpToolNames.bash:
     case "edit":
     case "Edit":
-    case toolNames.edit:
-    case toolNames.write:
+    case acpToolNames.edit:
+    case acpToolNames.write:
     case "Write": {
       if (
         "is_error" in toolResult &&
@@ -595,4 +618,55 @@ export const createPostToolUseHook =
       }
     }
     return { continue: true };
+  };
+
+/**
+ * Creates a PreToolUse hook that checks permissions using the SettingsManager.
+ * This runs before the SDK's built-in permission rules, allowing us to enforce
+ * our own permission settings for ACP-prefixed tools.
+ */
+export const createPreToolUseHook =
+  (settingsManager: SettingsManager, logger: Logger = console): HookCallback =>
+  async (input: any, _toolUseID: string | undefined) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return { continue: true };
+    }
+
+    const toolName = input.tool_name;
+    const toolInput = input.tool_input;
+
+    const permissionCheck = settingsManager.checkPermission(toolName, toolInput);
+
+    if (permissionCheck.decision !== "ask") {
+      logger.log(
+        `[PreToolUseHook] Tool: ${toolName}, Decision: ${permissionCheck.decision}, Rule: ${permissionCheck.rule}`,
+      );
+    }
+
+    switch (permissionCheck.decision) {
+      case "allow":
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse" as const,
+            permissionDecision: "allow" as const,
+            permissionDecisionReason: `Allowed by settings rule: ${permissionCheck.rule}`,
+          },
+        };
+
+      case "deny":
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse" as const,
+            permissionDecision: "deny" as const,
+            permissionDecisionReason: `Denied by settings rule: ${permissionCheck.rule}`,
+          },
+        };
+
+      case "ask":
+      default:
+        // Let the normal permission flow continue
+        return { continue: true };
+    }
   };
