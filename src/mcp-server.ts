@@ -1,7 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   BashInput,
-  BashOutputInput,
   FileEditInput,
   FileReadInput,
   FileWriteInput,
@@ -533,14 +532,14 @@ Output: Create directory 'foo'`),
 - Returns stdout and stderr output along with shell status
 - Use this tool when you need to monitor or check the output of a long-running shell
 
-In sessions with ${toolNames.bashOutput} always use it instead of BashOutput.`,
+In sessions with ${toolNames.bashOutput} always use it for output from Bash commands instead of TaskOutput.`,
         inputSchema: {
           bash_id: z
             .string()
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
-      async (input: BashOutputInput) => {
+      async (input) => {
         const bgTerm = agent.backgroundTerminals[input.bash_id];
 
         if (!bgTerm) {
