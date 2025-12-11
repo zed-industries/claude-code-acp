@@ -1,4 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  BashInput,
+  BashOutputInput,
+  FileEditInput,
+  FileReadInput,
+  FileWriteInput,
+  KillShellInput,
+} from "@anthropic-ai/claude-agent-sdk/sdk-tools.js";
 import { z } from "zod";
 import { ClaudeAcpAgent } from "./acp-agent.js";
 import { ClientCapabilities, TerminalOutputResponse } from "@agentclientprotocol/sdk";
@@ -87,7 +95,7 @@ Usage:
           idempotentHint: false,
         },
       },
-      async (input) => {
+      async (input: FileReadInput) => {
         try {
           const session = agent.sessions[sessionId];
           if (!session) {
@@ -117,7 +125,7 @@ Usage:
 
           // Construct informative message about what was read
           let readInfo = "";
-          if (input.offset > 1 || result.wasLimited) {
+          if ((input.offset && input.offset > 1) || result.wasLimited) {
             readInfo = "\n\n<file-read-info>";
 
             if (result.wasLimited) {
@@ -185,7 +193,7 @@ Usage:
           idempotentHint: false,
         },
       },
-      async (input) => {
+      async (input: FileWriteInput) => {
         try {
           const session = agent.sessions[sessionId];
           if (!session) {
@@ -246,7 +254,7 @@ Usage:
             .boolean()
             .default(false)
             .optional()
-            .describe("Replace all occurences of old_string (default false)"),
+            .describe("Replace all occurrences of old_string (default false)"),
         },
         annotations: {
           title: "Edit file",
@@ -256,7 +264,7 @@ Usage:
           idempotentHint: false,
         },
       },
-      async (input) => {
+      async (input: FileEditInput) => {
         try {
           const session = agent.sessions[sessionId];
           if (!session) {
@@ -327,10 +335,7 @@ Usage:
 In sessions with ${toolNames.bash} always use it instead of Bash`,
         inputSchema: {
           command: z.string().describe("The command to execute"),
-          timeout: z
-            .number()
-            .default(2 * 60 * 1000)
-            .describe(`Optional timeout in milliseconds (max ${2 * 60 * 1000})`),
+          timeout: z.number().describe(`Optional timeout in milliseconds (max ${2 * 60 * 1000})`),
           description: z.string().optional()
             .describe(`Clear, concise description of what this command does in 5-10 words, in active voice. Examples:
 Input: ls
@@ -352,7 +357,7 @@ Output: Create directory 'foo'`),
             ),
         },
       },
-      async (input, extra) => {
+      async (input: BashInput, extra) => {
         const session = agent.sessions[sessionId];
         if (!session) {
           return {
@@ -406,7 +411,7 @@ Output: Create directory 'foo'`),
         const statusPromise = Promise.race([
           handle.waitForExit().then((exitStatus) => ({ status: "exited" as const, exitStatus })),
           abortPromise.then(() => ({ status: "aborted" as const, exitStatus: null })),
-          sleep(input.timeout).then(async () => {
+          sleep(input.timeout ?? 2 * 60 * 1000).then(async () => {
             if (agent.backgroundTerminals[handle.id]?.status === "started") {
               await handle.kill();
             }
@@ -475,23 +480,23 @@ Output: Create directory 'foo'`),
       {
         title: unqualifiedToolNames.bashOutput,
         description: `- Retrieves output from a running or completed background bash shell
-- Takes a shell_id parameter identifying the shell
+- Takes a bash_id parameter identifying the shell
 - Always returns only new output since the last check
 - Returns stdout and stderr output along with shell status
 - Use this tool when you need to monitor or check the output of a long-running shell
 
 In sessions with ${toolNames.bashOutput} always use it instead of BashOutput.`,
         inputSchema: {
-          shell_id: z
+          bash_id: z
             .string()
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
-      async (input) => {
-        const bgTerm = agent.backgroundTerminals[input.shell_id];
+      async (input: BashOutputInput) => {
+        const bgTerm = agent.backgroundTerminals[input.bash_id];
 
         if (!bgTerm) {
-          throw new Error(`Unknown shell ${input.shell_id}`);
+          throw new Error(`Unknown shell ${input.bash_id}`);
         }
 
         if (bgTerm.status === "started") {
@@ -542,7 +547,7 @@ In sessions with ${toolNames.killShell} always use it instead of KillShell.`,
             .describe(`The id of the background bash command as returned by \`${toolNames.bash}\``),
         },
       },
-      async (input) => {
+      async (input: KillShellInput) => {
         const bgTerm = agent.backgroundTerminals[input.shell_id];
 
         if (!bgTerm) {
