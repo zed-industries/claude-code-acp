@@ -17,6 +17,8 @@ import {
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestError,
+  ResumeSessionRequest,
+  ResumeSessionResponse,
   SessionModelState,
   SessionNotification,
   SetSessionModelRequest,
@@ -191,6 +193,7 @@ export class ClaudeAcpAgent implements Agent {
         sessionCapabilities: {
           // TODO: announce fork capability when sessionId handling is fixed
           // fork: {},
+          resume: {},
         },
       },
       agentInfo: {
@@ -228,6 +231,21 @@ export class ClaudeAcpAgent implements Agent {
         forkSession: true,
       },
     );
+  }
+
+  async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
+    const response = await this.createSession(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        _meta: params._meta,
+      },
+      {
+        resume: params.sessionId,
+      },
+    );
+
+    return response;
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<void> {
