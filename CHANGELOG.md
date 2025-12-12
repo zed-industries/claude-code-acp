@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.4
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.67
+- Better respect permissions specified in settings files
+- Unstable implementation of forking
+
 ## 0.12.3
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.65
