@@ -1177,15 +1177,8 @@ export function streamEventToAcpNotifications(
   const event = message.event;
   switch (event.type) {
     case "content_block_start":
-      return toAcpNotifications(
-        [event.content_block],
-        "assistant",
-        sessionId,
-        toolUseCache,
-        fileContentCache,
-        client,
-        logger,
-      );
+      // Ignore, there is no content in `content_block_start`.
+      return [];
     case "content_block_delta":
       return toAcpNotifications(
         [event.delta],
