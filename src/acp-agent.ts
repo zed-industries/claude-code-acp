@@ -234,15 +234,17 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
-    const response = await this.createSession({
-      cwd: params.cwd,
-      mcpServers: params.mcpServers ?? [],
-      _meta: params._meta,
-    }, {
-      resume: params.sessionId,
-    });
+    const response = await this.createSession(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        _meta: params._meta,
+      },
+      {
+        resume: params.sessionId,
+      },
+    );
 
-    delete (response as any).sessionId;
     return response;
   }
 
