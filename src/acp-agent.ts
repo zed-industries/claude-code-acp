@@ -216,14 +216,17 @@ export class ClaudeAcpAgent implements Agent {
   }
 
   async forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
-    return await this.createSession({
-      cwd: params.cwd,
-      mcpServers: params.mcpServers ?? [],
-      _meta: params._meta,
-    }, {
-      resume: params.sessionId,
-      forkSession: true,
-    });
+    return await this.createSession(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        _meta: params._meta,
+      },
+      {
+        resume: params.sessionId,
+        forkSession: true,
+      },
+    );
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<void> {
