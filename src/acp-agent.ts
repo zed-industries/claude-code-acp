@@ -189,7 +189,8 @@ export class ClaudeAcpAgent implements Agent {
           sse: true,
         },
         sessionCapabilities: {
-          fork: {},
+          // TODO: announce fork capability when sessionId handling is fixed
+          // fork: {},
         },
       },
       agentInfo: {
