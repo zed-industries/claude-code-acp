@@ -74,7 +74,6 @@ type Session = {
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
   permissionMode: PermissionMode;
-  params: NewSessionRequest;
   settingsManager: SettingsManager;
 };
 
@@ -201,6 +200,7 @@ export class ClaudeAcpAgent implements Agent {
       authMethods: [authMethod],
     };
   }
+
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
     if (
       fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
@@ -212,6 +212,17 @@ export class ClaudeAcpAgent implements Agent {
     return await this.createSession(params, {
       // Revisit these meta values once we support resume
       resume: (params._meta as NewSessionMeta | undefined)?.claudeCode?.options?.resume,
+    });
+  }
+
+  async forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+    return await this.createSession({
+      cwd: params.cwd,
+      mcpServers: params.mcpServers ?? [],
+      _meta: params._meta,
+    }, {
+      resume: params.sessionId,
+      forkSession: true,
     });
   }
 
@@ -434,18 +445,6 @@ export class ClaudeAcpAgent implements Agent {
     const response = await this.client.writeTextFile(params);
     this.fileContentCache[params.path] = params.content;
     return response;
-  }
-
-  async forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
-    const session = this.sessions[params.sessionId];
-    if (!session) {
-      throw RequestError.resourceNotFound(`Session ${params.sessionId} not found`);
-    }
-
-    return await this.createSession(session.params, {
-      resume: params.sessionId,
-      forkSession: true,
-    });
   }
 
   canUseTool(sessionId: string): CanUseTool {
@@ -764,7 +763,6 @@ export class ClaudeAcpAgent implements Agent {
       input: input,
       cancelled: false,
       permissionMode,
-      params,
       settingsManager,
     };
 
