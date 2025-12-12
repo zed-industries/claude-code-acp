@@ -54,8 +54,11 @@ import {
 } from "./tools.js";
 import { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { BetaContentBlock, BetaRawContentBlockDelta } from "@anthropic-ai/sdk/resources/beta.mjs";
-import packageJson from "../package.json" with { type: "json" };
+import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
+
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json");
 
 export const CLAUDE_CONFIG_DIR = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
 
