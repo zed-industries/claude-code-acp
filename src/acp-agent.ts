@@ -219,7 +219,7 @@ export class ClaudeAcpAgent implements Agent {
     });
   }
 
-  async forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+  async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
     return await this.createSession(
       {
         cwd: params.cwd,
@@ -233,7 +233,7 @@ export class ClaudeAcpAgent implements Agent {
     );
   }
 
-  async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
+  async unstable_resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
     const response = await this.createSession(
       {
         cwd: params.cwd,
@@ -422,7 +422,7 @@ export class ClaudeAcpAgent implements Agent {
     await this.sessions[params.sessionId].query.interrupt();
   }
 
-  async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse | void> {
+  async unstable_setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse | void> {
     if (!this.sessions[params.sessionId]) {
       throw new Error("Session not found");
     }
