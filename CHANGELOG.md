@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.6
+
+- Fix model selection
+
 ## 0.12.5
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.70
