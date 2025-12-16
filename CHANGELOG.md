@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.5
+
+- Update to @anthropic-ai/claude-agent-sdk@v0.1.70
+- Unstable implementation of resuming sessions
+
 ## 0.12.4
 
 - Update to @anthropic-ai/claude-agent-sdk@v0.1.67
