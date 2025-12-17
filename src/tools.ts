@@ -1,5 +1,6 @@
 import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
-import { replaceAndCalculateLocation, SYSTEM_REMINDER } from "./mcp-server.js";
+import { SYSTEM_REMINDER } from "./mcp-server.js";
+import * as diff from "diff";
 import { ToolResultBlockParam, WebSearchToolResultBlockParam } from "@anthropic-ai/sdk/resources";
 
 const acpUnqualifiedToolNames = {
@@ -49,11 +50,7 @@ interface ToolUpdate {
   locations?: ToolCallLocation[];
 }
 
-export function toolInfoFromToolUse(
-  toolUse: any,
-  cachedFileContent: { [key: string]: string },
-  logger: Logger = console,
-): ToolInfo {
+export function toolInfoFromToolUse(toolUse: any): ToolInfo {
   const name = toolUse.name;
   const input = toolUse.input;
 
@@ -178,27 +175,7 @@ export function toolInfoFromToolUse(
     case acpToolNames.edit:
     case "Edit": {
       const path = input?.file_path ?? input?.file_path;
-      let oldText = input.old_string ?? null;
-      let newText = input.new_string ?? "";
-      let affectedLines: number[] = [];
 
-      if (path && oldText) {
-        try {
-          const oldContent = cachedFileContent[path] || "";
-          const newContent = replaceAndCalculateLocation(oldContent, [
-            {
-              oldText,
-              newText,
-              replaceAll: false,
-            },
-          ]);
-          oldText = oldContent;
-          newText = newContent.newContent;
-          affectedLines = newContent.lineNumbers;
-        } catch (e) {
-          logger.error(e);
-        }
-      }
       return {
         title: path ? `Edit \`${path}\`` : "Edit",
         kind: "edit",
@@ -208,16 +185,12 @@ export function toolInfoFromToolUse(
                 {
                   type: "diff",
                   path,
-                  oldText,
-                  newText,
+                  oldText: input.old_string ?? null,
+                  newText: input.new_string ?? "",
                 },
               ]
             : [],
-        locations: path
-          ? affectedLines.length > 0
-            ? affectedLines.map((line) => ({ line, path }))
-            : [{ path }]
-          : [],
+        locations: path ? [{ path }] : undefined,
       };
     }
 
@@ -441,6 +414,16 @@ export function toolUpdateFromToolResult(
     | BetaToolSearchToolResultBlockParam,
   toolUse: any | undefined,
 ): ToolUpdate {
+  if (
+    "is_error" in toolResult &&
+    toolResult.is_error &&
+    toolResult.content &&
+    toolResult.content.length > 0
+  ) {
+    // Only return errors
+    return toAcpContentUpdate(toolResult.content, true);
+  }
+
   switch (toolUse?.name) {
     case "Read":
     case acpToolNames.read:
@@ -472,21 +455,60 @@ export function toolUpdateFromToolResult(
       }
       return {};
 
+    case acpToolNames.edit: {
+      const content: ToolCallContent[] = [];
+      const locations: ToolCallLocation[] = [];
+
+      if (
+        Array.isArray(toolResult.content) &&
+        toolResult.content.length > 0 &&
+        "text" in toolResult.content[0] &&
+        typeof toolResult.content[0].text === "string"
+      ) {
+        const patches = diff.parsePatch(toolResult.content[0].text);
+        console.error(JSON.stringify(patches));
+        for (const { oldFileName, newFileName, hunks } of patches) {
+          for (const { lines, newStart } of hunks) {
+            const oldText = [];
+            const newText = [];
+            for (const line of lines) {
+              if (line.startsWith("-")) {
+                oldText.push(line.slice(1));
+              } else if (line.startsWith("+")) {
+                newText.push(line.slice(1));
+              } else {
+                oldText.push(line.slice(1));
+                newText.push(line.slice(1));
+              }
+            }
+            if (oldText.length > 0 || newText.length > 0) {
+              locations.push({ path: newFileName || oldFileName, line: newStart });
+              content.push({
+                type: "diff",
+                path: newFileName || oldFileName,
+                oldText: oldText.join("\n") || null,
+                newText: newText.join("\n"),
+              });
+            }
+          }
+        }
+      }
+
+      const result: ToolUpdate = {};
+      if (content.length > 0) {
+        result.content = content;
+      }
+      if (locations.length > 0) {
+        result.locations = locations;
+      }
+      return result;
+    }
+
     case acpToolNames.bash:
     case "edit":
     case "Edit":
-    case acpToolNames.edit:
     case acpToolNames.write:
     case "Write": {
-      if (
-        "is_error" in toolResult &&
-        toolResult.is_error &&
-        toolResult.content &&
-        toolResult.content.length > 0
-      ) {
-        // Only return errors
-        return toAcpContentUpdate(toolResult.content, true);
-      }
       return {};
     }
 
