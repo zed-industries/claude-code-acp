@@ -251,7 +251,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "execute",
       title: "`rm README.md.rm`",
       content: [
@@ -276,7 +276,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "search",
       title: "Find `*/**.ts`",
       content: [],
@@ -297,7 +297,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "think",
       title: "Handle user's work request",
       content: [
@@ -322,7 +322,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "search",
       title: "List the `/Users/test/github/claude-code-acp` directory's contents",
       content: [],
@@ -340,7 +340,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "search",
       title: 'grep ".*"',
       content: [],
@@ -358,7 +358,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "edit",
       title: "Write /Users/test/project/example.txt",
       content: [
@@ -384,7 +384,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "edit",
       title: "Write /Users/test/project/config.json",
       content: [
@@ -409,7 +409,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read File",
       content: [],
@@ -427,7 +427,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/data.json",
       content: [],
@@ -446,7 +446,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (1 - 100)",
       content: [],
@@ -466,7 +466,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (51 - 150)",
       content: [],
@@ -485,7 +485,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "read",
       title: "Read /Users/test/project/large.txt (from line 201)",
       content: [],
@@ -503,7 +503,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "execute",
       title: `Kill Process`,
       content: [],
@@ -520,7 +520,7 @@ describe("tool conversions", () => {
       },
     };
 
-    expect(toolInfoFromToolUse(tool_use, {})).toStrictEqual({
+    expect(toolInfoFromToolUse(tool_use)).toStrictEqual({
       kind: "execute",
       title: `Tail Logs`,
       content: [],
@@ -612,7 +612,6 @@ describe("tool conversions", () => {
         received.message.content,
         received.message.role,
         "test",
-        {},
         {},
         {} as AgentSideConnection,
         console,
@@ -847,7 +846,7 @@ describe("permission requests", () => {
 
     for (const testCase of testCases) {
       // Get the tool info that would be used in requestPermission
-      const toolInfo = toolInfoFromToolUse(testCase.toolUse, {});
+      const toolInfo = toolInfoFromToolUse(testCase.toolUse);
 
       // Verify toolInfo has a title
       expect(toolInfo.title).toBeDefined();
