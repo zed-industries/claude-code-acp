@@ -189,8 +189,7 @@ export class ClaudeAcpAgent implements Agent {
           sse: true,
         },
         sessionCapabilities: {
-          // TODO: announce fork capability when sessionId handling is fixed
-          // fork: {},
+          fork: {},
           resume: {},
         },
       },
@@ -595,7 +594,17 @@ export class ClaudeAcpAgent implements Agent {
     params: NewSessionRequest,
     creationOpts: { resume?: string; forkSession?: boolean } = {},
   ): Promise<NewSessionResponse> {
-    const sessionId = creationOpts.resume ?? randomUUID();
+    // We want to create a new session id unless it is resume,
+    // but not resume + forkSession.
+    let sessionId;
+    if (creationOpts.forkSession) {
+      sessionId = randomUUID();
+    } else if (creationOpts.resume) {
+      sessionId = creationOpts.resume;
+    } else {
+      sessionId = randomUUID();
+    }
+
     const input = new Pushable<SDKUserMessage>();
 
     const settingsManager = new SettingsManager(params.cwd, {
