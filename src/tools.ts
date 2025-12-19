@@ -305,7 +305,9 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
         label += " -P";
       }
 
-      label += ` "${input.pattern}"`;
+      if (input.pattern) {
+        label += ` "${input.pattern}"`;
+      }
 
       if (input.path) {
         label += ` ${input.path}`;

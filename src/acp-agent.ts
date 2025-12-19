@@ -656,9 +656,8 @@ export class ClaudeAcpAgent implements Agent {
     // Extract options from _meta if provided
     const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
     const extraArgs = { ...userProvidedOptions?.extraArgs };
-    if (creationOpts?.resume === undefined) {
+    if (creationOpts?.resume === undefined || creationOpts?.forkSession) {
       // Set our own session id if not resuming an existing session.
-      // TODO: find a way to make this work for fork
       extraArgs["session-id"] = sessionId;
     }
 
