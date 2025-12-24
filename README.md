@@ -32,6 +32,7 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 
 ### Other clients
 
+- [Aizen](https://aizen.win)
 - Emacs via [agent-shell.el](https://github.com/xenodium/agent-shell)
 - [marimo notebook](https://github.com/marimo-team/marimo)
 - Neovim
