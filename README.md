@@ -45,7 +45,7 @@ Read the docs on [External Agent](https://zed.dev/docs/ai/external-agents) suppo
 Install the adapter from `npm`:
 
 ```bash
-npm install @zed-industries/claude-code-acp
+npm install -g @zed-industries/claude-code-acp
 ```
 
 You can then use `claude-code-acp` as a regular ACP agent:
