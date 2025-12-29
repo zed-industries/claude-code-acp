@@ -176,7 +176,7 @@ Usage:
             if (result.wasLimited) {
               readInfo += `Read ${result.linesRead} lines (hit 50KB limit). `;
             } else {
-              readInfo += `Read lines ${input.offset}-${result.linesRead}. `;
+              readInfo += `Read ${result.linesRead} lines starting at line ${input.offset}. `;
             }
 
             if (result.wasLimited) {

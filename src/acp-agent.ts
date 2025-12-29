@@ -774,6 +774,14 @@ export class ClaudeAcpAgent implements Agent {
       options,
     });
 
+    // Configure thinking tokens from environment variable
+    const maxThinkingTokens = process.env.MAX_THINKING_TOKENS
+      ? parseInt(process.env.MAX_THINKING_TOKENS, 10)
+      : null;
+    if (maxThinkingTokens !== null) {
+      await q.setMaxThinkingTokens(maxThinkingTokens);
+    }
+
     this.sessions[sessionId] = {
       query: q,
       input: input,
