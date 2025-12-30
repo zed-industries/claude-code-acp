@@ -734,6 +734,91 @@ describe("tool conversions", () => {
       ],
     });
   });
+
+  describe("AskUserQuestion tool", () => {
+    it("should format tool info correctly", () => {
+      const toolUse = {
+        type: "tool_use",
+        id: "test-ask",
+        name: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "What is your favorite color?",
+              header: "Color",
+              multiSelect: false,
+              options: [
+                { label: "Blue", description: "Calming" },
+                { label: "Red", description: "Bold" },
+              ],
+            },
+          ],
+        },
+      };
+
+      const info = toolInfoFromToolUse(toolUse);
+      expect(info.title).toBe("Color");
+      expect(info.kind).toBe("other");
+      expect(info.content).toHaveLength(1);
+    });
+
+    it("should handle multiple questions", () => {
+      const toolUse = {
+        type: "tool_use",
+        id: "test-multi",
+        name: "AskUserQuestion",
+        input: {
+          questions: [
+            { question: "Q1?", header: "First", multiSelect: false, options: [] },
+            { question: "Q2?", header: "Second", multiSelect: true, options: [] },
+          ],
+        },
+      };
+
+      const info = toolInfoFromToolUse(toolUse);
+      expect(info.title).toBe("First"); // Uses first question header
+    });
+
+    it("should handle empty questions array", () => {
+      const toolUse = {
+        type: "tool_use",
+        id: "test-empty",
+        name: "AskUserQuestion",
+        input: {
+          questions: [],
+        },
+      };
+
+      const info = toolInfoFromToolUse(toolUse);
+      expect(info.title).toBe("Questions (0)");
+      expect(info.content).toHaveLength(0);
+    });
+
+    it("should handle missing header", () => {
+      const toolUse = {
+        type: "tool_use",
+        id: "test-no-header",
+        name: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "What do you prefer?",
+              multiSelect: false,
+              options: [{ label: "Option A" }, { label: "Option B" }],
+            },
+          ],
+        },
+      };
+
+      const info = toolInfoFromToolUse(toolUse);
+      expect(info.title).toBe("Questions (1)");
+      const contentItem = info.content[0] as {
+        type: "content";
+        content: { type: string; text: string };
+      };
+      expect(contentItem.content.text).toContain("**Question**: What do you prefer?");
+    });
+  });
 });
 
 describe("escape markdown", () => {

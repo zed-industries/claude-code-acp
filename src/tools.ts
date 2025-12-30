@@ -372,6 +372,24 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
             : [],
       };
 
+    case "AskUserQuestion": {
+      const questions = input?.questions || [];
+      const firstQ = questions[0];
+      return {
+        title: firstQ?.header || `Questions (${questions.length})`,
+        kind: "other",
+        content: questions.map((q: any) => ({
+          type: "content",
+          content: {
+            type: "text",
+            text: `**${q.header || "Question"}**: ${q.question}\nOptions: ${
+              q.options?.map((o: any) => o.label).join(", ") || "None"
+            }`,
+          },
+        })),
+      };
+    }
+
     case "Other": {
       let output;
       try {
@@ -517,6 +535,9 @@ export function toolUpdateFromToolResult(
     case "ExitPlanMode": {
       return { title: "Exited Plan Mode" };
     }
+
+    case "AskUserQuestion":
+      return toAcpContentUpdate(toolResult.content, false);
 
     case "Task":
     case "NotebookEdit":

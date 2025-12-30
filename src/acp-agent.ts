@@ -136,6 +136,15 @@ type ToolUseCache = {
 // Bypass Permissions doesn't work if we are a root/sudo user
 const IS_ROOT = (process.geteuid?.() ?? process.getuid?.()) === 0;
 
+/**
+ * Check if the client supports the AskUserQuestion tool via capability declaration.
+ * Clients declare support via: { clientCapabilities: { _meta: { askUserQuestion: true } } }
+ */
+function supportsAskUserQuestion(capabilities?: ClientCapabilities): boolean {
+  const meta = capabilities?._meta as Record<string, unknown> | undefined;
+  return meta?.askUserQuestion === true || typeof meta?.askUserQuestion === "object";
+}
+
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
@@ -524,6 +533,78 @@ export class ClaudeAcpAgent implements Agent {
         }
       }
 
+      if (toolName === "AskUserQuestion") {
+        // Check client capability
+        if (!supportsAskUserQuestion(this.clientCapabilities)) {
+          // Graceful fallback - return empty answers, Claude will ask in chat instead
+          return {
+            behavior: "allow",
+            updatedInput: { ...toolInput, answers: {} },
+          };
+        }
+
+        // Build options from questions for requestPermission
+        const questions = (toolInput.questions || []) as any[];
+        const options = questions.flatMap((q: any, qIdx: number) =>
+          q.options.map((opt: any, optIdx: number) => ({
+            kind: "allow_once" as const,
+            name: opt.label,
+            optionId: `q${qIdx}_opt${optIdx}`,
+          })),
+        );
+
+        // Add "Other" option for each question
+        questions.forEach((_: any, qIdx: number) => {
+          options.push({
+            kind: "allow_once" as const,
+            name: "Other",
+            optionId: `q${qIdx}_other`,
+          });
+        });
+
+        const response = await this.client.requestPermission({
+          options,
+          sessionId,
+          toolCall: {
+            toolCallId: toolUseID,
+            rawInput: toolInput,
+            title: questions[0]?.header || "Question",
+          },
+          _meta: {
+            askUserQuestion: toolInput, // Full structure for rich UI
+          },
+        });
+
+        if (signal.aborted || response.outcome?.outcome === "cancelled") {
+          throw new Error("Question cancelled");
+        }
+
+        // Parse answers from response
+        const answers: Record<string, string | string[]> = {};
+
+        // Check for structured answers in _meta (preferred)
+        const metaAnswers = (response as any)._meta?.answers;
+        if (metaAnswers) {
+          Object.assign(answers, metaAnswers);
+        } else if (response.outcome?.outcome === "selected" && response.outcome.optionId) {
+          // Parse optionId format: q{idx}_opt{idx} or q{idx}_other
+          const match = response.outcome.optionId.match(/^q(\d+)_opt(\d+)$/);
+          if (match) {
+            const qIdx = parseInt(match[1], 10);
+            const optIdx = parseInt(match[2], 10);
+            const q = questions[qIdx];
+            if (q) {
+              answers[q.question] = q.options[optIdx]?.label || "";
+            }
+          }
+        }
+
+        return {
+          behavior: "allow",
+          updatedInput: { ...toolInput, answers },
+        };
+      }
+
       if (
         session.permissionMode === "bypassPermissions" ||
         (session.permissionMode === "acceptEdits" && EDIT_TOOL_NAMES.includes(toolName))
@@ -588,6 +669,20 @@ export class ClaudeAcpAgent implements Agent {
         };
       }
     };
+  }
+
+  /**
+   * Format a fallback message for AskUserQuestion when the client doesn't support the feature.
+   * This allows the user to see the questions and respond in chat.
+   */
+  private formatAskUserQuestionFallback(toolInput: any): string {
+    const questions = toolInput.questions || [];
+    return questions
+      .map(
+        (q: any, i: number) =>
+          `${i + 1}. ${q.question}\n   Options: ${q.options?.map((o: any) => o.label).join(", ")}`,
+      )
+      .join("\n\n");
   }
 
   private async createSession(
