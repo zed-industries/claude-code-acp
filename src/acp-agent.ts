@@ -670,10 +670,16 @@ export class ClaudeAcpAgent implements Agent {
       extraArgs["session-id"] = sessionId;
     }
 
+    // Configure thinking tokens from environment variable
+    const maxThinkingTokens = process.env.MAX_THINKING_TOKENS
+      ? parseInt(process.env.MAX_THINKING_TOKENS, 10)
+      : undefined;
+
     const options: Options = {
       systemPrompt,
       settingSources: ["user", "project", "local"],
       stderr: (err) => this.logger.error(err),
+      ...(maxThinkingTokens !== undefined && { maxThinkingTokens }),
       ...userProvidedOptions,
       // Override certain fields that must be controlled by ACP
       cwd: params.cwd,
@@ -773,14 +779,6 @@ export class ClaudeAcpAgent implements Agent {
       prompt: input,
       options,
     });
-
-    // Configure thinking tokens from environment variable
-    const maxThinkingTokens = process.env.MAX_THINKING_TOKENS
-      ? parseInt(process.env.MAX_THINKING_TOKENS, 10)
-      : null;
-    if (maxThinkingTokens !== null) {
-      await q.setMaxThinkingTokens(maxThinkingTokens);
-    }
 
     this.sessions[sessionId] = {
       query: q,
