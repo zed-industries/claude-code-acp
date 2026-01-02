@@ -9,6 +9,8 @@ import {
   ForkSessionResponse,
   InitializeRequest,
   InitializeResponse,
+  LoadSessionRequest,
+  LoadSessionResponse,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -44,6 +46,7 @@ import {
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as readline from "node:readline";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { createMcpServer } from "./mcp-server.js";
 import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
@@ -180,6 +183,7 @@ export class ClaudeAcpAgent implements Agent {
     return {
       protocolVersion: 1,
       agentCapabilities: {
+        loadSession: true,
         promptCapabilities: {
           image: true,
           embeddedContext: true,
@@ -214,6 +218,39 @@ export class ClaudeAcpAgent implements Agent {
       // Revisit these meta values once we support resume
       resume: (params._meta as NewSessionMeta | undefined)?.claudeCode?.options?.resume,
     });
+  }
+
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    if (
+      fs.existsSync(path.resolve(os.homedir(), ".claude.json.backup")) &&
+      !fs.existsSync(path.resolve(os.homedir(), ".claude.json"))
+    ) {
+      throw RequestError.authRequired();
+    }
+
+    // If already loaded in this process, treat as idempotent.
+    if (!this.sessions[params.sessionId]) {
+      await this.createSession(
+        {
+          cwd: params.cwd,
+          mcpServers: params.mcpServers ?? [],
+          _meta: params._meta,
+        },
+        { resume: params.sessionId },
+      );
+    }
+
+    const transcriptPath = this.findClaudeSessionTranscriptPath(params.sessionId, params.cwd);
+    if (!transcriptPath) {
+      throw RequestError.invalidParams(
+        { sessionId: params.sessionId, cwd: params.cwd },
+        `No Claude Code transcript found for sessionId ${params.sessionId}`,
+      );
+    }
+
+    await this.replayClaudeSessionTranscript(transcriptPath, params.sessionId);
+
+    return {};
   }
 
   async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
@@ -835,6 +872,70 @@ export class ClaudeAcpAgent implements Agent {
         availableModes,
       },
     };
+  }
+
+  private findClaudeSessionTranscriptPath(sessionId: string, cwd: string): string | null {
+    const projectsDir = path.join(CLAUDE_CONFIG_DIR, "projects");
+    const encodedCwd = cwd.split(path.sep).join("-");
+
+    const direct = path.join(projectsDir, encodedCwd, `${sessionId}.jsonl`);
+    if (fs.existsSync(direct)) {
+      return direct;
+    }
+
+    try {
+      const entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const candidate = path.join(projectsDir, entry.name, `${sessionId}.jsonl`);
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    } catch {
+      // ignore and fall through
+    }
+
+    return null;
+  }
+
+  private async replayClaudeSessionTranscript(
+    transcriptPath: string,
+    sessionId: string,
+  ): Promise<void> {
+    const rl = readline.createInterface({
+      input: fs.createReadStream(transcriptPath, { encoding: "utf8" }),
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      let record: any;
+      try {
+        record = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+
+      if (!record || (record.type !== "user" && record.type !== "assistant")) continue;
+      const role = record?.message?.role;
+      const content = record?.message?.content;
+      if (role !== "user" && role !== "assistant") continue;
+      if (content === undefined || content === null) continue;
+
+      for (const notification of toAcpNotifications(
+        content,
+        role,
+        sessionId,
+        this.toolUseCache,
+        this.client,
+        this.logger,
+      )) {
+        await this.client.sessionUpdate(notification);
+      }
+    }
   }
 }
 
