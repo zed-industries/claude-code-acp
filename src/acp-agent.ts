@@ -47,6 +47,7 @@ import * as os from "node:os";
 import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
 import { createMcpServer } from "./mcp-server.js";
 import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
+import { HookConfig, transformHookConfigs } from "./hook-config.js";
 import {
   toolInfoFromToolUse,
   planEntries,
@@ -109,6 +110,12 @@ export type NewSessionMeta = {
      *   - mcpServers (merged with ACP's mcpServers)
      */
     options?: Options;
+    /**
+     * Hook configurations that define commands to run for specific tool events.
+     * These will be transformed into hook callbacks and merged with any hooks
+     * specified in options.
+     */
+    hookConfigs?: HookConfig[];
   };
 };
 
@@ -664,11 +671,15 @@ export class ClaudeAcpAgent implements Agent {
 
     // Extract options from _meta if provided
     const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
+    const hookConfigs = (params._meta as NewSessionMeta | undefined)?.claudeCode?.hookConfigs;
     const extraArgs = { ...userProvidedOptions?.extraArgs };
     if (creationOpts?.resume === undefined || creationOpts?.forkSession) {
       // Set our own session id if not resuming an existing session.
       extraArgs["session-id"] = sessionId;
     }
+
+    // Transform hook configurations into callbacks
+    const transformedHooks = hookConfigs ? transformHookConfigs(hookConfigs, this.logger) : null;
 
     const options: Options = {
       systemPrompt,
@@ -692,15 +703,17 @@ export class ClaudeAcpAgent implements Agent {
         pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
       }),
       hooks: {
-        ...userProvidedOptions?.hooks,
+        // Spread all user-configured hooks from transformedHooks
+        ...transformedHooks,
+        // Merge with built-in hooks
         PreToolUse: [
-          ...(userProvidedOptions?.hooks?.PreToolUse || []),
+          ...(transformedHooks?.PreToolUse || []),
           {
             hooks: [createPreToolUseHook(settingsManager, this.logger)],
           },
         ],
         PostToolUse: [
-          ...(userProvidedOptions?.hooks?.PostToolUse || []),
+          ...(transformedHooks?.PostToolUse || []),
           {
             hooks: [createPostToolUseHook(this.logger)],
           },
