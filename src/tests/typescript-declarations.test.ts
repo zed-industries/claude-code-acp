@@ -40,9 +40,14 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
 
     // Build and pack the package once for all tests
     beforeAll(async () => {
+      // Step 1: Clean dist folder to ensure fresh build
+      const distPath = path.join(projectRoot, "dist");
+      await fs.promises.rm(distPath, { recursive: true, force: true });
+      console.log("Cleaned dist folder");
+
       console.log("Building package...");
 
-      // Step 1: Build the package
+      // Step 2: Build the package
       const buildResult = spawnSync("npm", ["run", "build"], {
         cwd: projectRoot,
         stdio: "pipe",
@@ -55,7 +60,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)(
 
       console.log("Packing package...");
 
-      // Step 2: Pack to create tarball
+      // Step 3: Pack to create tarball
       const packResult = spawnSync("npm", ["pack", "--pack-destination", os.tmpdir()], {
         cwd: projectRoot,
         stdio: "pipe",
