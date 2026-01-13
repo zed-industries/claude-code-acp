@@ -166,7 +166,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration"
     expect(commands).toContainEqual({
       name: "say-hello",
       description: "Say hello (project)",
-      input: { hint: "[name]" },
+      input: { hint: "name" },
     });
 
     await connection.prompt({
