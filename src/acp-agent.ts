@@ -871,7 +871,10 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
 
   return commands
     .map((command) => {
-      const input = command.argumentHint ? { hint: command.argumentHint } : null;
+      const input =
+        command.argumentHint && typeof command.argumentHint === "string"
+          ? { hint: command.argumentHint }
+          : null;
       let name = command.name;
       if (command.name.endsWith(" (MCP)")) {
         name = `mcp:${name.replace(" (MCP)", "")}`;
