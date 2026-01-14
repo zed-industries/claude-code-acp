@@ -524,6 +524,60 @@ export class ClaudeAcpAgent implements Agent {
         }
       }
 
+      if (toolName === "AskUserQuestion") {
+        const response = await this.client.requestPermission({
+          options: [
+            { kind: "allow_once", name: "Submit", optionId: "answered" },
+            { kind: "reject_once", name: "Cancel", optionId: "cancel" },
+          ],
+          sessionId,
+          toolCall: {
+            toolCallId: toolUseID,
+            rawInput: toolInput,
+            title: "Ask User Question",
+          },
+        });
+
+        if (signal.aborted || response.outcome?.outcome === "cancelled") {
+          return {
+            behavior: "deny",
+            message: "Question was cancelled",
+            interrupt: true,
+          };
+        }
+
+        if (
+          response.outcome?.outcome === "selected" &&
+          response.outcome.optionId === "answered"
+        ) {
+          // Client returns answers in outcome._meta.claudeCode.askUserQuestion.answers
+          const answers = (
+            response.outcome as {
+              _meta?: { claudeCode?: { askUserQuestion?: { answers?: Record<string, string> } } };
+            }
+          )._meta?.claudeCode?.askUserQuestion?.answers;
+
+          if (!answers) {
+            return {
+              behavior: "deny",
+              message: "User declined to answer",
+              interrupt: true,
+            };
+          }
+
+          return {
+            behavior: "allow",
+            updatedInput: { ...(toolInput as object), answers },
+          };
+        }
+
+        return {
+          behavior: "deny",
+          message: "User declined to answer",
+          interrupt: true,
+        };
+      }
+
       if (
         session.permissionMode === "bypassPermissions" ||
         (session.permissionMode === "acceptEdits" && EDIT_TOOL_NAMES.includes(toolName))

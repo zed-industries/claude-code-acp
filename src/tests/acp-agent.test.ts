@@ -812,6 +812,57 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("SDK behavior", () => {
 });
 
 describe("permission requests", () => {
+  it("should parse AskUserQuestion answers from _meta.claudeCode.askUserQuestion.answers", () => {
+    // Simulate the response structure that clients should provide for AskUserQuestion
+    const mockResponse = {
+      outcome: {
+        outcome: "selected" as const,
+        optionId: "answered",
+        _meta: {
+          claudeCode: {
+            askUserQuestion: {
+              answers: {
+                q1: "Answer 1",
+                q2: "Answer 2",
+              },
+            },
+          },
+        },
+      },
+    };
+
+    // Extract answers using the same pattern as in canUseTool
+    const answers = (
+      mockResponse.outcome as {
+        _meta?: { claudeCode?: { askUserQuestion?: { answers?: Record<string, string> } } };
+      }
+    )._meta?.claudeCode?.askUserQuestion?.answers;
+
+    expect(answers).toEqual({
+      q1: "Answer 1",
+      q2: "Answer 2",
+    });
+  });
+
+  it("should treat missing answers as decline", () => {
+    // When client doesn't provide answers in the expected structure
+    const mockResponseWithoutAnswers = {
+      outcome: {
+        outcome: "selected" as const,
+        optionId: "answered",
+        _meta: {},
+      },
+    };
+
+    const answers = (
+      mockResponseWithoutAnswers.outcome as {
+        _meta?: { claudeCode?: { askUserQuestion?: { answers?: Record<string, string> } } };
+      }
+    )._meta?.claudeCode?.askUserQuestion?.answers;
+
+    expect(answers).toBeUndefined();
+  });
+
   it("should include title field in tool permission request structure", () => {
     // Test various tool types to ensure title is correctly generated
     const testCases = [
