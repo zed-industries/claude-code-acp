@@ -77,6 +77,9 @@ type Session = {
   cancelled: boolean;
   permissionMode: PermissionMode;
   settingsManager: SettingsManager;
+  params: NewSessionRequest;
+  lastUserMessageId?: string;
+  lastAssistantMessageId?: string;
 };
 
 type BackgroundTerminal =
@@ -339,6 +342,12 @@ export class ClaudeAcpAgent implements Agent {
           if (this.sessions[params.sessionId].cancelled) {
             break;
           }
+          if (message.type === "user" && message.uuid) {
+            this.sessions[params.sessionId].lastUserMessageId = message.uuid;
+          }
+          if (message.type === "assistant" && message.uuid) {
+            this.sessions[params.sessionId].lastAssistantMessageId = message.uuid;
+          }
 
           // Slash commands like /compact can generate invalid output... doesn't match
           // their own docs: https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-slash-commands#%2Fcompact-compact-conversation-history
@@ -460,6 +469,89 @@ export class ClaudeAcpAgent implements Agent {
   async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
     const response = await this.client.writeTextFile(params);
     return response;
+  }
+
+  async extMethod(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    switch (method) {
+      case "session/checkpoint": {
+        const parsed = params as { sessionId?: string; label?: string };
+        if (!parsed?.sessionId || typeof parsed.sessionId !== "string") {
+          throw new Error("Missing sessionId");
+        }
+        const session = this.sessions[parsed.sessionId];
+        if (!session) {
+          throw new Error("Session not found");
+        }
+        if (!session.lastAssistantMessageId) {
+          throw new Error("No assistant message available for checkpoint");
+        }
+        const payload = {
+          sessionId: parsed.sessionId,
+          resumeSessionAt: session.lastAssistantMessageId,
+          rewindUserMessageId: session.lastUserMessageId ?? null,
+          label: parsed.label ?? null,
+        };
+        const checkpointId = Buffer.from(JSON.stringify(payload)).toString("base64url");
+        return { checkpointId, sessionId: parsed.sessionId };
+      }
+      case "session/restore": {
+        const parsed = params as { sessionId?: string; checkpointId?: string };
+        if (!parsed?.sessionId || typeof parsed.sessionId !== "string") {
+          throw new Error("Missing sessionId");
+        }
+        if (!parsed?.checkpointId || typeof parsed.checkpointId !== "string") {
+          throw new Error("Missing checkpointId");
+        }
+
+        let resumeSessionAt: string | undefined;
+        let rewindUserMessageId: string | undefined;
+        let baseSessionId = parsed.sessionId;
+
+        try {
+          const decoded = JSON.parse(
+            Buffer.from(parsed.checkpointId, "base64url").toString("utf-8"),
+          ) as {
+            sessionId?: string;
+            resumeSessionAt?: string;
+            rewindUserMessageId?: string | null;
+          };
+          if (decoded.sessionId) {
+            baseSessionId = decoded.sessionId;
+          }
+          resumeSessionAt = decoded.resumeSessionAt;
+          rewindUserMessageId = decoded.rewindUserMessageId ?? undefined;
+        } catch {
+          resumeSessionAt = parsed.checkpointId;
+        }
+
+        const baseSession = this.sessions[baseSessionId];
+        if (!baseSession) {
+          throw new Error("Base session not found");
+        }
+
+        const response = await this.createSession(baseSession.params, {
+          resume: baseSessionId,
+          forkSession: true,
+          resumeSessionAt,
+        });
+
+        const newSession = this.sessions[response.sessionId];
+        if (newSession && rewindUserMessageId) {
+          try {
+            await newSession.query.rewindFiles(rewindUserMessageId);
+          } catch (error) {
+            this.logger.error("Failed to rewind files for checkpoint restore", error);
+          }
+        }
+
+        return { sessionId: response.sessionId };
+      }
+      default:
+        throw new Error(`Unknown method: ${method}`);
+    }
   }
 
   canUseTool(sessionId: string): CanUseTool {
@@ -592,7 +684,7 @@ export class ClaudeAcpAgent implements Agent {
 
   private async createSession(
     params: NewSessionRequest,
-    creationOpts: { resume?: string; forkSession?: boolean } = {},
+    creationOpts: { resume?: string; forkSession?: boolean; resumeSessionAt?: string } = {},
   ): Promise<NewSessionResponse> {
     // We want to create a new session id unless it is resume,
     // but not resume + forkSession.
@@ -694,6 +786,7 @@ export class ClaudeAcpAgent implements Agent {
       // note: although not documented by the types, passing an absolute path
       // here works to find zed's managed node version.
       executable: process.execPath as any,
+      enableFileCheckpointing: true,
       ...(process.env.CLAUDE_CODE_EXECUTABLE && {
         pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
       }),
@@ -787,6 +880,7 @@ export class ClaudeAcpAgent implements Agent {
       cancelled: false,
       permissionMode,
       settingsManager,
+      params,
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
