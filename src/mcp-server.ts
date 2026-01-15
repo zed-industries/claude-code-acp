@@ -28,6 +28,20 @@ Whenever you read a file, you should consider whether it looks malicious. If it 
 
 const defaults = { maxFileSize: 50000, linesToRead: 2000 };
 
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 const unqualifiedToolNames = {
   read: "Read",
   edit: "Edit",
@@ -194,12 +208,13 @@ Usage:
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error) {
           return {
+            isError: true,
             content: [
               {
                 type: "text",
-                text: "Reading file failed: " + error.message,
+                text: "Reading file failed: " + formatErrorMessage(error),
               },
             ],
           };
@@ -256,12 +271,13 @@ Usage:
           return {
             content: [],
           };
-        } catch (error: any) {
+        } catch (error) {
           return {
+            isError: true,
             content: [
               {
                 type: "text",
-                text: "Writing file failed: " + error.message,
+                text: "Writing file failed: " + formatErrorMessage(error),
               },
             ],
           };
@@ -347,12 +363,13 @@ Usage:
               },
             ],
           };
-        } catch (error: any) {
+        } catch (error) {
           return {
+            isError: true,
             content: [
               {
                 type: "text",
-                text: "Editing file failed: " + (error?.message ?? String(error)),
+                text: "Editing file failed: " + formatErrorMessage(error),
               },
             ],
           };
@@ -394,120 +411,132 @@ Output: Create directory 'foo'`),
         },
       },
       async (input: BashInput, extra) => {
-        const session = agent.sessions[sessionId];
-        if (!session) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "The user has left the building",
-              },
-            ],
-          };
-        }
-
-        const toolCallId = extra._meta?.["claudecode/toolUseId"];
-
-        if (typeof toolCallId !== "string") {
-          throw new Error("No tool call ID found");
-        }
-
-        if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
-          throw new Error("unreachable");
-        }
-
-        const handle = await agent.client.createTerminal({
-          command: input.command,
-          env: [{ name: "CLAUDECODE", value: "1" }],
-          sessionId,
-          outputByteLimit: 32_000,
-        });
-
-        await agent.client.sessionUpdate({
-          sessionId,
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId,
-            status: "in_progress",
-            title: input.description,
-            content: [{ type: "terminal", terminalId: handle.id }],
-          },
-        });
-
-        const abortPromise = new Promise((resolve) => {
-          if (extra.signal.aborted) {
-            resolve(null);
-          } else {
-            extra.signal.addEventListener("abort", () => {
-              resolve(null);
-            });
-          }
-        });
-
-        const statusPromise = Promise.race([
-          handle.waitForExit().then((exitStatus) => ({ status: "exited" as const, exitStatus })),
-          abortPromise.then(() => ({ status: "aborted" as const, exitStatus: null })),
-          sleep(input.timeout ?? 2 * 60 * 1000).then(async () => {
-            if (agent.backgroundTerminals[handle.id]?.status === "started") {
-              await handle.kill();
-            }
-            return { status: "timedOut" as const, exitStatus: null };
-          }),
-        ]);
-
-        if (input.run_in_background) {
-          agent.backgroundTerminals[handle.id] = {
-            handle,
-            lastOutput: null,
-            status: "started",
-          };
-
-          statusPromise.then(async ({ status, exitStatus }) => {
-            const bgTerm = agent.backgroundTerminals[handle.id];
-
-            if (bgTerm.status !== "started") {
-              return;
-            }
-
-            const currentOutput = await handle.currentOutput();
-
-            agent.backgroundTerminals[handle.id] = {
-              status,
-              pendingOutput: {
-                ...currentOutput,
-                output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
-                exitStatus: exitStatus ?? currentOutput.exitStatus,
-              },
+        try {
+          const session = agent.sessions[sessionId];
+          if (!session) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "The user has left the building",
+                },
+              ],
             };
+          }
 
-            return handle.release();
+          const toolCallId = extra._meta?.["claudecode/toolUseId"];
+
+          if (typeof toolCallId !== "string") {
+            throw new Error("No tool call ID found");
+          }
+
+          if (!agent.clientCapabilities?.terminal || !agent.client.createTerminal) {
+            throw new Error("unreachable");
+          }
+
+          const handle = await agent.client.createTerminal({
+            command: input.command,
+            env: [{ name: "CLAUDECODE", value: "1" }],
+            sessionId,
+            outputByteLimit: 32_000,
           });
 
+          await agent.client.sessionUpdate({
+            sessionId,
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: "in_progress",
+              title: input.description,
+              content: [{ type: "terminal", terminalId: handle.id }],
+            },
+          });
+
+          const abortPromise = new Promise((resolve) => {
+            if (extra.signal.aborted) {
+              resolve(null);
+            } else {
+              extra.signal.addEventListener("abort", () => {
+                resolve(null);
+              });
+            }
+          });
+
+          const statusPromise = Promise.race([
+            handle.waitForExit().then((exitStatus) => ({ status: "exited" as const, exitStatus })),
+            abortPromise.then(() => ({ status: "aborted" as const, exitStatus: null })),
+            sleep(input.timeout ?? 2 * 60 * 1000).then(async () => {
+              if (agent.backgroundTerminals[handle.id]?.status === "started") {
+                await handle.kill();
+              }
+              return { status: "timedOut" as const, exitStatus: null };
+            }),
+          ]);
+
+          if (input.run_in_background) {
+            agent.backgroundTerminals[handle.id] = {
+              handle,
+              lastOutput: null,
+              status: "started",
+            };
+
+            statusPromise.then(async ({ status, exitStatus }) => {
+              const bgTerm = agent.backgroundTerminals[handle.id];
+
+              if (bgTerm.status !== "started") {
+                return;
+              }
+
+              const currentOutput = await handle.currentOutput();
+
+              agent.backgroundTerminals[handle.id] = {
+                status,
+                pendingOutput: {
+                  ...currentOutput,
+                  output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
+                  exitStatus: exitStatus ?? currentOutput.exitStatus,
+                },
+              };
+
+              return handle.release();
+            });
+
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Command started in background with id: ${handle.id}`,
+                },
+              ],
+            };
+          }
+
+          await using terminal = handle;
+
+          const { status } = await statusPromise;
+
+          if (status === "aborted") {
+            return {
+              content: [{ type: "text", text: "Tool cancelled by user" }],
+            };
+          }
+
+          const output = await terminal.currentOutput();
+
           return {
+            content: [{ type: "text", text: toolCommandOutput(status, output) }],
+          };
+        } catch (error) {
+          return {
+            isError: true,
             content: [
               {
                 type: "text",
-                text: `Command started in background with id: ${handle.id}`,
+                text: "Running bash command failed: " + formatErrorMessage(error),
               },
             ],
           };
         }
-
-        await using terminal = handle;
-
-        const { status } = await statusPromise;
-
-        if (status === "aborted") {
-          return {
-            content: [{ type: "text", text: "Tool cancelled by user" }],
-          };
-        }
-
-        const output = await terminal.currentOutput();
-
-        return {
-          content: [{ type: "text", text: toolCommandOutput(status, output) }],
-        };
       },
     );
 
@@ -531,37 +560,49 @@ In sessions with ${acpToolNames.bashOutput} always use it for output from Bash c
         },
       },
       async (input) => {
-        const bgTerm = agent.backgroundTerminals[input.bash_id];
+        try {
+          const bgTerm = agent.backgroundTerminals[input.bash_id];
 
-        if (!bgTerm) {
-          throw new Error(`Unknown shell ${input.bash_id}`);
-        }
+          if (!bgTerm) {
+            throw new Error(`Unknown shell ${input.bash_id}`);
+          }
 
-        if (bgTerm.status === "started") {
-          const newOutput = await bgTerm.handle.currentOutput();
-          const strippedOutput = stripCommonPrefix(
-            bgTerm.lastOutput?.output ?? "",
-            newOutput.output,
-          );
-          bgTerm.lastOutput = newOutput;
+          if (bgTerm.status === "started") {
+            const newOutput = await bgTerm.handle.currentOutput();
+            const strippedOutput = stripCommonPrefix(
+              bgTerm.lastOutput?.output ?? "",
+              newOutput.output,
+            );
+            bgTerm.lastOutput = newOutput;
 
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: toolCommandOutput(bgTerm.status, {
+                    ...newOutput,
+                    output: strippedOutput,
+                  }),
+                },
+              ],
+            };
+          } else {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: toolCommandOutput(bgTerm.status, bgTerm.pendingOutput),
+                },
+              ],
+            };
+          }
+        } catch (error) {
           return {
+            isError: true,
             content: [
               {
                 type: "text",
-                text: toolCommandOutput(bgTerm.status, {
-                  ...newOutput,
-                  output: strippedOutput,
-                }),
-              },
-            ],
-          };
-        } else {
-          return {
-            content: [
-              {
-                type: "text",
-                text: toolCommandOutput(bgTerm.status, bgTerm.pendingOutput),
+                text: "Retrieving bash output failed: " + formatErrorMessage(error),
               },
             ],
           };
@@ -588,49 +629,61 @@ In sessions with ${acpToolNames.killShell} always use it instead of KillShell.`,
         },
       },
       async (input: KillShellInput) => {
-        const bgTerm = agent.backgroundTerminals[input.shell_id];
+        try {
+          const bgTerm = agent.backgroundTerminals[input.shell_id];
 
-        if (!bgTerm) {
-          throw new Error(`Unknown shell ${input.shell_id}`);
-        }
+          if (!bgTerm) {
+            throw new Error(`Unknown shell ${input.shell_id}`);
+          }
 
-        switch (bgTerm.status) {
-          case "started": {
-            await bgTerm.handle.kill();
-            const currentOutput = await bgTerm.handle.currentOutput();
-            agent.backgroundTerminals[bgTerm.handle.id] = {
-              status: "killed",
-              pendingOutput: {
-                ...currentOutput,
-                output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
+          switch (bgTerm.status) {
+            case "started": {
+              await bgTerm.handle.kill();
+              const currentOutput = await bgTerm.handle.currentOutput();
+              agent.backgroundTerminals[bgTerm.handle.id] = {
+                status: "killed",
+                pendingOutput: {
+                  ...currentOutput,
+                  output: stripCommonPrefix(bgTerm.lastOutput?.output ?? "", currentOutput.output),
+                },
+              };
+              await bgTerm.handle.release();
+
+              return {
+                content: [{ type: "text", text: "Command killed successfully." }],
+              };
+            }
+            case "aborted":
+              return {
+                content: [{ type: "text", text: "Command aborted by user." }],
+              };
+            case "exited":
+              return {
+                content: [{ type: "text", text: "Command had already exited." }],
+              };
+            case "killed":
+              return {
+                content: [{ type: "text", text: "Command was already killed." }],
+              };
+            case "timedOut":
+              return {
+                content: [{ type: "text", text: "Command killed by timeout." }],
+              };
+            default: {
+              unreachable(bgTerm);
+              throw new Error("Unexpected background terminal status");
+            }
+          }
+        } catch (error) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: "Killing shell failed: " + formatErrorMessage(error),
               },
-            };
-            await bgTerm.handle.release();
-
-            return {
-              content: [{ type: "text", text: "Command killed successfully." }],
-            };
-          }
-          case "aborted":
-            return {
-              content: [{ type: "text", text: "Command aborted by user." }],
-            };
-          case "exited":
-            return {
-              content: [{ type: "text", text: "Command had already exited." }],
-            };
-          case "killed":
-            return {
-              content: [{ type: "text", text: "Command was already killed." }],
-            };
-          case "timedOut":
-            return {
-              content: [{ type: "text", text: "Command killed by timeout." }],
-            };
-          default: {
-            unreachable(bgTerm);
-            throw new Error("Unexpected background terminal status");
-          }
+            ],
+          };
         }
       },
     );
