@@ -6,10 +6,18 @@
   "version": "0.13.0",
   "description": "An ACP-compatible coding agent powered by the Claude Code SDK (TypeScript)",
   "main": "dist/lib.js",
+  "types": "dist/lib.d.ts",
   "bin": {
     "claude-code-acp": "./dist/index.js"
   },
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
+    },
+    "./*": "./*"
+  },
   "files": [
     "dist/",
     "README.md",
