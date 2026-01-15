@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1
+
+- Update to @anthropic-ai/claude-agent-sdk@0.2.7
+- Add TypeScript declaration files for library users
+- Fixed error handling in custom ACP focused MCP tools
+
 ## 0.13.0
 
 - Update to @anthropic-ai/claude-agent-sdk@0.2.6
