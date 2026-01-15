@@ -175,7 +175,7 @@ Usage:
 
             if (result.wasLimited) {
               readInfo += `Read ${result.linesRead} lines (hit 50KB limit). `;
-            } else {
+            } else if (input.offset && input.offset > 1) {
               readInfo += `Read lines ${input.offset}-${input.offset + result.linesRead}.`;
             }
 
