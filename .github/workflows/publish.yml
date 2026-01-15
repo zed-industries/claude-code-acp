@@ -4,6 +4,57 @@ on:
     tags:
       - "v*.*.*"
 jobs:
+  build-binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            asset_suffix: darwin-arm64
+          - os: ubuntu-latest
+            asset_suffix: linux-x64
+          - os: windows-latest
+            asset_suffix: windows-x64
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run build
+      - name: Build SEA blob
+        run: |
+          cat > sea-config.json <<'EOF'
+          {
+            "main": "dist/index.js",
+            "output": "dist/sea-prep.blob"
+          }
+          EOF
+          node --experimental-sea-config sea-config.json
+        shell: bash
+      - name: Build binary (unix)
+        if: runner.os != 'Windows'
+        run: |
+          NODE_PATH="$(node -p "process.execPath")"
+          OUT="claude-code-acp-${{ matrix.asset_suffix }}"
+          cp "$NODE_PATH" "$OUT"
+          npx postject "$OUT" NODE_SEA_BLOB "dist/sea-prep.blob" \
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+          chmod +x "$OUT"
+        shell: bash
+      - name: Build binary (windows)
+        if: runner.os == 'Windows'
+        run: |
+          $nodePath = (Get-Command node).Source
+          $out = "claude-code-acp-${{ matrix.asset_suffix }}"
+          Copy-Item $nodePath $out
+          npx postject $out NODE_SEA_BLOB "dist/sea-prep.blob" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-acp-${{ matrix.asset_suffix }}
+          path: claude-code-acp-${{ matrix.asset_suffix }}
   publish-npm:
     runs-on: ubuntu-latest
     environment: release # Optional: for enhanced security
@@ -24,11 +75,16 @@ jobs:
       - run: npm publish
   release:
     runs-on: ubuntu-latest
-    needs: [publish-npm]
+    needs: [publish-npm, build-binaries]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090
+        with:
+          files: artifacts/**/claude-code-acp-*
