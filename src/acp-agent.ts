@@ -691,6 +691,7 @@ export class ClaudeAcpAgent implements Agent {
       ...(process.env.CLAUDE_CODE_EXECUTABLE && {
         pathToClaudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE,
       }),
+      tools: { type: "preset", preset: "claude_code" },
       hooks: {
         ...userProvidedOptions?.hooks,
         PreToolUse: [
@@ -871,7 +872,13 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
 
   return commands
     .map((command) => {
-      const input = command.argumentHint ? { hint: command.argumentHint } : null;
+      const input = command.argumentHint
+        ? {
+            hint: Array.isArray(command.argumentHint)
+              ? command.argumentHint.join(" ")
+              : command.argumentHint,
+          }
+        : null;
       let name = command.name;
       if (command.name.endsWith(" (MCP)")) {
         name = `mcp:${name.replace(" (MCP)", "")}`;
