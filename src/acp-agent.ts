@@ -717,7 +717,8 @@ export class ClaudeAcpAgent implements Agent {
     };
 
     const allowedTools = [];
-    const disallowedTools = [];
+    // Disable this for now, not a great way to expose this over ACP at the moment (in progress work so we can revisit)
+    const disallowedTools = ["AskUserQuestion"];
 
     // Check if built-in tools should be disabled
     const disableBuiltInTools = params._meta?.disableBuiltInTools === true;
