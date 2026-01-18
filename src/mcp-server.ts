@@ -269,7 +269,12 @@ Usage:
           await writeTextFile(input);
 
           return {
-            content: [],
+            content: [
+              {
+                type: "text",
+                text: `Wrote file: ${input.file_path}`,
+              },
+            ],
           };
         } catch (error) {
           return {
