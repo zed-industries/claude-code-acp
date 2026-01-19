@@ -272,7 +272,7 @@ Usage:
             content: [
               {
                 type: "text",
-                text: `Wrote file: ${input.file_path}`,
+                text: `The file ${input.file_path} has been updated successfully.`,
               },
             ],
           };
