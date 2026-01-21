@@ -9,6 +9,8 @@ import {
   ForkSessionResponse,
   InitializeRequest,
   InitializeResponse,
+  ListSessionsRequest,
+  ListSessionsResponse,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -19,6 +21,7 @@ import {
   RequestError,
   ResumeSessionRequest,
   ResumeSessionResponse,
+  SessionInfo,
   SessionModelState,
   SessionNotification,
   SetSessionModelRequest,
@@ -193,6 +196,7 @@ export class ClaudeAcpAgent implements Agent {
         },
         sessionCapabilities: {
           fork: {},
+          list: {},
           resume: {},
         },
       },
@@ -244,6 +248,124 @@ export class ClaudeAcpAgent implements Agent {
         resume: params.sessionId,
       },
     );
+
+    return response;
+  }
+
+  /**
+   * List Claude Code sessions by parsing JSONL files
+   * Sessions are stored in ~/.claude/projects/<path-encoded>/
+   * Implements the draft session/list RFD spec
+   */
+  async unstable_listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
+    const PAGE_SIZE = 50;
+    const claudeDir = path.join(os.homedir(), ".claude", "projects");
+
+    if (!fs.existsSync(claudeDir)) {
+      return { sessions: [] };
+    }
+
+    // Collect all sessions across all project directories
+    const allSessions: SessionInfo[] = [];
+
+    try {
+      const projectDirs = fs.readdirSync(claudeDir);
+
+      for (const encodedPath of projectDirs) {
+        const projectDir = path.join(claudeDir, encodedPath);
+        const stat = fs.statSync(projectDir);
+        if (!stat.isDirectory()) continue;
+
+        // Decode the path (- -> /)
+        const decodedCwd = "/" + encodedPath.replace(/-/g, "/");
+
+        // Skip if filtering by cwd and this doesn't match
+        if (params.cwd && decodedCwd !== params.cwd) continue;
+
+        const files = fs.readdirSync(projectDir);
+        const jsonlFiles = files.filter((f) => f.endsWith(".jsonl") && !f.startsWith("agent-"));
+
+        for (const file of jsonlFiles) {
+          const filePath = path.join(projectDir, file);
+          try {
+            const content = fs.readFileSync(filePath, "utf-8");
+            const lines = content.trim().split("\n").filter(Boolean);
+
+            if (lines.length === 0) continue;
+
+            // Parse first line to get session info
+            const firstEntry = JSON.parse(lines[0]!);
+            const sessionId = firstEntry.sessionId || file.replace(".jsonl", "");
+
+            // Find first user message for title
+            let title: string | undefined;
+            for (const line of lines) {
+              try {
+                const entry = JSON.parse(line);
+                if (entry.type === "user" && entry.message?.content) {
+                  const msgContent = entry.message.content;
+                  title =
+                    typeof msgContent === "string"
+                      ? msgContent.slice(0, 100)
+                      : msgContent[0]?.text?.slice(0, 100);
+                  break;
+                }
+              } catch {
+                // Skip malformed lines
+              }
+            }
+
+            // Get file modification time as updatedAt
+            const fileStat = fs.statSync(filePath);
+            const updatedAt = fileStat.mtime.toISOString();
+
+            allSessions.push({
+              sessionId,
+              cwd: decodedCwd,
+              title: title ?? null,
+              updatedAt,
+            });
+          } catch {
+            // Skip files that can't be parsed
+          }
+        }
+      }
+    } catch {
+      return { sessions: [] };
+    }
+
+    // Sort by updatedAt descending (most recent first)
+    allSessions.sort((a, b) => {
+      const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    // Handle pagination with cursor
+    let startIndex = 0;
+    if (params.cursor) {
+      try {
+        const decoded = Buffer.from(params.cursor, "base64").toString("utf-8");
+        const cursorData = JSON.parse(decoded);
+        startIndex = cursorData.offset ?? 0;
+      } catch {
+        // Invalid cursor, start from beginning
+      }
+    }
+
+    const pageOfSessions = allSessions.slice(startIndex, startIndex + PAGE_SIZE);
+    const hasMore = startIndex + PAGE_SIZE < allSessions.length;
+
+    const response: ListSessionsResponse = {
+      sessions: pageOfSessions,
+    };
+
+    if (hasMore) {
+      const nextCursor = Buffer.from(
+        JSON.stringify({ offset: startIndex + PAGE_SIZE }),
+      ).toString("base64");
+      response.nextCursor = nextCursor;
+    }
 
     return response;
   }
