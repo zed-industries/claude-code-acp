@@ -168,7 +168,9 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
 
   const argAccessor = TOOL_ARG_ACCESSORS[toolName];
   if (!argAccessor) {
-    return true;
+    // If we cannot extract the argument for this tool, the rule does not apply
+    // (e.g., ZedEditorContext should not match Bash deny rules)
+    return false;
   }
 
   const actualArg = argAccessor(toolInput);
