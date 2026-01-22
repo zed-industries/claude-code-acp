@@ -20,9 +20,9 @@ describe("unstable_listSessions", () => {
     } as unknown as AgentSideConnection;
   }
 
-  // Helper to encode a path like Claude does (/ -> -)
+  // Helper to encode a path like Claude does: "/Users/test" -> "-Users-test"
   function encodePath(cwd: string): string {
-    return cwd.slice(1).replace(/\//g, "-");
+    return cwd.replace(/\//g, "-");
   }
 
   // Helper to write a session file
