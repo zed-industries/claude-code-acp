@@ -81,15 +81,14 @@ describe("unstable_listSessions", () => {
   }
 
   beforeEach(() => {
-    // Create temp directory and set CLAUDE env var to isolate tests from real filesystem
+    // Create temp directory to isolate tests from real filesystem.
+    // NOTE: The implementation uses process.env.CLAUDE to override the config dir.
+    // This is an undocumented env var from upstream - ideally would use a more
+    // specific name like CLAUDE_CODE_CONFIG_DIR to avoid conflicts with user env.
+    // We save/restore the original value to avoid affecting the user's environment.
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-test-"));
     originalClaudeEnv = process.env.CLAUDE;
     process.env.CLAUDE = tempDir;
-
-    // Verify the env var is set correctly - fail fast if not
-    if (process.env.CLAUDE !== tempDir) {
-      throw new Error("Failed to set CLAUDE env var - tests would write to real filesystem!");
-    }
 
     // Create agent instance
     agent = new ClaudeAcpAgent(createMockClient());
