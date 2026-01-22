@@ -278,8 +278,8 @@ export class ClaudeAcpAgent implements Agent {
         const stat = fs.statSync(projectDir);
         if (!stat.isDirectory()) continue;
 
-        // Decode the path (- -> /)
-        const decodedCwd = "/" + encodedPath.replace(/-/g, "/");
+        // Decode the path: "-Users-morse-project" -> "/Users/morse/project"
+        const decodedCwd = encodedPath.replace(/-/g, "/");
 
         // Skip if filtering by cwd and this doesn't match
         if (params.cwd && decodedCwd !== params.cwd) continue;
