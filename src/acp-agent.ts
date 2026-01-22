@@ -285,6 +285,8 @@ export class ClaudeAcpAgent implements Agent {
         if (params.cwd && decodedCwd !== params.cwd) continue;
 
         const files = fs.readdirSync(projectDir);
+        // Filter to user session files only. Skip agent-*.jsonl files which contain
+        // internal agent metadata and system logs, not user-visible conversation sessions.
         const jsonlFiles = files.filter((f) => f.endsWith(".jsonl") && !f.startsWith("agent-"));
 
         for (const file of jsonlFiles) {
@@ -293,10 +295,11 @@ export class ClaudeAcpAgent implements Agent {
             const content = fs.readFileSync(filePath, "utf-8");
             const lines = content.trim().split("\n").filter(Boolean);
 
-            if (lines.length === 0) continue;
+            const firstLine = lines[0];
+            if (!firstLine) continue;
 
             // Parse first line to get session info
-            const firstEntry = JSON.parse(lines[0]!);
+            const firstEntry = JSON.parse(firstLine);
             const sessionId = firstEntry.sessionId || file.replace(".jsonl", "");
 
             // Find first user message for title
@@ -306,11 +309,23 @@ export class ClaudeAcpAgent implements Agent {
                 const entry = JSON.parse(line);
                 if (entry.type === "user" && entry.message?.content) {
                   const msgContent = entry.message.content;
-                  title =
-                    typeof msgContent === "string"
-                      ? msgContent.slice(0, 100)
-                      : msgContent[0]?.text?.slice(0, 100);
-                  break;
+                  if (typeof msgContent === "string") {
+                    title = msgContent.slice(0, 100);
+                    break;
+                  }
+                  if (Array.isArray(msgContent) && msgContent.length > 0) {
+                    const first = msgContent[0];
+                    const text =
+                      typeof first === "string"
+                        ? first
+                        : first && typeof first === "object" && typeof first.text === "string"
+                          ? first.text
+                          : undefined;
+                    if (text) {
+                      title = text.slice(0, 100);
+                      break;
+                    }
+                  }
                 }
               } catch {
                 // Skip malformed lines
