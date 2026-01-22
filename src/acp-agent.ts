@@ -259,7 +259,9 @@ export class ClaudeAcpAgent implements Agent {
    */
   async unstable_listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
     const PAGE_SIZE = 50;
-    const claudeDir = path.join(os.homedir(), ".claude", "projects");
+    // Check env var at runtime to support testing
+    const configDir = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
+    const claudeDir = path.join(configDir, "projects");
 
     if (!fs.existsSync(claudeDir)) {
       return { sessions: [] };
