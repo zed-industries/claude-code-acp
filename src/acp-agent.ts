@@ -69,6 +69,26 @@ export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 
 /**
+ * Decode a Claude project path encoding back to the original filesystem path.
+ * Claude encodes paths by replacing path separators with dashes:
+ * - Unix: "/Users/morse/project" -> "-Users-morse-project"
+ * - Windows: "C:\Users\morse\project" -> "C-Users-morse-project"
+ */
+function decodeProjectPath(encodedPath: string): string {
+  // Check if this looks like a Windows path (starts with drive letter pattern like "C-")
+  const windowsDriveMatch = encodedPath.match(/^([A-Za-z])-/);
+  if (windowsDriveMatch) {
+    // Windows path: "C-Users-morse-project" -> "C:\Users\morse\project"
+    const driveLetter = windowsDriveMatch[1];
+    const rest = encodedPath.slice(2); // Skip "C-"
+    return `${driveLetter}:\\${rest.replace(/-/g, "\\")}`;
+  }
+
+  // Unix path: "-Users-morse-project" -> "/Users/morse/project"
+  return encodedPath.replace(/-/g, "/");
+}
+
+/**
  * Logger interface for customizing logging output
  */
 export interface Logger {
@@ -278,8 +298,10 @@ export class ClaudeAcpAgent implements Agent {
         const stat = fs.statSync(projectDir);
         if (!stat.isDirectory()) continue;
 
-        // Decode the path: "-Users-morse-project" -> "/Users/morse/project"
-        const decodedCwd = encodedPath.replace(/-/g, "/");
+        // Decode the path based on platform:
+        // - Unix: "-Users-morse-project" -> "/Users/morse/project"
+        // - Windows: "C-Users-morse-project" -> "C:\Users\morse\project"
+        const decodedCwd = decodeProjectPath(encodedPath);
 
         // Skip if filtering by cwd and this doesn't match
         if (params.cwd && decodedCwd !== params.cwd) continue;

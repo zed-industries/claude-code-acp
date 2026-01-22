@@ -20,8 +20,15 @@ describe("unstable_listSessions", () => {
     } as unknown as AgentSideConnection;
   }
 
-  // Helper to encode a path like Claude does: "/Users/test" -> "-Users-test"
+  // Helper to encode a path like Claude does:
+  // - Unix: "/Users/test" -> "-Users-test"
+  // - Windows: "C:\Users\test" -> "C-Users-test"
   function encodePath(cwd: string): string {
+    // Handle Windows paths
+    if (/^[A-Za-z]:\\/.test(cwd)) {
+      return cwd.replace(/\\/g, "-").replace(":", "");
+    }
+    // Unix paths
     return cwd.replace(/\//g, "-");
   }
 
@@ -306,6 +313,42 @@ describe("unstable_listSessions", () => {
       const result = await agent.unstable_listSessions({ cursor: badCursor });
 
       expect(result.sessions).toHaveLength(1);
+    });
+  });
+
+  describe("Windows path support", () => {
+    it("decodes Windows-style paths correctly", async () => {
+      // Simulate a Windows path encoded as "C-Users-test-project"
+      const windowsCwd = "C:\\Users\\test\\project";
+      writeSessionFile(windowsCwd, "win-session", { userMessage: "Windows test" });
+
+      const result = await agent.unstable_listSessions({});
+
+      expect(result.sessions).toHaveLength(1);
+      expect(result.sessions[0]!.cwd).toBe("C:\\Users\\test\\project");
+      expect(result.sessions[0]!.sessionId).toBe("win-session");
+    });
+
+    it("filters Windows paths by cwd correctly", async () => {
+      writeSessionFile("C:\\Users\\test\\projectone", "win-a", { userMessage: "A" });
+      writeSessionFile("C:\\Users\\test\\projecttwo", "win-b", { userMessage: "B" });
+
+      const result = await agent.unstable_listSessions({ cwd: "C:\\Users\\test\\projectone" });
+
+      expect(result.sessions).toHaveLength(1);
+      expect(result.sessions[0]!.sessionId).toBe("win-a");
+    });
+
+    it("handles mixed Unix and Windows paths", async () => {
+      writeSessionFile("/Users/test/unixproject", "unix-session", { userMessage: "Unix" });
+      writeSessionFile("C:\\Users\\test\\winproject", "win-session", { userMessage: "Windows" });
+
+      const result = await agent.unstable_listSessions({});
+
+      expect(result.sessions).toHaveLength(2);
+      const cwds = result.sessions.map((s) => s.cwd);
+      expect(cwds).toContain("/Users/test/unixproject");
+      expect(cwds).toContain("C:\\Users\\test\\winproject");
     });
   });
 });
