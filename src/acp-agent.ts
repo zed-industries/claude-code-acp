@@ -278,12 +278,14 @@ export class ClaudeAcpAgent implements Agent {
    * Implements the draft session/list RFD spec
    */
   async unstable_listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
+    // Note: We load all sessions into memory for sorting, so pagination here is for
+    // API response size limits rather than memory efficiency. This matches the RFD spec.
     const PAGE_SIZE = 50;
-    // Check env var at runtime to support testing
-    const configDir = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
-    const claudeDir = path.join(configDir, "projects");
+    const claudeDir = path.join(CLAUDE_CONFIG_DIR, "projects");
 
-    if (!fs.existsSync(claudeDir)) {
+    try {
+      await fs.promises.access(claudeDir);
+    } catch {
       return { sessions: [] };
     }
 
@@ -291,11 +293,11 @@ export class ClaudeAcpAgent implements Agent {
     const allSessions: SessionInfo[] = [];
 
     try {
-      const projectDirs = fs.readdirSync(claudeDir);
+      const projectDirs = await fs.promises.readdir(claudeDir);
 
       for (const encodedPath of projectDirs) {
         const projectDir = path.join(claudeDir, encodedPath);
-        const stat = fs.statSync(projectDir);
+        const stat = await fs.promises.stat(projectDir);
         if (!stat.isDirectory()) continue;
 
         // Decode the path based on platform:
@@ -306,7 +308,7 @@ export class ClaudeAcpAgent implements Agent {
         // Skip if filtering by cwd and this doesn't match
         if (params.cwd && decodedCwd !== params.cwd) continue;
 
-        const files = fs.readdirSync(projectDir);
+        const files = await fs.promises.readdir(projectDir);
         // Filter to user session files only. Skip agent-*.jsonl files which contain
         // internal agent metadata and system logs, not user-visible conversation sessions.
         const jsonlFiles = files.filter((f) => f.endsWith(".jsonl") && !f.startsWith("agent-"));
@@ -314,7 +316,7 @@ export class ClaudeAcpAgent implements Agent {
         for (const file of jsonlFiles) {
           const filePath = path.join(projectDir, file);
           try {
-            const content = fs.readFileSync(filePath, "utf-8");
+            const content = await fs.promises.readFile(filePath, "utf-8");
             const lines = content.trim().split("\n").filter(Boolean);
 
             const firstLine = lines[0];
@@ -355,7 +357,7 @@ export class ClaudeAcpAgent implements Agent {
             }
 
             // Get file modification time as updatedAt
-            const fileStat = fs.statSync(filePath);
+            const fileStat = await fs.promises.stat(filePath);
             const updatedAt = fileStat.mtime.toISOString();
 
             allSessions.push({
@@ -364,12 +366,13 @@ export class ClaudeAcpAgent implements Agent {
               title: title ?? null,
               updatedAt,
             });
-          } catch {
-            // Skip files that can't be parsed
+          } catch (err) {
+            this.logger.error(`[unstable_listSessions] Failed to parse session file: ${filePath}`, err);
           }
         }
       }
-    } catch {
+    } catch (err) {
+      this.logger.error("[unstable_listSessions] Failed to list sessions", err);
       return { sessions: [] };
     }
 
