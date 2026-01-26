@@ -285,4 +285,34 @@ describe("rawOutput in tool call updates", () => {
       rawOutput: "command not found: invalid_command",
     });
   });
+
+  it("should not emit tool_call_update for TodoWrite (emits plan instead)", () => {
+    const toolUseCache: ToolUseCache = {
+      toolu_todo: {
+        type: "tool_use",
+        id: "toolu_todo",
+        name: "TodoWrite",
+        input: { todos: [{ content: "Test task", status: "pending" }] },
+      },
+    };
+
+    const toolResult: ToolResultBlockParam = {
+      type: "tool_result",
+      tool_use_id: "toolu_todo",
+      content: "Todos updated successfully",
+      is_error: false,
+    };
+
+    const notifications = toAcpNotifications(
+      [toolResult],
+      "assistant",
+      "test-session",
+      toolUseCache,
+      mockClient,
+      mockLogger,
+    );
+
+    // TodoWrite should not emit tool_call_update - it emits plan updates instead
+    expect(notifications).toHaveLength(0);
+  });
 });
