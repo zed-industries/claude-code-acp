@@ -9,15 +9,14 @@ import {
   BetaBashCodeExecutionToolResultBlock,
   BetaBashCodeExecutionResultBlock,
 } from "@anthropic-ai/sdk/resources/beta.mjs";
-import { toAcpNotifications } from "../acp-agent.js";
+import { toAcpNotifications, ToolUseCache, Logger } from "../acp-agent.js";
 
 describe("rawOutput in tool call updates", () => {
-  // Helper to create a mock AgentSideConnection
   const mockClient = {} as AgentSideConnection;
-  const mockLogger = { log: () => {}, error: () => {} } as any;
+  const mockLogger: Logger = { log: () => {}, error: () => {} };
 
   it("should include rawOutput with string content for tool_result", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_123: {
         type: "tool_use",
         id: "toolu_123",
@@ -52,7 +51,7 @@ describe("rawOutput in tool call updates", () => {
   });
 
   it("should include rawOutput with array content for tool_result", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_456: {
         type: "tool_use",
         id: "toolu_456",
@@ -88,7 +87,7 @@ describe("rawOutput in tool call updates", () => {
   });
 
   it("should include rawOutput for mcp_tool_result with string content", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_789: {
         type: "tool_use",
         id: "toolu_789",
@@ -124,7 +123,7 @@ describe("rawOutput in tool call updates", () => {
   });
 
   it("should include rawOutput for mcp_tool_result with array content", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_abc: {
         type: "tool_use",
         id: "toolu_abc",
@@ -165,7 +164,7 @@ describe("rawOutput in tool call updates", () => {
   });
 
   it("should include rawOutput for web_search_tool_result", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_web: {
         type: "tool_use",
         id: "toolu_web",
@@ -210,7 +209,7 @@ describe("rawOutput in tool call updates", () => {
   });
 
   it("should include rawOutput for bash_code_execution_tool_result", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_bash: {
         type: "tool_use",
         id: "toolu_bash",
@@ -253,7 +252,7 @@ describe("rawOutput in tool call updates", () => {
   });
 
   it("should set status to failed when is_error is true", () => {
-    const toolUseCache: Record<string, any> = {
+    const toolUseCache: ToolUseCache = {
       toolu_err: {
         type: "tool_use",
         id: "toolu_err",

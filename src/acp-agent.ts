@@ -124,12 +124,12 @@ export type ToolUpdateMeta = {
   };
 };
 
-type ToolUseCache = {
+export type ToolUseCache = {
   [key: string]: {
     type: "tool_use" | "server_tool_use" | "mcp_tool_use";
     id: string;
     name: string;
-    input: any;
+    input: unknown;
   };
 };
 
