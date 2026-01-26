@@ -274,6 +274,9 @@ export class ClaudeAcpAgent implements Agent {
             case "init":
               break;
             case "compact_boundary":
+            case "hook_started":
+            case "task_notification":
+            case "hook_progress":
             case "hook_response":
             case "status":
               // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
@@ -398,6 +401,7 @@ export class ClaudeAcpAgent implements Agent {
           break;
         }
         case "tool_progress":
+        case "tool_use_summary":
           break;
         case "auth_status":
           break;
