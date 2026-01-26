@@ -1150,6 +1150,7 @@ export function toAcpNotifications(
             toolCallId: chunk.tool_use_id,
             sessionUpdate: "tool_call_update",
             status: "is_error" in chunk && chunk.is_error ? "failed" : "completed",
+            rawOutput: chunk.content,
             ...toolUpdateFromToolResult(chunk, toolUseCache[chunk.tool_use_id]),
           };
         }
