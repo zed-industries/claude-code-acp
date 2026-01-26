@@ -1,14 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { AgentSideConnection } from "@agentclientprotocol/sdk";
-import { ClaudeAcpAgent } from "../acp-agent.js";
+import type { ClaudeAcpAgent as ClaudeAcpAgentType } from "../acp-agent.js";
 
 describe("unstable_listSessions", () => {
   let tempDir: string;
   let originalClaudeEnv: string | undefined;
-  let agent: ClaudeAcpAgent;
+  let agent: ClaudeAcpAgentType;
+  let ClaudeAcpAgent: typeof ClaudeAcpAgentType;
 
   // Helper to create a mock AgentSideConnection
   function createMockClient(): AgentSideConnection {
@@ -80,15 +81,20 @@ describe("unstable_listSessions", () => {
     }
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create temp directory to isolate tests from real filesystem.
-    // NOTE: The implementation uses process.env.CLAUDE to override the config dir.
-    // This is an undocumented env var from upstream - ideally would use a more
-    // specific name like CLAUDE_CODE_CONFIG_DIR to avoid conflicts with user env.
-    // We save/restore the original value to avoid affecting the user's environment.
+    // We set process.env.CLAUDE before importing the module so that
+    // CLAUDE_CONFIG_DIR is evaluated with our temp directory.
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-test-"));
     originalClaudeEnv = process.env.CLAUDE;
     process.env.CLAUDE = tempDir;
+
+    // Reset modules to pick up the new CLAUDE env var in CLAUDE_CONFIG_DIR
+    vi.resetModules();
+
+    // Dynamic import after setting env var
+    const acpAgent = await import("../acp-agent.js");
+    ClaudeAcpAgent = acpAgent.ClaudeAcpAgent;
 
     // Create agent instance
     agent = new ClaudeAcpAgent(createMockClient());
