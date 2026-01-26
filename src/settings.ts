@@ -128,7 +128,8 @@ function normalizePath(filePath: string, cwd: string): string {
   } else if (!path.isAbsolute(filePath)) {
     filePath = path.join(cwd, filePath);
   }
-  return path.normalize(filePath);
+  // Convert backslashes to forward slashes for minimatch compatibility on Windows
+  return path.normalize(filePath).replace(/\\/g, "/");
 }
 
 /**
