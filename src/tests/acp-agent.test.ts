@@ -21,6 +21,13 @@ import { markdownEscape, toolInfoFromToolUse, toolUpdateFromToolResult } from ".
 import { toAcpNotifications, promptToClaude } from "../acp-agent.js";
 import { query, SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "crypto";
+import type {
+  BetaToolResultBlockParam,
+  BetaToolSearchToolResultBlockParam,
+  BetaWebSearchToolResultBlockParam,
+  BetaWebFetchToolResultBlockParam,
+  BetaCodeExecutionToolResultBlockParam,
+} from "@anthropic-ai/sdk/resources/beta.mjs";
 
 describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("ACP subprocess integration", () => {
   let child: ReturnType<typeof spawn>;
@@ -730,6 +737,200 @@ describe("tool conversions", () => {
         {
           content: { type: "text", text: "```\nFailed to find `old_string`\n```" },
           type: "content",
+        },
+      ],
+    });
+  });
+
+  it("should transform tool_reference content to valid ACP content", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "ToolSearch",
+      input: { query: "test" },
+    };
+
+    const toolResult: BetaToolResultBlockParam = {
+      content: [
+        {
+          type: "tool_reference",
+          tool_name: "some_discovered_tool",
+        },
+      ],
+      tool_use_id: "toolu_01MNO345",
+      is_error: false,
+      type: "tool_result",
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update).toEqual({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Tool: some_discovered_tool" },
+        },
+      ],
+    });
+  });
+
+  it("should transform web_search_result content to valid ACP content", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "WebSearch",
+      input: { query: "test" },
+    };
+
+    const toolResult: BetaWebSearchToolResultBlockParam = {
+      content: [
+        {
+          type: "web_search_result",
+          title: "Test Result",
+          url: "https://example.com",
+          encrypted_content: "...",
+          page_age: null,
+        },
+      ],
+      tool_use_id: "toolu_01MNO345",
+      type: "web_search_tool_result",
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update).toEqual({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Test Result (https://example.com)" },
+        },
+      ],
+    });
+  });
+
+  it("should transform web_search_tool_result_error to valid ACP content", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "WebSearch",
+      input: { query: "test" },
+    };
+
+    const toolResult: BetaWebSearchToolResultBlockParam = {
+      content: {
+        type: "web_search_tool_result_error",
+        error_code: "unavailable",
+      },
+      tool_use_id: "toolu_01MNO345",
+      type: "web_search_tool_result",
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update).toEqual({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Error: unavailable" },
+        },
+      ],
+    });
+  });
+
+  it("should transform code_execution_result content to valid ACP content", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "CodeExecution",
+      input: {},
+    };
+
+    const toolResult: BetaCodeExecutionToolResultBlockParam = {
+      content: {
+        type: "code_execution_result",
+        stdout: "Hello World",
+        stderr: "",
+        return_code: 0,
+        content: [],
+      },
+      tool_use_id: "toolu_01MNO345",
+      type: "code_execution_tool_result",
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update).toEqual({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Output: Hello World" },
+        },
+      ],
+    });
+  });
+
+  it("should transform web_fetch_result content to valid ACP content", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "WebFetch",
+      input: { url: "https://example.com" },
+    };
+
+    const toolResult: BetaWebFetchToolResultBlockParam = {
+      content: {
+        type: "web_fetch_result",
+        url: "https://example.com",
+        content: {
+          type: "document",
+          citations: null,
+          title: null,
+          source: { type: "text", media_type: "text/plain", data: "Page content here" },
+        },
+      },
+      tool_use_id: "toolu_01MNO345",
+      type: "web_fetch_tool_result",
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update).toEqual({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Fetched: https://example.com" },
+        },
+      ],
+    });
+  });
+
+  it("should transform tool_search_tool_search_result to valid ACP content", () => {
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_01MNO345",
+      name: "ToolSearch",
+      input: { query: "test" },
+    };
+
+    const toolResult: BetaToolSearchToolResultBlockParam = {
+      content: {
+        type: "tool_search_tool_search_result",
+        tool_references: [
+          { type: "tool_reference", tool_name: "tool_a" },
+          { type: "tool_reference", tool_name: "tool_b" },
+        ],
+      },
+      tool_use_id: "toolu_01MNO345",
+      type: "tool_search_tool_result",
+    };
+
+    const update = toolUpdateFromToolResult(toolResult, toolUse);
+
+    expect(update).toEqual({
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Tools found: tool_a, tool_b" },
         },
       ],
     });
