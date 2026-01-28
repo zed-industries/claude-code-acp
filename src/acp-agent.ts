@@ -350,6 +350,21 @@ export class ClaudeAcpAgent implements Agent {
             typeof message.message.content === "string" &&
             message.message.content.includes("<local-command-stdout>")
           ) {
+            // Handle /context by sending its reply as regular agent message.
+            if (message.message.content.includes("Context Usage")) {
+              for (const notification of toAcpNotifications(
+                message.message.content
+                  .replace("<local-command-stdout>", "")
+                  .replace("</local-command-stdout>", ""),
+                "assistant",
+                params.sessionId,
+                this.toolUseCache,
+                this.client,
+                this.logger,
+              )) {
+                await this.client.sessionUpdate(notification);
+              }
+            }
             this.logger.log(message.message.content);
             break;
           }
@@ -872,7 +887,6 @@ async function getAvailableModels(query: Query): Promise<SessionModelState> {
 
 async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
-    "context",
     "cost",
     "login",
     "logout",
