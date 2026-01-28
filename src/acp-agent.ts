@@ -869,8 +869,35 @@ export class ClaudeAcpAgent implements Agent {
 async function getAvailableModels(query: Query): Promise<SessionModelState> {
   const models = await query.supportedModels();
 
-  // Query doesn't give us access to the currently selected model, so we just choose the first model in the list.
-  const currentModel = models[0];
+  // Try to get user's preferred model from settings
+  let userModelPreference: string | undefined;
+  try {
+    const settingsPath = path.join(CLAUDE_CONFIG_DIR, "settings.json");
+    const content = await fs.promises.readFile(settingsPath, "utf-8");
+    const settings = JSON.parse(content);
+    userModelPreference = settings.model;
+  } catch {
+    // No settings file or no model preference - that's fine
+  }
+
+  // Default to first model, but prefer user's choice if available
+  let currentModel = models[0];
+
+  if (userModelPreference) {
+    // Try to find a matching model (exact match, contains match, or display name match)
+    const match = models.find(
+      (m) =>
+        m.value === userModelPreference ||
+        m.value.includes(userModelPreference) ||
+        userModelPreference.includes(m.value) ||
+        m.displayName.toLowerCase() === userModelPreference.toLowerCase() ||
+        m.displayName.toLowerCase().includes(userModelPreference.toLowerCase()),
+    );
+    if (match) {
+      currentModel = match;
+    }
+  }
+
   await query.setModel(currentModel.value);
 
   const availableModels = models.map((model) => ({
