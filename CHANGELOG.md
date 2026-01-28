@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.2
+
+- Update to @anthropic-ai/claude-agent-sdk@0.2.22
+- Fix: return content from ACP write tool to help with issues with alternate providers.
+
 ## 0.13.1
 
 - Update to @anthropic-ai/claude-agent-sdk@0.2.7
