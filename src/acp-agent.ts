@@ -811,7 +811,7 @@ export class ClaudeAcpAgent implements Agent {
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
-    const models = await getAvailableModels(q);
+    const models = await getAvailableModels(q, settingsManager);
 
     // Needs to happen after we return the session
     setTimeout(() => {
@@ -866,32 +866,23 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
-async function getAvailableModels(query: Query): Promise<SessionModelState> {
+async function getAvailableModels(
+  query: Query,
+  settingsManager: SettingsManager,
+): Promise<SessionModelState> {
   const models = await query.supportedModels();
+  const settings = settingsManager.getSettings();
 
-  // Try to get user's preferred model from settings
-  let userModelPreference: string | undefined;
-  try {
-    const settingsPath = path.join(CLAUDE_CONFIG_DIR, "settings.json");
-    const content = await fs.promises.readFile(settingsPath, "utf-8");
-    const settings = JSON.parse(content);
-    userModelPreference = settings.model;
-  } catch {
-    // No settings file or no model preference - that's fine
-  }
-
-  // Default to first model, but prefer user's choice if available
   let currentModel = models[0];
 
-  if (userModelPreference) {
-    // Try to find a matching model (exact match, contains match, or display name match)
+  if (settings.model) {
     const match = models.find(
       (m) =>
-        m.value === userModelPreference ||
-        m.value.includes(userModelPreference) ||
-        userModelPreference.includes(m.value) ||
-        m.displayName.toLowerCase() === userModelPreference.toLowerCase() ||
-        m.displayName.toLowerCase().includes(userModelPreference.toLowerCase()),
+        m.value === settings.model ||
+        m.value.includes(settings.model!) ||
+        settings.model!.includes(m.value) ||
+        m.displayName.toLowerCase() === settings.model!.toLowerCase() ||
+        m.displayName.toLowerCase().includes(settings.model!.toLowerCase()),
     );
     if (match) {
       currentModel = match;
@@ -900,14 +891,12 @@ async function getAvailableModels(query: Query): Promise<SessionModelState> {
 
   await query.setModel(currentModel.value);
 
-  const availableModels = models.map((model) => ({
-    modelId: model.value,
-    name: model.displayName,
-    description: model.description,
-  }));
-
   return {
-    availableModels,
+    availableModels: models.map((model) => ({
+      modelId: model.value,
+      name: model.displayName,
+      description: model.description,
+    })),
     currentModelId: currentModel.value,
   };
 }
