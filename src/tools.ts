@@ -1,7 +1,44 @@
-import { PlanEntry, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
+import {
+  ContentBlock,
+  PlanEntry,
+  ToolCallContent,
+  ToolCallLocation,
+  ToolKind,
+} from "@agentclientprotocol/sdk";
 import { SYSTEM_REMINDER } from "./mcp-server.js";
 import * as diff from "diff";
-import { ToolResultBlockParam, WebSearchToolResultBlockParam } from "@anthropic-ai/sdk/resources";
+import {
+  ImageBlockParam,
+  TextBlockParam,
+  ToolResultBlockParam,
+  WebSearchResultBlock,
+  WebSearchToolResultBlockParam,
+  WebSearchToolResultError,
+} from "@anthropic-ai/sdk/resources";
+import {
+  BetaBashCodeExecutionToolResultBlockParam,
+  BetaBashCodeExecutionResultBlock,
+  BetaBashCodeExecutionToolResultError,
+  BetaCodeExecutionToolResultBlockParam,
+  BetaCodeExecutionResultBlock,
+  BetaCodeExecutionToolResultError,
+  BetaRequestMCPToolResultBlockParam,
+  BetaTextEditorCodeExecutionToolResultBlockParam,
+  BetaTextEditorCodeExecutionViewResultBlock,
+  BetaTextEditorCodeExecutionCreateResultBlock,
+  BetaTextEditorCodeExecutionStrReplaceResultBlock,
+  BetaTextEditorCodeExecutionToolResultError,
+  BetaToolResultBlockParam,
+  BetaToolSearchToolResultBlockParam,
+  BetaToolReferenceBlock,
+  BetaToolSearchToolSearchResultBlock,
+  BetaToolSearchToolResultError,
+  BetaWebFetchToolResultBlockParam,
+  BetaWebFetchBlock,
+  BetaWebFetchToolResultErrorBlock,
+  BetaWebSearchToolResultBlockParam,
+  BetaImageBlockParam,
+} from "@anthropic-ai/sdk/resources/beta.mjs";
 
 const acpUnqualifiedToolNames = {
   read: "Read",
@@ -24,15 +61,29 @@ export const acpToolNames = {
 
 export const EDIT_TOOL_NAMES = [acpToolNames.edit, acpToolNames.write];
 
-import {
-  BetaBashCodeExecutionToolResultBlockParam,
-  BetaCodeExecutionToolResultBlockParam,
-  BetaRequestMCPToolResultBlockParam,
-  BetaTextEditorCodeExecutionToolResultBlockParam,
-  BetaToolSearchToolResultBlockParam,
-  BetaWebFetchToolResultBlockParam,
-  BetaWebSearchToolResultBlockParam,
-} from "@anthropic-ai/sdk/resources/beta.mjs";
+/**
+ * Union of all possible content types that can appear in tool results from the Anthropic SDK.
+ * These are transformed to valid ACP ContentBlock types by toValidAcpContent().
+ */
+type ToolResultContent =
+  | TextBlockParam
+  | ImageBlockParam
+  | BetaImageBlockParam
+  | BetaToolReferenceBlock
+  | BetaToolSearchToolSearchResultBlock
+  | BetaToolSearchToolResultError
+  | WebSearchResultBlock
+  | WebSearchToolResultError
+  | BetaWebFetchBlock
+  | BetaWebFetchToolResultErrorBlock
+  | BetaCodeExecutionResultBlock
+  | BetaCodeExecutionToolResultError
+  | BetaBashCodeExecutionResultBlock
+  | BetaBashCodeExecutionToolResultError
+  | BetaTextEditorCodeExecutionViewResultBlock
+  | BetaTextEditorCodeExecutionCreateResultBlock
+  | BetaTextEditorCodeExecutionStrReplaceResultBlock
+  | BetaTextEditorCodeExecutionToolResultError;
 import { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { Logger } from "./acp-agent.js";
 import { SettingsManager } from "./settings.js";
@@ -406,6 +457,7 @@ export function toolInfoFromToolUse(toolUse: any): ToolInfo {
 export function toolUpdateFromToolResult(
   toolResult:
     | ToolResultBlockParam
+    | BetaToolResultBlockParam
     | BetaWebSearchToolResultBlockParam
     | BetaWebFetchToolResultBlockParam
     | WebSearchToolResultBlockParam
@@ -547,16 +599,19 @@ function toAcpContentUpdate(
 ): { content?: ToolCallContent[] } {
   if (Array.isArray(content) && content.length > 0) {
     return {
-      content: content.map((content: any) => ({
-        type: "content",
-        content:
-          isError && content.type === "text"
-            ? {
-                ...content,
-                text: `\`\`\`\n${content.text}\n\`\`\``,
-              }
-            : content,
+      content: content.map((c: any) => ({
+        type: "content" as const,
+        content: toAcpContentBlock(c, isError),
       })),
+    };
+  } else if (typeof content === "object" && content !== null && "type" in content) {
+    return {
+      content: [
+        {
+          type: "content" as const,
+          content: toAcpContentBlock(content, isError),
+        },
+      ],
     };
   } else if (typeof content === "string" && content.length > 0) {
     return {
@@ -572,6 +627,74 @@ function toAcpContentUpdate(
     };
   }
   return {};
+}
+
+function toAcpContentBlock(content: ToolResultContent, isError: boolean): ContentBlock {
+  const wrapText = (text: string): ContentBlock => ({
+    type: "text" as const,
+    text: isError ? `\`\`\`\n${text}\n\`\`\`` : text,
+  });
+
+  switch (content.type) {
+    case "text":
+      return {
+        type: "text" as const,
+        text: isError ? `\`\`\`\n${content.text}\n\`\`\`` : content.text,
+      };
+    case "image":
+      if (content.source.type === "base64") {
+        return {
+          type: "image" as const,
+          data: content.source.data,
+          mimeType: content.source.media_type,
+        };
+      }
+      // URL and file-based images can't be converted to ACP format (requires data)
+      return wrapText(
+        content.source.type === "url"
+          ? `[image: ${content.source.url}]`
+          : "[image: file reference]",
+      );
+
+    case "tool_reference":
+      return wrapText(`Tool: ${content.tool_name}`);
+    case "tool_search_tool_search_result":
+      return wrapText(
+        `Tools found: ${content.tool_references.map((r) => r.tool_name).join(", ") || "none"}`,
+      );
+    case "tool_search_tool_result_error":
+      return wrapText(
+        `Error: ${content.error_code}${content.error_message ? ` - ${content.error_message}` : ""}`,
+      );
+    case "web_search_result":
+      return wrapText(`${content.title} (${content.url})`);
+    case "web_search_tool_result_error":
+      return wrapText(`Error: ${content.error_code}`);
+    case "web_fetch_result":
+      return wrapText(`Fetched: ${content.url}`);
+    case "web_fetch_tool_result_error":
+      return wrapText(`Error: ${content.error_code}`);
+    case "code_execution_result":
+      return wrapText(`Output: ${content.stdout || content.stderr || ""}`);
+    case "bash_code_execution_result":
+      return wrapText(`Output: ${content.stdout || content.stderr || ""}`);
+    case "code_execution_tool_result_error":
+    case "bash_code_execution_tool_result_error":
+      return wrapText(`Error: ${content.error_code}`);
+    case "text_editor_code_execution_view_result":
+      return wrapText(content.content);
+    case "text_editor_code_execution_create_result":
+      return wrapText(content.is_file_update ? "File updated" : "File created");
+    case "text_editor_code_execution_str_replace_result":
+      return wrapText(content.lines?.join("\n") || "");
+    case "text_editor_code_execution_tool_result_error":
+      return wrapText(
+        `Error: ${content.error_code}${content.error_message ? ` - ${content.error_message}` : ""}`,
+      );
+
+    default:
+      return wrapText(JSON.stringify(content));
+  }
 }
 
 export type ClaudePlanEntry = {
