@@ -28,6 +28,7 @@ export interface PermissionSettings {
 export interface ClaudeCodeSettings {
   permissions?: PermissionSettings;
   env?: Record<string, string>;
+  model?: string;
 }
 
 export type PermissionDecision = "allow" | "deny" | "ask";
@@ -368,6 +369,10 @@ export class SettingsManager {
 
       if (settings.env) {
         merged.env = { ...merged.env, ...settings.env };
+      }
+
+      if (settings.model) {
+        merged.model = settings.model;
       }
     }
 

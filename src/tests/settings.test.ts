@@ -465,6 +465,41 @@ describe("SettingsManager", () => {
       });
       expect(envResult.decision).toBe("deny");
     });
+
+    it("should merge model setting with later sources taking precedence", async () => {
+      const claudeDir = path.join(tempDir, ".claude");
+      await fs.promises.mkdir(claudeDir, { recursive: true });
+
+      // Project settings with one model
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.json"),
+        JSON.stringify({
+          model: "claude-3-5-sonnet",
+        }),
+      );
+
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      let settings = settingsManager.getSettings();
+      expect(settings.model).toBe("claude-3-5-sonnet");
+
+      // Add local settings that override the model
+      await fs.promises.writeFile(
+        path.join(claudeDir, "settings.local.json"),
+        JSON.stringify({
+          model: "claude-3-5-haiku",
+        }),
+      );
+
+      // Re-initialize to pick up local settings
+      settingsManager.dispose();
+      settingsManager = new SettingsManager(tempDir);
+      await settingsManager.initialize();
+
+      settings = settingsManager.getSettings();
+      expect(settings.model).toBe("claude-3-5-haiku");
+    });
   });
 
   describe("ask rules", () => {
