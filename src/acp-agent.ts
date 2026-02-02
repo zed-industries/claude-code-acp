@@ -62,7 +62,8 @@ import packageJson from "../package.json" with { type: "json" };
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-export const CLAUDE_CONFIG_DIR = process.env.CLAUDE ?? path.join(os.homedir(), ".claude");
+export const CLAUDE_CONFIG_DIR =
+  process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 
 /**
  * Logger interface for customizing logging output
