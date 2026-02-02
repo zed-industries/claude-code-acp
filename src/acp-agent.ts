@@ -1011,7 +1011,7 @@ export class ClaudeAcpAgent implements Agent {
     };
 
     const availableCommands = await getAvailableSlashCommands(q);
-    const models = await getAvailableModels(q);
+    const models = await getAvailableModels(q, settingsManager);
 
     // Needs to happen after we return the session
     setTimeout(() => {
@@ -1066,21 +1066,37 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
-async function getAvailableModels(query: Query): Promise<SessionModelState> {
+async function getAvailableModels(
+  query: Query,
+  settingsManager: SettingsManager,
+): Promise<SessionModelState> {
   const models = await query.supportedModels();
+  const settings = settingsManager.getSettings();
 
-  // Query doesn't give us access to the currently selected model, so we just choose the first model in the list.
-  const currentModel = models[0];
+  let currentModel = models[0];
+
+  if (settings.model) {
+    const match = models.find(
+      (m) =>
+        m.value === settings.model ||
+        m.value.includes(settings.model!) ||
+        settings.model!.includes(m.value) ||
+        m.displayName.toLowerCase() === settings.model!.toLowerCase() ||
+        m.displayName.toLowerCase().includes(settings.model!.toLowerCase()),
+    );
+    if (match) {
+      currentModel = match;
+    }
+  }
+
   await query.setModel(currentModel.value);
 
-  const availableModels = models.map((model) => ({
-    modelId: model.value,
-    name: model.displayName,
-    description: model.description,
-  }));
-
   return {
-    availableModels,
+    availableModels: models.map((model) => ({
+      modelId: model.value,
+      name: model.displayName,
+      description: model.description,
+    })),
     currentModelId: currentModel.value,
   };
 }
