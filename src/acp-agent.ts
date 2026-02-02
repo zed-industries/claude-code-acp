@@ -137,6 +137,7 @@ export type ToolUseCache = {
 
 // Bypass Permissions doesn't work if we are a root/sudo user
 const IS_ROOT = (process.geteuid?.() ?? process.getuid?.()) === 0;
+const ALLOW_BYPASS = !IS_ROOT || !!process.env.IS_SANDBOX;
 
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
@@ -710,7 +711,7 @@ export class ClaudeAcpAgent implements Agent {
       extraArgs,
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
-      allowDangerouslySkipPermissions: !IS_ROOT,
+      allowDangerouslySkipPermissions: ALLOW_BYPASS,
       permissionMode,
       canUseTool: this.canUseTool(sessionId),
       // note: although not documented by the types, passing an absolute path
@@ -849,7 +850,7 @@ export class ClaudeAcpAgent implements Agent {
       },
     ];
     // Only works in non-root mode
-    if (!IS_ROOT) {
+    if (ALLOW_BYPASS) {
       availableModes.push({
         id: "bypassPermissions",
         name: "Bypass Permissions",
