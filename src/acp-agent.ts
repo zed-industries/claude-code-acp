@@ -9,6 +9,8 @@ import {
   ForkSessionResponse,
   InitializeRequest,
   InitializeResponse,
+  ListSessionsRequest,
+  ListSessionsResponse,
   ndJsonStream,
   NewSessionRequest,
   NewSessionResponse,
@@ -19,6 +21,7 @@ import {
   RequestError,
   ResumeSessionRequest,
   ResumeSessionResponse,
+  SessionInfo,
   SessionModelState,
   SessionNotification,
   SetSessionModelRequest,
@@ -64,6 +67,40 @@ import { fileURLToPath } from "node:url";
 
 export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+
+/**
+ * Decode a Claude project path encoding back to the original filesystem path.
+ * Claude encodes paths by replacing path separators with dashes:
+ * - Unix: "/Users/morse/project" -> "-Users-morse-project"
+ * - Windows: "C:\Users\morse\project" -> "C-Users-morse-project"
+ */
+function decodeProjectPath(encodedPath: string): string {
+  // Check if this looks like a Windows path (starts with drive letter pattern like "C-")
+  const windowsDriveMatch = encodedPath.match(/^([A-Za-z])-/);
+  if (windowsDriveMatch) {
+    // Windows path: "C-Users-morse-project" -> "C:\Users\morse\project"
+    const driveLetter = windowsDriveMatch[1];
+    const rest = encodedPath.slice(2); // Skip "C-"
+    return `${driveLetter}:\\${rest.replace(/-/g, "\\")}`;
+  }
+
+  // Unix path: "-Users-morse-project" -> "/Users/morse/project"
+  return encodedPath.replace(/-/g, "/");
+}
+
+const MAX_TITLE_LENGTH = 128;
+
+function sanitizeTitle(text: string): string {
+  // Replace newlines and collapse whitespace
+  const sanitized = text
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (sanitized.length <= MAX_TITLE_LENGTH) {
+    return sanitized;
+  }
+  return sanitized.slice(0, MAX_TITLE_LENGTH - 1) + "…";
+}
 
 /**
  * Logger interface for customizing logging output
@@ -193,6 +230,7 @@ export class ClaudeAcpAgent implements Agent {
         },
         sessionCapabilities: {
           fork: {},
+          list: {},
           resume: {},
         },
       },
@@ -244,6 +282,149 @@ export class ClaudeAcpAgent implements Agent {
         resume: params.sessionId,
       },
     );
+
+    return response;
+  }
+
+  /**
+   * List Claude Code sessions by parsing JSONL files
+   * Sessions are stored in ~/.claude/projects/<path-encoded>/
+   * Implements the draft session/list RFD spec
+   */
+  async unstable_listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
+    // Note: We load all sessions into memory for sorting, so pagination here is for
+    // API response size limits rather than memory efficiency. This matches the RFD spec.
+    const PAGE_SIZE = 50;
+    const claudeDir = path.join(CLAUDE_CONFIG_DIR, "projects");
+
+    try {
+      await fs.promises.access(claudeDir);
+    } catch {
+      return { sessions: [] };
+    }
+
+    // Collect all sessions across all project directories
+    const allSessions: SessionInfo[] = [];
+
+    try {
+      const projectDirs = await fs.promises.readdir(claudeDir);
+
+      for (const encodedPath of projectDirs) {
+        const projectDir = path.join(claudeDir, encodedPath);
+        const stat = await fs.promises.stat(projectDir);
+        if (!stat.isDirectory()) continue;
+
+        // Decode the path based on platform:
+        // - Unix: "-Users-morse-project" -> "/Users/morse/project"
+        // - Windows: "C-Users-morse-project" -> "C:\Users\morse\project"
+        const decodedCwd = decodeProjectPath(encodedPath);
+
+        // Skip if filtering by cwd and this doesn't match
+        if (params.cwd && decodedCwd !== params.cwd) continue;
+
+        const files = await fs.promises.readdir(projectDir);
+        // Filter to user session files only. Skip agent-*.jsonl files which contain
+        // internal agent metadata and system logs, not user-visible conversation sessions.
+        const jsonlFiles = files.filter((f) => f.endsWith(".jsonl") && !f.startsWith("agent-"));
+
+        for (const file of jsonlFiles) {
+          const filePath = path.join(projectDir, file);
+          try {
+            const content = await fs.promises.readFile(filePath, "utf-8");
+            const lines = content.trim().split("\n").filter(Boolean);
+
+            const firstLine = lines[0];
+            if (!firstLine) continue;
+
+            // Parse first line to get session info
+            const firstEntry = JSON.parse(firstLine);
+            const sessionId = firstEntry.sessionId || file.replace(".jsonl", "");
+
+            // Find first user message for title
+            let title: string | undefined;
+            for (const line of lines) {
+              try {
+                const entry = JSON.parse(line);
+                if (entry.type === "user" && entry.message?.content) {
+                  const msgContent = entry.message.content;
+                  if (typeof msgContent === "string") {
+                    title = sanitizeTitle(msgContent);
+                    break;
+                  }
+                  if (Array.isArray(msgContent) && msgContent.length > 0) {
+                    const first = msgContent[0];
+                    const text =
+                      typeof first === "string"
+                        ? first
+                        : first && typeof first === "object" && typeof first.text === "string"
+                          ? first.text
+                          : undefined;
+                    if (text) {
+                      title = sanitizeTitle(text);
+                      break;
+                    }
+                  }
+                }
+              } catch {
+                // Skip malformed lines
+              }
+            }
+
+            // Get file modification time as updatedAt
+            const fileStat = await fs.promises.stat(filePath);
+            const updatedAt = fileStat.mtime.toISOString();
+
+            allSessions.push({
+              sessionId,
+              cwd: decodedCwd,
+              title: title ?? null,
+              updatedAt,
+            });
+          } catch (err) {
+            this.logger.error(
+              `[unstable_listSessions] Failed to parse session file: ${filePath}`,
+              err,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.error("[unstable_listSessions] Failed to list sessions", err);
+      return { sessions: [] };
+    }
+
+    // Sort by updatedAt descending (most recent first)
+    allSessions.sort((a, b) => {
+      const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    // Handle pagination with cursor
+    let startIndex = 0;
+    if (params.cursor) {
+      try {
+        const decoded = Buffer.from(params.cursor, "base64").toString("utf-8");
+        const cursorData = JSON.parse(decoded);
+        startIndex = cursorData.offset ?? 0;
+      } catch {
+        // Invalid cursor, start from beginning
+      }
+    }
+
+    const pageOfSessions = allSessions.slice(startIndex, startIndex + PAGE_SIZE);
+    const hasMore = startIndex + PAGE_SIZE < allSessions.length;
+
+    const response: ListSessionsResponse = {
+      sessions: pageOfSessions,
+    };
+
+    if (hasMore) {
+      const nextCursor = Buffer.from(JSON.stringify({ offset: startIndex + PAGE_SIZE })).toString(
+        "base64",
+      );
+      response.nextCursor = nextCursor;
+    }
 
     return response;
   }
