@@ -752,16 +752,28 @@ export const registerHookCallback = (
 
 /* A callback for Claude Code that is called when receiving a PostToolUse hook */
 export const createPostToolUseHook =
-  (logger: Logger = console): HookCallback =>
+  (
+    logger: Logger = console,
+    options?: {
+      onEnterPlanMode?: () => Promise<void>;
+    },
+  ): HookCallback =>
   async (input: any, toolUseID: string | undefined): Promise<{ continue: boolean }> => {
-    if (input.hook_event_name === "PostToolUse" && toolUseID) {
-      const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
-      if (onPostToolUseHook) {
-        await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
-        delete toolUseCallbacks[toolUseID]; // Cleanup after execution
-      } else {
-        logger.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
-        delete toolUseCallbacks[toolUseID];
+    if (input.hook_event_name === "PostToolUse") {
+      // Handle EnterPlanMode tool - notify client of mode change after successful execution
+      if (input.tool_name === "EnterPlanMode" && options?.onEnterPlanMode) {
+        await options.onEnterPlanMode();
+      }
+
+      if (toolUseID) {
+        const onPostToolUseHook = toolUseCallbacks[toolUseID]?.onPostToolUseHook;
+        if (onPostToolUseHook) {
+          await onPostToolUseHook(toolUseID, input.tool_input, input.tool_response);
+          delete toolUseCallbacks[toolUseID]; // Cleanup after execution
+        } else {
+          logger.error(`No onPostToolUseHook found for tool use ID: ${toolUseID}`);
+          delete toolUseCallbacks[toolUseID];
+        }
       }
     }
     return { continue: true };

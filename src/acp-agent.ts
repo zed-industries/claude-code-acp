@@ -732,7 +732,23 @@ export class ClaudeAcpAgent implements Agent {
         PostToolUse: [
           ...(userProvidedOptions?.hooks?.PostToolUse || []),
           {
-            hooks: [createPostToolUseHook(this.logger)],
+            hooks: [
+              createPostToolUseHook(this.logger, {
+                onEnterPlanMode: async () => {
+                  const session = this.sessions[sessionId];
+                  if (session) {
+                    session.permissionMode = "plan";
+                  }
+                  await this.client.sessionUpdate({
+                    sessionId,
+                    update: {
+                      sessionUpdate: "current_mode_update",
+                      currentModeId: "plan",
+                    },
+                  });
+                },
+              }),
+            ],
           },
         ],
       },
