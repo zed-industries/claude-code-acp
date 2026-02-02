@@ -280,6 +280,7 @@ export class ClaudeAcpAgent implements Agent {
             case "hook_progress":
             case "hook_response":
             case "status":
+            case "files_persisted":
               // Todo: process via status api: https://docs.claude.com/en/docs/claude-code/hooks#hook-output
               break;
             default:
