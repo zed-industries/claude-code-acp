@@ -7,7 +7,7 @@ import type { ClaudeAcpAgent as ClaudeAcpAgentType } from "../acp-agent.js";
 
 describe("unstable_listSessions", () => {
   let tempDir: string;
-  let originalClaudeEnv: string | undefined;
+  let originalClaudeConfigDir: string | undefined;
   let agent: ClaudeAcpAgentType;
   let ClaudeAcpAgent: typeof ClaudeAcpAgentType;
 
@@ -83,13 +83,13 @@ describe("unstable_listSessions", () => {
 
   beforeEach(async () => {
     // Create temp directory to isolate tests from real filesystem.
-    // We set process.env.CLAUDE before importing the module so that
+    // We set process.env.CLAUDE_CONFIG_DIR before importing the module so that
     // CLAUDE_CONFIG_DIR is evaluated with our temp directory.
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-test-"));
-    originalClaudeEnv = process.env.CLAUDE;
-    process.env.CLAUDE = tempDir;
+    originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = tempDir;
 
-    // Reset modules to pick up the new CLAUDE env var in CLAUDE_CONFIG_DIR
+    // Reset modules to pick up the new CLAUDE_CONFIG_DIR env var
     vi.resetModules();
 
     // Dynamic import after setting env var
@@ -102,10 +102,10 @@ describe("unstable_listSessions", () => {
 
   afterEach(() => {
     // Restore env and cleanup
-    if (originalClaudeEnv !== undefined) {
-      process.env.CLAUDE = originalClaudeEnv;
+    if (originalClaudeConfigDir !== undefined) {
+      process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
     } else {
-      delete process.env.CLAUDE;
+      delete process.env.CLAUDE_CONFIG_DIR;
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -155,7 +155,7 @@ describe("unstable_listSessions", () => {
     expect(result.sessions[0]!.title).toBe("Fix the bug in auth");
   });
 
-  it("truncates long titles to 100 characters", async () => {
+  it("truncates long titles to 128 characters with ellipsis", async () => {
     const longMessage = "A".repeat(150);
     writeSessionFile("/Users/test/project", "sess-789", {
       userMessage: longMessage,
@@ -163,7 +163,29 @@ describe("unstable_listSessions", () => {
 
     const result = await agent.unstable_listSessions({});
 
-    expect(result.sessions[0]!.title).toBe("A".repeat(100));
+    expect(result.sessions[0]!.title).toBe("A".repeat(127) + "…");
+  });
+
+  it("replaces newlines with spaces in titles", async () => {
+    const messageWithNewlines = "First line\nSecond line\r\nThird line";
+    writeSessionFile("/Users/test/project", "sess-newlines", {
+      userMessage: messageWithNewlines,
+    });
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions[0]!.title).toBe("First line Second line Third line");
+  });
+
+  it("collapses multiple whitespace characters in titles", async () => {
+    const messageWithWhitespace = "Hello    world  \n\n  test";
+    writeSessionFile("/Users/test/project", "sess-whitespace", {
+      userMessage: messageWithWhitespace,
+    });
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions[0]!.title).toBe("Hello world test");
   });
 
   it("filters sessions by cwd parameter", async () => {

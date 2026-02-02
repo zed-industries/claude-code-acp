@@ -88,6 +88,20 @@ function decodeProjectPath(encodedPath: string): string {
   return encodedPath.replace(/-/g, "/");
 }
 
+const MAX_TITLE_LENGTH = 128;
+
+function sanitizeTitle(text: string): string {
+  // Replace newlines and collapse whitespace
+  const sanitized = text
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (sanitized.length <= MAX_TITLE_LENGTH) {
+    return sanitized;
+  }
+  return sanitized.slice(0, MAX_TITLE_LENGTH - 1) + "…";
+}
+
 /**
  * Logger interface for customizing logging output
  */
@@ -334,7 +348,7 @@ export class ClaudeAcpAgent implements Agent {
                 if (entry.type === "user" && entry.message?.content) {
                   const msgContent = entry.message.content;
                   if (typeof msgContent === "string") {
-                    title = msgContent.slice(0, 100);
+                    title = sanitizeTitle(msgContent);
                     break;
                   }
                   if (Array.isArray(msgContent) && msgContent.length > 0) {
@@ -346,7 +360,7 @@ export class ClaudeAcpAgent implements Agent {
                           ? first.text
                           : undefined;
                     if (text) {
-                      title = text.slice(0, 100);
+                      title = sanitizeTitle(text);
                       break;
                     }
                   }
@@ -367,7 +381,10 @@ export class ClaudeAcpAgent implements Agent {
               updatedAt,
             });
           } catch (err) {
-            this.logger.error(`[unstable_listSessions] Failed to parse session file: ${filePath}`, err);
+            this.logger.error(
+              `[unstable_listSessions] Failed to parse session file: ${filePath}`,
+              err,
+            );
           }
         }
       }
@@ -403,9 +420,9 @@ export class ClaudeAcpAgent implements Agent {
     };
 
     if (hasMore) {
-      const nextCursor = Buffer.from(
-        JSON.stringify({ offset: startIndex + PAGE_SIZE }),
-      ).toString("base64");
+      const nextCursor = Buffer.from(JSON.stringify({ offset: startIndex + PAGE_SIZE })).toString(
+        "base64",
+      );
       response.nextCursor = nextCursor;
     }
 
