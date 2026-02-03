@@ -1104,6 +1104,7 @@ async function getAvailableModels(
 async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
   const UNSUPPORTED_COMMANDS = [
     "cost",
+    "keybindings-help",
     "login",
     "logout",
     "output-style:new",
