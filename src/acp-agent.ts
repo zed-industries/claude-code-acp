@@ -50,7 +50,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import * as os from "node:os";
-import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
+import {
+  encodeProjectPath,
+  nodeToWebReadable,
+  nodeToWebWritable,
+  Pushable,
+  unreachable,
+} from "./utils.js";
 import { createMcpServer } from "./mcp-server.js";
 import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
 import {
@@ -89,17 +95,6 @@ function decodeProjectPath(encodedPath: string): string {
 
   // Unix path: "-Users-morse-project" -> "/Users/morse/project"
   return encodedPath.replace(/-/g, "/");
-}
-
-function encodeProjectPath(cwd: string): string {
-  const windowsPathMatch = cwd.match(/^([A-Za-z]):[\\/]/);
-  if (windowsPathMatch) {
-    const driveLetter = windowsPathMatch[1];
-    const rest = cwd.slice(2);
-    return `${driveLetter}${rest.replace(/[\\/]/g, "-")}`;
-  }
-
-  return cwd.replace(/\//g, "-");
 }
 
 function sessionFilePath(cwd: string, sessionId: string): string {

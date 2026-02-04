@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { AgentSideConnection, SessionNotification } from "@agentclientprotocol/sdk";
 import type { ClaudeAcpAgent as ClaudeAcpAgentType } from "../acp-agent.js";
-import { encodePath } from "../utils.js";
+import { encodeProjectPath } from "../utils.js";
 
 const { registerHookCallbackSpy } = vi.hoisted(() => ({
   registerHookCallbackSpy: vi.fn(),
@@ -43,7 +43,7 @@ describe("loadSession", () => {
     sessionId: string,
     entries: Array<Record<string, unknown> | string>,
   ): void {
-    const encodedPath = encodePath(cwd);
+    const encodedPath = encodeProjectPath(cwd);
     const projectDir = path.join(tempDir, "projects", encodedPath);
     fs.mkdirSync(projectDir, { recursive: true });
 

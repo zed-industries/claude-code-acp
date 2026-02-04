@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { AgentSideConnection } from "@agentclientprotocol/sdk";
 import type { ClaudeAcpAgent as ClaudeAcpAgentType } from "../acp-agent.js";
-import { encodePath } from "../utils.js";
+import { encodeProjectPath } from "../utils.js";
 
 describe("unstable_listSessions", () => {
   let tempDir: string;
@@ -34,7 +34,7 @@ describe("unstable_listSessions", () => {
       isAgentFile?: boolean;
     } = {},
   ): void {
-    const encodedPath = encodePath(cwd);
+    const encodedPath = encodeProjectPath(cwd);
     const projectDir = path.join(tempDir, "projects", encodedPath);
     fs.mkdirSync(projectDir, { recursive: true });
 
@@ -237,7 +237,7 @@ describe("unstable_listSessions", () => {
 
   it("uses filename as sessionId when not in file content", async () => {
     const cwd = "/Users/test/project";
-    const encodedPath = encodePath(cwd);
+    const encodedPath = encodeProjectPath(cwd);
     const projectDir = path.join(tempDir, "projects", encodedPath);
     fs.mkdirSync(projectDir, { recursive: true });
 
@@ -252,7 +252,7 @@ describe("unstable_listSessions", () => {
 
   it("returns null title when no user message exists", async () => {
     const cwd = "/Users/test/project";
-    const encodedPath = encodePath(cwd);
+    const encodedPath = encodeProjectPath(cwd);
     const projectDir = path.join(tempDir, "projects", encodedPath);
     fs.mkdirSync(projectDir, { recursive: true });
 
