@@ -169,3 +169,15 @@ export function extractLinesWithByteLimit(
     linesRead: linesSeen,
   };
 }
+
+// Helper to encode a path like Claude does:
+// - Unix: "/Users/test" -> "-Users-test"
+// - Windows: "C:\Users\test" -> "C-Users-test"
+export function encodePath(cwd: string): string {
+  // Handle Windows paths
+  if (/^[A-Za-z]:\\/.test(cwd)) {
+    return cwd.replace(/\\/g, "-").replace(":", "");
+  }
+  // Unix paths
+  return cwd.replace(/\//g, "-");
+}

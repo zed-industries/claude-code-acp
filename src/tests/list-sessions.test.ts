@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { AgentSideConnection } from "@agentclientprotocol/sdk";
 import type { ClaudeAcpAgent as ClaudeAcpAgentType } from "../acp-agent.js";
+import { encodePath } from "../utils.js";
 
 describe("unstable_listSessions", () => {
   let tempDir: string;
@@ -19,18 +20,6 @@ describe("unstable_listSessions", () => {
       readTextFile: async () => ({ content: "" }),
       writeTextFile: async () => ({}),
     } as unknown as AgentSideConnection;
-  }
-
-  // Helper to encode a path like Claude does:
-  // - Unix: "/Users/test" -> "-Users-test"
-  // - Windows: "C:\Users\test" -> "C-Users-test"
-  function encodePath(cwd: string): string {
-    // Handle Windows paths
-    if (/^[A-Za-z]:\\/.test(cwd)) {
-      return cwd.replace(/\\/g, "-").replace(":", "");
-    }
-    // Unix paths
-    return cwd.replace(/\//g, "-");
   }
 
   // Helper to write a session file
