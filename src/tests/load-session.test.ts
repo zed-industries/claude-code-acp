@@ -29,7 +29,7 @@ describe("loadSession", () => {
   // Helper to create a mock AgentSideConnection
   function createMockClient(): AgentSideConnection {
     return {
-      sessionUpdate: async (notification) => {
+      sessionUpdate: async (notification: SessionNotification) => {
         sessionUpdates.push(notification);
       },
       requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
