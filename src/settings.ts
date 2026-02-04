@@ -156,7 +156,7 @@ function matchesRule(rule: ParsedRule, toolName: string, toolInput: unknown, cwd
   // - "Claude will make a best-effort attempt to apply Read rules to all built-in tools
   //    that read files like Grep, Glob, and LS."
   const ruleAppliesToTool =
-    rule.toolName === "Bash" ||
+    (rule.toolName === "Bash" && toolName === acpToolNames.bash) ||
     (rule.toolName === "Edit" && FILE_EDITING_TOOLS.includes(toolName)) ||
     (rule.toolName === "Read" && FILE_READING_TOOLS.includes(toolName));
 
