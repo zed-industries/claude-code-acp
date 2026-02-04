@@ -62,7 +62,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "0.13.1",
     "@anthropic-ai/claude-agent-sdk": "0.2.29",
-    "@modelcontextprotocol/sdk": "1.25.3",
+    "@modelcontextprotocol/sdk": "1.26.0",
     "diff": "8.0.3",
     "minimatch": "10.1.1"
   },
