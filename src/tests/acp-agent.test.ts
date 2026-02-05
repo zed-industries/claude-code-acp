@@ -607,6 +607,8 @@ describe("tool conversions", () => {
           output_tokens: 1,
           service_tier: "standard",
           server_tool_use: null,
+          inference_geo: null,
+          iterations: null,
         },
         context_management: null,
       },
