@@ -1396,6 +1396,8 @@ export function toAcpNotifications(
       case "citations_delta":
       case "signature_delta":
       case "container_upload":
+      case "compaction":
+      case "compaction_delta":
         break;
 
       default:
