@@ -9,6 +9,8 @@ import {
   ForkSessionResponse,
   InitializeRequest,
   InitializeResponse,
+  LoadSessionRequest,
+  LoadSessionResponse,
   ListSessionsRequest,
   ListSessionsResponse,
   ndJsonStream,
@@ -46,8 +48,15 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as readline from "node:readline";
 import * as os from "node:os";
-import { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
+import {
+  encodeProjectPath,
+  nodeToWebReadable,
+  nodeToWebWritable,
+  Pushable,
+  unreachable,
+} from "./utils.js";
 import { createMcpServer } from "./mcp-server.js";
 import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
 import {
@@ -88,6 +97,10 @@ function decodeProjectPath(encodedPath: string): string {
   return encodedPath.replace(/-/g, "/");
 }
 
+function sessionFilePath(cwd: string, sessionId: string): string {
+  return path.join(CLAUDE_CONFIG_DIR, "projects", encodeProjectPath(cwd), `${sessionId}.jsonl`);
+}
+
 const MAX_TITLE_LENGTH = 128;
 
 function sanitizeTitle(text: string): string {
@@ -116,6 +129,17 @@ type Session = {
   cancelled: boolean;
   permissionMode: PermissionMode;
   settingsManager: SettingsManager;
+};
+
+type SessionHistoryEntry = {
+  type?: string;
+  isSidechain?: boolean;
+  sessionId?: string;
+  message?: {
+    role?: string;
+    content?: unknown;
+    model?: string;
+  };
 };
 
 type BackgroundTerminal =
@@ -228,6 +252,7 @@ export class ClaudeAcpAgent implements Agent {
           http: true,
           sse: true,
         },
+        loadSession: true,
         sessionCapabilities: {
           fork: {},
           list: {},
@@ -284,6 +309,32 @@ export class ClaudeAcpAgent implements Agent {
     );
 
     return response;
+  }
+
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    try {
+      await fs.promises.access(sessionFilePath(params.cwd, params.sessionId));
+    } catch {
+      throw new Error("Session not found");
+    }
+
+    const response = await this.createSession(
+      {
+        cwd: params.cwd,
+        mcpServers: params.mcpServers ?? [],
+        _meta: params._meta,
+      },
+      {
+        resume: params.sessionId,
+      },
+    );
+
+    await this.replaySessionHistory(params.sessionId, params.cwd);
+
+    return {
+      modes: response.modes,
+      models: response.models,
+    };
   }
 
   /**
@@ -653,6 +704,71 @@ export class ClaudeAcpAgent implements Agent {
         return {};
       default:
         throw new Error("Invalid Mode");
+    }
+  }
+
+  private async replaySessionHistory(sessionId: string, cwd: string): Promise<void> {
+    const filePath = sessionFilePath(cwd, sessionId);
+    const toolUseCache: ToolUseCache = {};
+    const stream = fs.createReadStream(filePath, { encoding: "utf-8" });
+    const reader = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+    try {
+      for await (const line of reader) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        let entry: SessionHistoryEntry;
+        try {
+          entry = JSON.parse(trimmed) as SessionHistoryEntry;
+        } catch {
+          continue;
+        }
+
+        if (entry.type !== "user" && entry.type !== "assistant") {
+          continue;
+        }
+
+        if (entry.isSidechain) {
+          continue;
+        }
+
+        if (entry.sessionId && entry.sessionId !== sessionId) {
+          continue;
+        }
+
+        const message = entry.message;
+        if (!message) {
+          continue;
+        }
+
+        const role =
+          message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : null;
+        if (!role) {
+          continue;
+        }
+
+        const content = message.content;
+        if (typeof content !== "string" && !Array.isArray(content)) {
+          continue;
+        }
+
+        for (const notification of toAcpNotifications(
+          content,
+          role,
+          sessionId,
+          toolUseCache,
+          this.client,
+          this.logger,
+          { registerHooks: false },
+        )) {
+          await this.client.sessionUpdate(notification);
+        }
+      }
+    } finally {
+      reader.close();
     }
   }
 
@@ -1242,7 +1358,9 @@ export function toAcpNotifications(
   toolUseCache: ToolUseCache,
   client: AgentSideConnection,
   logger: Logger,
+  options?: { registerHooks?: boolean },
 ): SessionNotification[] {
+  const registerHooks = options?.registerHooks !== false;
   if (typeof content === "string") {
     return [
       {
@@ -1307,32 +1425,33 @@ export function toAcpNotifications(
             };
           }
         } else {
-          // Register hook callback to receive the structured output from the hook
-          registerHookCallback(chunk.id, {
-            onPostToolUseHook: async (toolUseId, toolInput, toolResponse) => {
-              const toolUse = toolUseCache[toolUseId];
-              if (toolUse) {
-                const update: SessionNotification["update"] = {
-                  _meta: {
-                    claudeCode: {
-                      toolResponse,
-                      toolName: toolUse.name,
-                    },
-                  } satisfies ToolUpdateMeta,
-                  toolCallId: toolUseId,
-                  sessionUpdate: "tool_call_update",
-                };
-                await client.sessionUpdate({
-                  sessionId,
-                  update,
-                });
-              } else {
-                logger.error(
-                  `[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`,
-                );
-              }
-            },
-          });
+          if (registerHooks) {
+            registerHookCallback(chunk.id, {
+              onPostToolUseHook: async (toolUseId, toolInput, toolResponse) => {
+                const toolUse = toolUseCache[toolUseId];
+                if (toolUse) {
+                  const update: SessionNotification["update"] = {
+                    _meta: {
+                      claudeCode: {
+                        toolResponse,
+                        toolName: toolUse.name,
+                      },
+                    } satisfies ToolUpdateMeta,
+                    toolCallId: toolUseId,
+                    sessionUpdate: "tool_call_update",
+                  };
+                  await client.sessionUpdate({
+                    sessionId,
+                    update,
+                  });
+                } else {
+                  logger.error(
+                    `[claude-code-acp] Got a tool response for tool use that wasn't tracked: ${toolUseId}`,
+                  );
+                }
+              },
+            });
+          }
 
           let rawInput;
           try {

@@ -169,3 +169,18 @@ export function extractLinesWithByteLimit(
     linesRead: linesSeen,
   };
 }
+
+// Helper to encode a path like Claude does:
+// - Unix: "/Users/test" -> "-Users-test"
+// - Windows: "C:\Users\test" -> "C-Users-test"
+export function encodeProjectPath(cwd: string): string {
+  const windowsPathMatch = cwd.match(/^([A-Za-z]):[\\/]/);
+  if (windowsPathMatch) {
+    const driveLetter = windowsPathMatch[1];
+    const rest = cwd.slice(2);
+    return `${driveLetter}${rest.replace(/[\\/]/g, "-")}`;
+  }
+
+  // Unix paths
+  return cwd.replace(/\//g, "-");
+}
