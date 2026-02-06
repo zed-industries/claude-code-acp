@@ -172,6 +172,7 @@ export type NewSessionMeta = {
      * Those parameters will be used and updated to work with ACP:
      *   - hooks (merged with ACP's hooks)
      *   - mcpServers (merged with ACP's mcpServers)
+     *   - disallowedTools (merged with ACP's disallowedTools)
      */
     options?: Options;
   };
@@ -1104,8 +1105,8 @@ export class ClaudeAcpAgent implements Agent {
     if (allowedTools.length > 0) {
       options.allowedTools = allowedTools;
     }
-    if (disallowedTools.length > 0) {
-      options.disallowedTools = disallowedTools;
+    if (disallowedTools.length > 0 || (userProvidedOptions?.disallowedTools?.length ?? 0) > 0) {
+      options.disallowedTools = [...(userProvidedOptions?.disallowedTools || []), ...disallowedTools];
     }
 
     // Handle abort controller from meta options
