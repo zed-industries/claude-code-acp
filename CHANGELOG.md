@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.0
+
+- Update to @anthropic-ai/claude-agent-sdk@0.2.34
+- Experimental support for session loading
+
 ## 0.15.0
 
 - Update to @anthropic-ai/claude-agent-sdk@0.2.32 (adds support for Opus 4.6 and 1M context Opus)

@@ -1003,7 +1003,7 @@ describe.skipIf(!process.env.RUN_INTEGRATION_TESTS)("SDK behavior", () => {
       prompt: "hi",
       options: {
         systemPrompt: { type: "preset", preset: "claude_code" },
-        extraArgs: { "session-id": sessionId },
+        sessionId,
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
       },
