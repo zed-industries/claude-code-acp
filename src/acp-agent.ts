@@ -39,12 +39,14 @@ import { SettingsManager } from "./settings.js";
 import {
   CanUseTool,
   McpServerConfig,
+  ModelInfo,
   Options,
   PermissionMode,
   Query,
   query,
   SDKPartialAssistantMessage,
   SDKUserMessage,
+  SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -984,11 +986,6 @@ export class ClaudeAcpAgent implements Agent {
 
     // Extract options from _meta if provided
     const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
-    const extraArgs = { ...userProvidedOptions?.extraArgs };
-    if (creationOpts?.resume === undefined || creationOpts?.forkSession) {
-      // Set our own session id if not resuming an existing session.
-      extraArgs["session-id"] = sessionId;
-    }
 
     // Configure thinking tokens from environment variable
     const maxThinkingTokens = process.env.MAX_THINKING_TOKENS
@@ -1005,7 +1002,6 @@ export class ClaudeAcpAgent implements Agent {
       cwd: params.cwd,
       includePartialMessages: true,
       mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers },
-      extraArgs,
       // If we want bypassPermissions to be an option, we have to allow it here.
       // But it doesn't work in root mode, so we only activate it if it will work.
       allowDangerouslySkipPermissions: ALLOW_BYPASS,
@@ -1051,6 +1047,11 @@ export class ClaudeAcpAgent implements Agent {
       },
       ...creationOpts,
     };
+
+    if (creationOpts?.resume === undefined || creationOpts?.forkSession) {
+      // Set our own session id if not resuming an existing session.
+      options.sessionId = sessionId;
+    }
 
     const allowedTools = [];
     // Disable this for now, not a great way to expose this over ACP at the moment (in progress work so we can revisit)
@@ -1126,8 +1127,9 @@ export class ClaudeAcpAgent implements Agent {
       settingsManager,
     };
 
-    const availableCommands = await getAvailableSlashCommands(q);
-    const models = await getAvailableModels(q, settingsManager);
+    const initializationResult = await q.initializationResult();
+
+    const models = await getAvailableModels(q, initializationResult.models, settingsManager);
 
     // Needs to happen after we return the session
     setTimeout(() => {
@@ -1135,7 +1137,7 @@ export class ClaudeAcpAgent implements Agent {
         sessionId,
         update: {
           sessionUpdate: "available_commands_update",
-          availableCommands,
+          availableCommands: getAvailableSlashCommands(initializationResult.commands),
         },
       });
     }, 0);
@@ -1184,9 +1186,9 @@ export class ClaudeAcpAgent implements Agent {
 
 async function getAvailableModels(
   query: Query,
+  models: ModelInfo[],
   settingsManager: SettingsManager,
 ): Promise<SessionModelState> {
-  const models = await query.supportedModels();
   const settings = settingsManager.getSettings();
 
   let currentModel = models[0];
@@ -1217,7 +1219,7 @@ async function getAvailableModels(
   };
 }
 
-async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand[]> {
+function getAvailableSlashCommands(commands: SlashCommand[]): AvailableCommand[] {
   const UNSUPPORTED_COMMANDS = [
     "cost",
     "keybindings-help",
@@ -1227,7 +1229,6 @@ async function getAvailableSlashCommands(query: Query): Promise<AvailableCommand
     "release-notes",
     "todos",
   ];
-  const commands = await query.supportedCommands();
 
   return commands
     .map((command) => {
