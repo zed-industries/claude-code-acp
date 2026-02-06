@@ -1105,8 +1105,8 @@ export class ClaudeAcpAgent implements Agent {
     if (allowedTools.length > 0) {
       options.allowedTools = allowedTools;
     }
-    if (disallowedTools.length > 0 || (userProvidedOptions?.disallowedTools?.length ?? 0) > 0) {
-      options.disallowedTools = [...(userProvidedOptions?.disallowedTools || []), ...disallowedTools];
+    if (disallowedTools.length > 0) {
+      options.disallowedTools = [...(options.disallowedTools || []), ...disallowedTools];
     }
 
     // Handle abort controller from meta options
