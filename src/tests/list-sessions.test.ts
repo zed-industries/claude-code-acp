@@ -32,6 +32,7 @@ describe("unstable_listSessions", () => {
       mtime?: Date;
       malformed?: boolean;
       isAgentFile?: boolean;
+      omitCwdFromEntries?: boolean;
     } = {},
   ): void {
     const encodedPath = encodeProjectPath(cwd);
@@ -56,11 +57,25 @@ describe("unstable_listSessions", () => {
       const content = options.userMessageArray
         ? [{ type: "text", text: options.userMessage }]
         : options.userMessage;
-      lines.push(JSON.stringify({ type: "user", message: { content } }));
+      lines.push(
+        JSON.stringify({
+          type: "user",
+          sessionId,
+          ...(options.omitCwdFromEntries ? {} : { cwd }),
+          message: { content },
+        }),
+      );
     }
 
     // Assistant response
-    lines.push(JSON.stringify({ type: "assistant", message: { content: "Hello!" } }));
+    lines.push(
+      JSON.stringify({
+        type: "assistant",
+        sessionId,
+        ...(options.omitCwdFromEntries ? {} : { cwd }),
+        message: { content: "Hello!" },
+      }),
+    );
 
     fs.writeFileSync(filePath, lines.join("\n"));
 
@@ -187,6 +202,66 @@ describe("unstable_listSessions", () => {
     expect(result.sessions[0]!.sessionId).toBe("sess-a");
   });
 
+  it("uses per-entry cwd when filtering even if encoded folder collides", async () => {
+    const encodedPath = encodeProjectPath("/Users/test/a-b");
+    const projectDir = path.join(tempDir, "projects", encodedPath);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(projectDir, "sess-a-b.jsonl"),
+      [
+        JSON.stringify({ sessionId: "sess-a-b", type: "init" }),
+        JSON.stringify({
+          type: "user",
+          sessionId: "sess-a-b",
+          cwd: "/Users/test/a-b",
+          message: { content: "A-B" },
+        }),
+      ].join("\n"),
+    );
+
+    fs.writeFileSync(
+      path.join(projectDir, "sess-a-slash-b.jsonl"),
+      [
+        JSON.stringify({ sessionId: "sess-a-slash-b", type: "init" }),
+        JSON.stringify({
+          type: "user",
+          sessionId: "sess-a-slash-b",
+          cwd: "/Users/test/a/b",
+          message: { content: "A/B" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await agent.unstable_listSessions({ cwd: "/Users/test/a-b" });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.sessionId).toBe("sess-a-b");
+    expect(result.sessions[0]!.cwd).toBe("/Users/test/a-b");
+  });
+
+  it("returns the true cwd for paths containing hyphens", async () => {
+    const cwd = "/Users/test/claude-code-acp";
+    writeSessionFile(cwd, "hyphen-session", { userMessage: "Hyphen test" });
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.cwd).toBe(cwd);
+    expect(result.sessions[0]!.sessionId).toBe("hyphen-session");
+  });
+
+  it("filters hyphenated paths by cwd correctly", async () => {
+    writeSessionFile("/Users/test/claude-code-acp", "hyphen-a", { userMessage: "A" });
+    writeSessionFile("/Users/test/other-project", "hyphen-b", { userMessage: "B" });
+
+    const result = await agent.unstable_listSessions({ cwd: "/Users/test/claude-code-acp" });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.sessionId).toBe("hyphen-a");
+    expect(result.sessions[0]!.cwd).toBe("/Users/test/claude-code-acp");
+  });
+
   it("returns all sessions when cwd is not specified", async () => {
     writeSessionFile("/Users/test/projectone", "sess-a", { userMessage: "A" });
     writeSessionFile("/Users/test/projecttwo", "sess-b", { userMessage: "B" });
@@ -241,13 +316,159 @@ describe("unstable_listSessions", () => {
     const projectDir = path.join(tempDir, "projects", encodedPath);
     fs.mkdirSync(projectDir, { recursive: true });
 
-    // Write file without sessionId in content
+    // Write file without sessionId in content (uses filename fallback), but with cwd.
     const filePath = path.join(projectDir, "fallback-id.jsonl");
-    fs.writeFileSync(filePath, JSON.stringify({ type: "init" }) + "\n");
+    fs.writeFileSync(
+      filePath,
+      [
+        JSON.stringify({ type: "init" }),
+        JSON.stringify({ type: "assistant", cwd, message: { content: "Hi" } }),
+      ].join("\n"),
+    );
 
     const result = await agent.unstable_listSessions({});
 
     expect(result.sessions[0]!.sessionId).toBe("fallback-id");
+  });
+
+  it("keeps sessionId stable from filename when later entries have different sessionId", async () => {
+    const cwd = "/Users/test/project";
+    const encodedPath = encodeProjectPath(cwd);
+    const projectDir = path.join(tempDir, "projects", encodedPath);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const filePath = path.join(projectDir, "stable-id.jsonl");
+    fs.writeFileSync(
+      filePath,
+      [
+        JSON.stringify({ type: "init", sessionId: "stable-id" }),
+        JSON.stringify({
+          type: "user",
+          sessionId: "stable-id",
+          cwd,
+          message: { content: "Hello" },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          sessionId: "other-id",
+          cwd,
+          message: { content: "Wrong session id from sidechain" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.sessionId).toBe("stable-id");
+  });
+
+  it("derives cwd from entries for the filename sessionId only", async () => {
+    const cwd = "/Users/test/project";
+    const encodedPath = encodeProjectPath(cwd);
+    const projectDir = path.join(tempDir, "projects", encodedPath);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const filePath = path.join(projectDir, "target-session.jsonl");
+    fs.writeFileSync(
+      filePath,
+      [
+        JSON.stringify({
+          type: "user",
+          sessionId: "target-session",
+          cwd,
+          message: { content: "Correct cwd entry" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.sessionId).toBe("target-session");
+    expect(result.sessions[0]!.cwd).toBe(cwd);
+  });
+
+  it("keeps scanning after title to find later cwd in same session", async () => {
+    const cwd = "/Users/test/project";
+    const encodedPath = encodeProjectPath(cwd);
+    const projectDir = path.join(tempDir, "projects", encodedPath);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const filePath = path.join(projectDir, "late-cwd.jsonl");
+    fs.writeFileSync(
+      filePath,
+      [
+        JSON.stringify({ type: "init", sessionId: "late-cwd" }),
+        JSON.stringify({
+          type: "user",
+          sessionId: "late-cwd",
+          message: { content: "Title from first user message" },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          sessionId: "late-cwd",
+          cwd,
+          message: { content: "Assistant entry carries cwd" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.sessionId).toBe("late-cwd");
+    expect(result.sessions[0]!.cwd).toBe(cwd);
+    expect(result.sessions[0]!.title).toBe("Title from first user message");
+  });
+
+  it("ignores sidechain entries when deriving cwd and title", async () => {
+    const cwd = "/Users/test/project";
+    const encodedPath = encodeProjectPath(cwd);
+    const projectDir = path.join(tempDir, "projects", encodedPath);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const filePath = path.join(projectDir, "sidechain-metadata.jsonl");
+    fs.writeFileSync(
+      filePath,
+      [
+        JSON.stringify({ type: "init", sessionId: "sidechain-metadata" }),
+        JSON.stringify({
+          type: "user",
+          sessionId: "sidechain-metadata",
+          isSidechain: true,
+          cwd: "/Users/test/wrong-project",
+          message: { content: "Wrong sidechain title" },
+        }),
+        JSON.stringify({
+          type: "user",
+          sessionId: "sidechain-metadata",
+          cwd,
+          message: { content: "Correct primary title" },
+        }),
+      ].join("\n"),
+    );
+
+    const result = await agent.unstable_listSessions({ cwd });
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]!.sessionId).toBe("sidechain-metadata");
+    expect(result.sessions[0]!.cwd).toBe(cwd);
+    expect(result.sessions[0]!.title).toBe("Correct primary title");
+  });
+
+  it("skips entries without cwd when cwd filter is not provided", async () => {
+    const cwd = "/Users/test/project";
+    const encodedPath = encodeProjectPath(cwd);
+    const projectDir = path.join(tempDir, "projects", encodedPath);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    const filePath = path.join(projectDir, "no-cwd.jsonl");
+    fs.writeFileSync(filePath, JSON.stringify({ sessionId: "no-cwd", type: "summary" }) + "\n");
+
+    const result = await agent.unstable_listSessions({});
+
+    expect(result.sessions).toHaveLength(0);
   });
 
   it("returns null title when no user message exists", async () => {
@@ -262,7 +483,7 @@ describe("unstable_listSessions", () => {
       filePath,
       [
         JSON.stringify({ sessionId: "no-user", type: "init" }),
-        JSON.stringify({ type: "assistant", message: { content: "Hi" } }),
+        JSON.stringify({ type: "assistant", cwd, message: { content: "Hi" } }),
       ].join("\n"),
     );
 

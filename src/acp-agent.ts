@@ -79,26 +79,6 @@ import { fileURLToPath } from "node:url";
 export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 
-/**
- * Decode a Claude project path encoding back to the original filesystem path.
- * Claude encodes paths by replacing path separators with dashes:
- * - Unix: "/Users/morse/project" -> "-Users-morse-project"
- * - Windows: "C:\Users\morse\project" -> "C-Users-morse-project"
- */
-function decodeProjectPath(encodedPath: string): string {
-  // Check if this looks like a Windows path (starts with drive letter pattern like "C-")
-  const windowsDriveMatch = encodedPath.match(/^([A-Za-z])-/);
-  if (windowsDriveMatch) {
-    // Windows path: "C-Users-morse-project" -> "C:\Users\morse\project"
-    const driveLetter = windowsDriveMatch[1];
-    const rest = encodedPath.slice(2); // Skip "C-"
-    return `${driveLetter}:\\${rest.replace(/-/g, "\\")}`;
-  }
-
-  // Unix path: "-Users-morse-project" -> "/Users/morse/project"
-  return encodedPath.replace(/-/g, "/");
-}
-
 function sessionFilePath(cwd: string, sessionId: string): string {
   return path.join(CLAUDE_CONFIG_DIR, "projects", encodeProjectPath(cwd), `${sessionId}.jsonl`);
 }
@@ -359,6 +339,7 @@ export class ClaudeAcpAgent implements Agent {
 
     // Collect all sessions across all project directories
     const allSessions: SessionInfo[] = [];
+    const encodedCwdFilter = params.cwd ? encodeProjectPath(params.cwd) : null;
 
     try {
       const projectDirs = await fs.promises.readdir(claudeDir);
@@ -368,13 +349,9 @@ export class ClaudeAcpAgent implements Agent {
         const stat = await fs.promises.stat(projectDir);
         if (!stat.isDirectory()) continue;
 
-        // Decode the path based on platform:
-        // - Unix: "-Users-morse-project" -> "/Users/morse/project"
-        // - Windows: "C-Users-morse-project" -> "C:\Users\morse\project"
-        const decodedCwd = decodeProjectPath(encodedPath);
-
-        // Skip if filtering by cwd and this doesn't match
-        if (params.cwd && decodedCwd !== params.cwd) continue;
+        // Path encoding is not always reversible (hyphens can be separators or literals),
+        // so only use encoded value as a coarse pre-filter.
+        if (encodedCwdFilter && encodedPath !== encodedCwdFilter) continue;
 
         const files = await fs.promises.readdir(projectDir);
         // Filter to user session files only. Skip agent-*.jsonl files which contain
@@ -387,23 +364,31 @@ export class ClaudeAcpAgent implements Agent {
             const content = await fs.promises.readFile(filePath, "utf-8");
             const lines = content.trim().split("\n").filter(Boolean);
 
-            const firstLine = lines[0];
-            if (!firstLine) continue;
-
-            // Parse first line to get session info
-            const firstEntry = JSON.parse(firstLine);
-            const sessionId = firstEntry.sessionId || file.replace(".jsonl", "");
+            const sessionId = file.replace(".jsonl", "");
+            let parsedAnyEntry = false;
+            let sessionCwd: string | undefined;
 
             // Find first user message for title
             let title: string | undefined;
             for (const line of lines) {
               try {
                 const entry = JSON.parse(line);
-                if (entry.type === "user" && entry.message?.content) {
+                parsedAnyEntry = true;
+                if (entry.isSidechain === true) {
+                  continue;
+                }
+                const entrySessionId =
+                  typeof entry.sessionId === "string" ? entry.sessionId : undefined;
+                if (typeof entry.sessionId === "string" && entry.sessionId !== entrySessionId) {
+                  continue;
+                }
+                if (typeof entry.cwd === "string") {
+                  sessionCwd = entry.cwd;
+                }
+                if (!title && entry.type === "user" && entry.message?.content) {
                   const msgContent = entry.message.content;
                   if (typeof msgContent === "string") {
                     title = sanitizeTitle(msgContent);
-                    break;
                   }
                   if (Array.isArray(msgContent) && msgContent.length > 0) {
                     const first = msgContent[0];
@@ -415,14 +400,29 @@ export class ClaudeAcpAgent implements Agent {
                           : undefined;
                     if (text) {
                       title = sanitizeTitle(text);
-                      break;
                     }
                   }
+                }
+
+                // Continue scanning until we have both fields, since cwd can appear
+                // in later entries even after the first user title-bearing message.
+                if (title && sessionCwd) {
+                  break;
                 }
               } catch {
                 // Skip malformed lines
               }
             }
+            if (!parsedAnyEntry) continue;
+
+            // SessionInfo.cwd is currently required. For entries that do not
+            // include an explicit cwd in the session JSONL (typically metadata-only files),
+            // we skip them instead of decoding folder names because path encoding is lossy.
+            if (!sessionCwd) continue;
+
+            // Even after encoded-path pre-filtering, verify per-entry cwd to disambiguate
+            // collisions such as "/a-b" and "/a/b" that map to the same encoded folder name.
+            if (params.cwd && sessionCwd !== params.cwd) continue;
 
             // Get file modification time as updatedAt
             const fileStat = await fs.promises.stat(filePath);
@@ -430,7 +430,7 @@ export class ClaudeAcpAgent implements Agent {
 
             allSessions.push({
               sessionId,
-              cwd: decodedCwd,
+              cwd: sessionCwd,
               title: title ?? null,
               updatedAt,
             });
