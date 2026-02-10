@@ -294,10 +294,49 @@ export class ClaudeAcpAgent implements Agent {
     return response;
   }
 
-  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+  /**
+   * Find a session file by ID, first checking the given cwd's project directory,
+   * then falling back to scanning all project directories.
+   * Returns the absolute file path if found, or null if not found.
+   */
+  private async findSessionFile(sessionId: string, cwd: string): Promise<string | null> {
+    const fileName = `${sessionId}.jsonl`;
+
+    // Fast path: check the expected location based on cwd
+    const expectedPath = sessionFilePath(cwd, sessionId);
     try {
-      await fs.promises.access(sessionFilePath(params.cwd, params.sessionId));
+      await fs.promises.access(expectedPath);
+      return expectedPath;
     } catch {
+      // Not found at expected path, scan all project directories
+    }
+
+    const claudeDir = path.join(CLAUDE_CONFIG_DIR, "projects");
+    try {
+      const projectDirs = await fs.promises.readdir(claudeDir);
+      for (const encodedPath of projectDirs) {
+        const projectDir = path.join(claudeDir, encodedPath);
+        const stat = await fs.promises.stat(projectDir);
+        if (!stat.isDirectory()) continue;
+
+        const candidatePath = path.join(projectDir, fileName);
+        try {
+          await fs.promises.access(candidatePath);
+          return candidatePath;
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      // projects directory doesn't exist or isn't readable
+    }
+
+    return null;
+  }
+
+  async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    const filePath = await this.findSessionFile(params.sessionId, params.cwd);
+    if (!filePath) {
       throw new Error("Session not found");
     }
 
@@ -312,7 +351,7 @@ export class ClaudeAcpAgent implements Agent {
       },
     );
 
-    await this.replaySessionHistory(params.sessionId, params.cwd);
+    await this.replaySessionHistory(params.sessionId, filePath);
 
     return {
       modes: response.modes,
@@ -710,8 +749,7 @@ export class ClaudeAcpAgent implements Agent {
     }
   }
 
-  private async replaySessionHistory(sessionId: string, cwd: string): Promise<void> {
-    const filePath = sessionFilePath(cwd, sessionId);
+  private async replaySessionHistory(sessionId: string, filePath: string): Promise<void> {
     const toolUseCache: ToolUseCache = {};
     const stream = fs.createReadStream(filePath, { encoding: "utf-8" });
     const reader = readline.createInterface({ input: stream, crlfDelay: Infinity });

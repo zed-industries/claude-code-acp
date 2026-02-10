@@ -230,6 +230,34 @@ describe("loadSession", () => {
     });
   });
 
+  it("finds session file when cwd differs from the original session cwd", async () => {
+    const originalCwd = "/Users/test/original-project";
+    const differentCwd = "/Users/test/different-project";
+    const sessionId = "cross-cwd-session";
+
+    // Session was created in originalCwd
+    writeSessionFile(originalCwd, sessionId, [
+      {
+        type: "user",
+        sessionId,
+        cwd: originalCwd,
+        message: { role: "user", content: "Hello from original" },
+      },
+    ]);
+
+    // Load with a different cwd
+    await agent.loadSession({ cwd: differentCwd, sessionId, mcpServers: [] });
+
+    expect(sessionUpdates).toHaveLength(1);
+    expect(sessionUpdates[0]?.update).toMatchObject({
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "Hello from original" },
+    });
+    expect(createSessionSpy).toHaveBeenCalledWith(expect.objectContaining({ cwd: differentCwd }), {
+      resume: sessionId,
+    });
+  });
+
   it("handles Windows-style paths", async () => {
     const cwd = "C:\\Users\\test\\project";
     const sessionId = "win-session";
