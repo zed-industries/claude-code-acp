@@ -258,6 +258,48 @@ describe("loadSession", () => {
     });
   });
 
+  it("sends available_commands_update after history replay, not during", async () => {
+    const cwd = "/Users/test/project";
+    const sessionId = "session-commands";
+
+    // Mock createSession to populate the sessions map with a mock query
+    createSessionSpy.mockImplementationOnce(async () => {
+      (agent as unknown as { sessions: Record<string, unknown> }).sessions[sessionId] = {
+        query: {
+          supportedCommands: async () => [{ name: "help", description: "Get help" }],
+        },
+      };
+      return { modes: null, models: null };
+    });
+
+    writeSessionFile(cwd, sessionId, [
+      {
+        type: "user",
+        sessionId,
+        message: { role: "user", content: "Hello" },
+      },
+      {
+        type: "assistant",
+        sessionId,
+        message: { role: "assistant", content: [{ type: "text", text: "Hi" }] },
+      },
+    ]);
+
+    await agent.loadSession({ cwd, sessionId, mcpServers: [] });
+
+    // Flush the setTimeout + async work inside sendAvailableCommandsUpdate
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const updateTypes = sessionUpdates.map((n) => n.update.sessionUpdate);
+
+    // available_commands_update should come AFTER all replay notifications
+    expect(updateTypes).toEqual([
+      "user_message_chunk",
+      "agent_message_chunk",
+      "available_commands_update",
+    ]);
+  });
+
   it("handles Windows-style paths", async () => {
     const cwd = "C:\\Users\\test\\project";
     const sessionId = "win-session";
