@@ -259,14 +259,19 @@ export class ClaudeAcpAgent implements Agent {
       throw RequestError.authRequired();
     }
 
-    return await this.createSession(params, {
+    const response = await this.createSession(params, {
       // Revisit these meta values once we support resume
       resume: (params._meta as NewSessionMeta | undefined)?.claudeCode?.options?.resume,
     });
+    // Needs to happen after we return the session
+    setTimeout(() => {
+      this.sendAvailableCommandsUpdate(response.sessionId);
+    }, 0);
+    return response;
   }
 
   async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
-    return await this.createSession(
+    const response = await this.createSession(
       {
         cwd: params.cwd,
         mcpServers: params.mcpServers ?? [],
@@ -277,6 +282,11 @@ export class ClaudeAcpAgent implements Agent {
         forkSession: true,
       },
     );
+    // Needs to happen after we return the session
+    setTimeout(() => {
+      this.sendAvailableCommandsUpdate(response.sessionId);
+    }, 0);
+    return response;
   }
 
   async unstable_resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
@@ -290,7 +300,10 @@ export class ClaudeAcpAgent implements Agent {
         resume: params.sessionId,
       },
     );
-
+    // Needs to happen after we return the session
+    setTimeout(() => {
+      this.sendAvailableCommandsUpdate(response.sessionId);
+    }, 0);
     return response;
   }
 
@@ -352,6 +365,11 @@ export class ClaudeAcpAgent implements Agent {
     );
 
     await this.replaySessionHistory(params.sessionId, filePath);
+
+    // Send available commands after replay so it doesn't interleave with history
+    setTimeout(() => {
+      this.sendAvailableCommandsUpdate(params.sessionId);
+    }, 0);
 
     return {
       modes: response.modes,
@@ -951,6 +969,19 @@ export class ClaudeAcpAgent implements Agent {
     };
   }
 
+  private async sendAvailableCommandsUpdate(sessionId: string): Promise<void> {
+    const session = this.sessions[sessionId];
+    if (!session) return;
+    const commands = await session.query.supportedCommands();
+    await this.client.sessionUpdate({
+      sessionId,
+      update: {
+        sessionUpdate: "available_commands_update",
+        availableCommands: getAvailableSlashCommands(commands),
+      },
+    });
+  }
+
   private async createSession(
     params: NewSessionRequest,
     creationOpts: { resume?: string; forkSession?: boolean } = {},
@@ -1169,17 +1200,6 @@ export class ClaudeAcpAgent implements Agent {
     const initializationResult = await q.initializationResult();
 
     const models = await getAvailableModels(q, initializationResult.models, settingsManager);
-
-    // Needs to happen after we return the session
-    setTimeout(() => {
-      this.client.sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "available_commands_update",
-          availableCommands: getAvailableSlashCommands(initializationResult.commands),
-        },
-      });
-    }, 0);
 
     const availableModes = [
       {
