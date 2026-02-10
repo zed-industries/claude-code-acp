@@ -609,6 +609,7 @@ describe("tool conversions", () => {
           server_tool_use: null,
           inference_geo: null,
           iterations: null,
+          speed: null,
         },
         context_management: null,
       },

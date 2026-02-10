@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.1
+
+- Update to @anthropic-ai/claude-agent-sdk@0.2.38
+- Fix incorrect paths for session/list
+- Fix available commands after loading a session
+- Make loading session more permissive for finding events
+- Fix overriding user-provided disallowedTools
+
 ## 0.16.0
 
 - Update to @anthropic-ai/claude-agent-sdk@0.2.34
