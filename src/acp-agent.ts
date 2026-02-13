@@ -76,6 +76,10 @@ import packageJson from "../package.json" with { type: "json" };
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+export type SessionInfoMeta = {
+  messageCount: number;
+};
+
 export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 
@@ -240,6 +244,7 @@ export class ClaudeAcpAgent implements Agent {
           fork: {},
           list: {},
           resume: {},
+          _meta: { delete: true },
         },
       },
       agentInfo: {
@@ -424,8 +429,12 @@ export class ClaudeAcpAgent implements Agent {
             const sessionId = file.replace(".jsonl", "");
             let parsedAnyEntry = false;
             let sessionCwd: string | undefined;
+            let messageCount = 0;
 
-            // Find first user message for title
+            // Parse all entries to extract title, cwd, and message count.
+            // We scan every line (no early break) because messageCount requires
+            // a full pass. The file is already fully read into memory, so the
+            // extra cost is only JSON parsing of remaining lines.
             let title: string | undefined;
             for (const line of lines) {
               try {
@@ -434,13 +443,14 @@ export class ClaudeAcpAgent implements Agent {
                 if (entry.isSidechain === true) {
                   continue;
                 }
-                const entrySessionId =
-                  typeof entry.sessionId === "string" ? entry.sessionId : undefined;
-                if (typeof entry.sessionId === "string" && entry.sessionId !== entrySessionId) {
+                if (typeof entry.sessionId === "string" && entry.sessionId !== sessionId) {
                   continue;
                 }
                 if (typeof entry.cwd === "string") {
                   sessionCwd = entry.cwd;
+                }
+                if (entry.type === "user" || entry.type === "assistant") {
+                  messageCount++;
                 }
                 if (!title && entry.type === "user" && entry.message?.content) {
                   const msgContent = entry.message.content;
@@ -459,12 +469,6 @@ export class ClaudeAcpAgent implements Agent {
                       title = sanitizeTitle(text);
                     }
                   }
-                }
-
-                // Continue scanning until we have both fields, since cwd can appear
-                // in later entries even after the first user title-bearing message.
-                if (title && sessionCwd) {
-                  break;
                 }
               } catch {
                 // Skip malformed lines
@@ -490,6 +494,7 @@ export class ClaudeAcpAgent implements Agent {
               cwd: sessionCwd,
               title: title ?? null,
               updatedAt,
+              _meta: { messageCount },
             });
           } catch (err) {
             this.logger.error(
@@ -839,6 +844,44 @@ export class ClaudeAcpAgent implements Agent {
   async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
     const response = await this.client.writeTextFile(params);
     return response;
+  }
+
+  async extMethod(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    switch (method) {
+      case "session/delete":
+        return this.deleteSession(params);
+      default:
+        throw RequestError.methodNotFound(method);
+    }
+  }
+
+  private async deleteSession(
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const sessionId = params.sessionId;
+    const cwd = params.cwd;
+    if (typeof sessionId !== "string" || typeof cwd !== "string") {
+      throw RequestError.invalidParams(
+        undefined,
+        "sessionId and cwd are required string parameters",
+      );
+    }
+
+    const filePath = await this.findSessionFile(sessionId, cwd);
+    if (!filePath) {
+      return { deleted: false };
+    }
+
+    // Clean up in-memory session state if it exists
+    if (this.sessions[sessionId]) {
+      delete this.sessions[sessionId];
+    }
+
+    await fs.promises.unlink(filePath);
+    return { deleted: true };
   }
 
   canUseTool(sessionId: string): CanUseTool {
