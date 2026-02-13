@@ -1131,10 +1131,10 @@ export class ClaudeAcpAgent implements Agent {
     const disableBuiltInTools = params._meta?.disableBuiltInTools === true;
 
     if (!disableBuiltInTools) {
-      if (this.clientCapabilities?.fs?.readTextFile) {
-        allowedTools.push(acpToolNames.read);
-        disallowedTools.push("Read");
-      }
+      // if (this.clientCapabilities?.fs?.readTextFile) {
+      //   allowedTools.push(acpToolNames.read);
+      //   disallowedTools.push("Read");
+      // }
       if (this.clientCapabilities?.fs?.writeTextFile) {
         disallowedTools.push("Write", "Edit");
       }
@@ -1145,7 +1145,7 @@ export class ClaudeAcpAgent implements Agent {
     } else {
       // When built-in tools are disabled, explicitly disallow all of them
       disallowedTools.push(
-        acpToolNames.read,
+        // acpToolNames.read,
         acpToolNames.write,
         acpToolNames.edit,
         acpToolNames.bash,
