@@ -60,7 +60,7 @@ import {
   unreachable,
 } from "./utils.js";
 import { createMcpServer } from "./mcp-server.js";
-import { EDIT_TOOL_NAMES, acpToolNames } from "./tools.js";
+import { acpToolNames } from "./tools.js";
 import {
   toolInfoFromToolUse,
   planEntries,
@@ -903,10 +903,7 @@ export class ClaudeAcpAgent implements Agent {
         }
       }
 
-      if (
-        session.permissionMode === "bypassPermissions" ||
-        (session.permissionMode === "acceptEdits" && EDIT_TOOL_NAMES.includes(toolName))
-      ) {
+      if (session.permissionMode === "bypassPermissions") {
         return {
           behavior: "allow",
           updatedInput: toolInput,
@@ -1030,7 +1027,7 @@ export class ClaudeAcpAgent implements Agent {
 
     // Only add the acp MCP server if built-in tools are not disabled
     if (!params._meta?.disableBuiltInTools) {
-      const server = createMcpServer(this, sessionId, this.clientCapabilities);
+      const server = createMcpServer(this, sessionId);
       mcpServers["acp"] = {
         type: "sdk",
         name: "acp",
@@ -1131,9 +1128,6 @@ export class ClaudeAcpAgent implements Agent {
     const disableBuiltInTools = params._meta?.disableBuiltInTools === true;
 
     if (!disableBuiltInTools) {
-      if (this.clientCapabilities?.fs?.writeTextFile) {
-        disallowedTools.push("Edit");
-      }
       if (this.clientCapabilities?.terminal) {
         allowedTools.push(acpToolNames.bashOutput, acpToolNames.killShell);
         disallowedTools.push("Bash", "BashOutput", "KillShell");
@@ -1141,7 +1135,6 @@ export class ClaudeAcpAgent implements Agent {
     } else {
       // When built-in tools are disabled, explicitly disallow all of them
       disallowedTools.push(
-        acpToolNames.edit,
         acpToolNames.bash,
         acpToolNames.bashOutput,
         acpToolNames.killShell,
