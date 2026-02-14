@@ -15,7 +15,7 @@ describe("unstable_listSessions", () => {
   // Helper to create a mock AgentSideConnection
   function createMockClient(): AgentSideConnection {
     return {
-      sessionUpdate: async () => {},
+      sessionUpdate: async () => { },
       requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
       readTextFile: async () => ({ content: "" }),
       writeTextFile: async () => ({}),
@@ -555,6 +555,132 @@ describe("unstable_listSessions", () => {
       const result = await agent.unstable_listSessions({ cursor: badCursor });
 
       expect(result.sessions).toHaveLength(1);
+    });
+  });
+
+  describe("messageCount metadata", () => {
+    it("includes messageCount in _meta for sessions", async () => {
+      const cwd = "/Users/test/project";
+      writeSessionFile(cwd, "sess-count", { userMessage: "Hello" });
+
+      const result = await agent.unstable_listSessions({});
+
+      expect(result.sessions).toHaveLength(1);
+      // writeSessionFile creates: init + user + assistant = 2 messages (init is not user/assistant)
+      expect(result.sessions[0]!._meta).toEqual({ messageCount: 2 });
+    });
+
+    it("does not count sidechain entries in messageCount", async () => {
+      const cwd = "/Users/test/project";
+      const encodedPath = encodeProjectPath(cwd);
+      const projectDir = path.join(tempDir, "projects", encodedPath);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      const filePath = path.join(projectDir, "sidechain-count.jsonl");
+      fs.writeFileSync(
+        filePath,
+        [
+          JSON.stringify({ type: "init", sessionId: "sidechain-count" }),
+          JSON.stringify({
+            type: "user",
+            sessionId: "sidechain-count",
+            cwd,
+            message: { content: "Real message" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId: "sidechain-count",
+            isSidechain: true,
+            cwd,
+            message: { content: "Sidechain response" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId: "sidechain-count",
+            cwd,
+            message: { content: "Real response" },
+          }),
+        ].join("\n"),
+      );
+
+      const result = await agent.unstable_listSessions({});
+
+      expect(result.sessions).toHaveLength(1);
+      // 1 user + 1 assistant (sidechain excluded)
+      expect(result.sessions[0]!._meta).toEqual({ messageCount: 2 });
+    });
+
+    it("does not count entries with mismatched sessionId in messageCount", async () => {
+      const cwd = "/Users/test/project";
+      const encodedPath = encodeProjectPath(cwd);
+      const projectDir = path.join(tempDir, "projects", encodedPath);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      const filePath = path.join(projectDir, "mixed-ids.jsonl");
+      fs.writeFileSync(
+        filePath,
+        [
+          JSON.stringify({ type: "init", sessionId: "mixed-ids" }),
+          JSON.stringify({
+            type: "user",
+            sessionId: "mixed-ids",
+            cwd,
+            message: { content: "My message" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId: "mixed-ids",
+            cwd,
+            message: { content: "My response" },
+          }),
+          JSON.stringify({
+            type: "user",
+            sessionId: "different-session",
+            cwd,
+            message: { content: "Foreign message" },
+          }),
+        ].join("\n"),
+      );
+
+      const result = await agent.unstable_listSessions({});
+
+      expect(result.sessions).toHaveLength(1);
+      // Only 2 entries match the file sessionId "mixed-ids"
+      expect(result.sessions[0]!._meta).toEqual({ messageCount: 2 });
+    });
+  });
+
+  describe("sessionId filter", () => {
+    it("excludes entries with mismatched sessionId from title extraction", async () => {
+      const cwd = "/Users/test/project";
+      const encodedPath = encodeProjectPath(cwd);
+      const projectDir = path.join(tempDir, "projects", encodedPath);
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      const filePath = path.join(projectDir, "correct-id.jsonl");
+      fs.writeFileSync(
+        filePath,
+        [
+          JSON.stringify({ type: "init", sessionId: "correct-id" }),
+          JSON.stringify({
+            type: "user",
+            sessionId: "wrong-id",
+            cwd,
+            message: { content: "Wrong title" },
+          }),
+          JSON.stringify({
+            type: "user",
+            sessionId: "correct-id",
+            cwd,
+            message: { content: "Correct title" },
+          }),
+        ].join("\n"),
+      );
+
+      const result = await agent.unstable_listSessions({});
+
+      expect(result.sessions).toHaveLength(1);
+      expect(result.sessions[0]!.title).toBe("Correct title");
     });
   });
 

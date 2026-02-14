@@ -76,6 +76,10 @@ import packageJson from "../package.json" with { type: "json" };
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
+export type SessionInfoMeta = {
+  messageCount: number;
+};
+
 export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 
@@ -109,6 +113,7 @@ type Session = {
   query: Query;
   input: Pushable<SDKUserMessage>;
   cancelled: boolean;
+  cwd: string;
   permissionMode: PermissionMode;
   settingsManager: SettingsManager;
 };
@@ -126,14 +131,14 @@ type SessionHistoryEntry = {
 
 type BackgroundTerminal =
   | {
-      handle: TerminalHandle;
-      status: "started";
-      lastOutput: TerminalOutputResponse | null;
-    }
+    handle: TerminalHandle;
+    status: "started";
+    lastOutput: TerminalOutputResponse | null;
+  }
   | {
-      status: "aborted" | "exited" | "killed" | "timedOut";
-      pendingOutput: TerminalOutputResponse;
-    };
+    status: "aborted" | "exited" | "killed" | "timedOut";
+    pendingOutput: TerminalOutputResponse;
+  };
 
 /**
  * Extra metadata that can be given to Claude Code when creating a new session.
@@ -240,6 +245,7 @@ export class ClaudeAcpAgent implements Agent {
           fork: {},
           list: {},
           resume: {},
+          _meta: { delete: true, close: true, setTitle: true },
         },
       },
       agentInfo: {
@@ -424,8 +430,12 @@ export class ClaudeAcpAgent implements Agent {
             const sessionId = file.replace(".jsonl", "");
             let parsedAnyEntry = false;
             let sessionCwd: string | undefined;
+            let messageCount = 0;
 
-            // Find first user message for title
+            // Parse all entries to extract title, cwd, and message count.
+            // We scan every line (no early break) because messageCount requires
+            // a full pass. The file is already fully read into memory, so the
+            // extra cost is only JSON parsing of remaining lines.
             let title: string | undefined;
             for (const line of lines) {
               try {
@@ -434,13 +444,17 @@ export class ClaudeAcpAgent implements Agent {
                 if (entry.isSidechain === true) {
                   continue;
                 }
-                const entrySessionId =
-                  typeof entry.sessionId === "string" ? entry.sessionId : undefined;
-                if (typeof entry.sessionId === "string" && entry.sessionId !== entrySessionId) {
+                if (typeof entry.sessionId === "string" && entry.sessionId !== sessionId) {
                   continue;
                 }
                 if (typeof entry.cwd === "string") {
                   sessionCwd = entry.cwd;
+                }
+                if (entry.type === "user" || entry.type === "assistant") {
+                  messageCount++;
+                }
+                if (entry.type === "title" && typeof entry.title === "string") {
+                  title = sanitizeTitle(entry.title);
                 }
                 if (!title && entry.type === "user" && entry.message?.content) {
                   const msgContent = entry.message.content;
@@ -459,12 +473,6 @@ export class ClaudeAcpAgent implements Agent {
                       title = sanitizeTitle(text);
                     }
                   }
-                }
-
-                // Continue scanning until we have both fields, since cwd can appear
-                // in later entries even after the first user title-bearing message.
-                if (title && sessionCwd) {
-                  break;
                 }
               } catch {
                 // Skip malformed lines
@@ -490,6 +498,7 @@ export class ClaudeAcpAgent implements Agent {
               cwd: sessionCwd,
               title: title ?? null,
               updatedAt,
+              _meta: { messageCount },
             });
           } catch (err) {
             this.logger.error(
@@ -696,7 +705,7 @@ export class ClaudeAcpAgent implements Agent {
           const content =
             message.type === "assistant"
               ? // Handled by stream events above
-                message.message.content.filter((item) => !["text", "thinking"].includes(item.type))
+              message.message.content.filter((item) => !["text", "thinking"].includes(item.type))
               : message.message.content;
 
           for (const notification of toAcpNotifications(
@@ -839,6 +848,93 @@ export class ClaudeAcpAgent implements Agent {
   async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> {
     const response = await this.client.writeTextFile(params);
     return response;
+  }
+
+  async extMethod(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    switch (method) {
+      case "session/delete":
+        return this.deleteSession(params);
+      case "session/close":
+        return this.closeSession(params);
+      case "session/setTitle":
+        return this.setSessionTitle(params);
+      default:
+        throw RequestError.methodNotFound(method);
+    }
+  }
+
+  private async deleteSession(
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const sessionId = params.sessionId;
+    const cwd = params.cwd;
+    if (typeof sessionId !== "string" || typeof cwd !== "string") {
+      throw RequestError.invalidParams(
+        undefined,
+        "sessionId and cwd are required string parameters",
+      );
+    }
+
+    const filePath = await this.findSessionFile(sessionId, cwd);
+    if (!filePath) {
+      return { deleted: false };
+    }
+
+    // Clean up in-memory session state if it exists
+    if (this.sessions[sessionId]) {
+      delete this.sessions[sessionId];
+    }
+
+    await fs.promises.unlink(filePath);
+    return { deleted: true };
+  }
+
+  private closeSession(
+    params: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const sessionId = params.sessionId;
+    if (typeof sessionId !== "string") {
+      throw RequestError.invalidParams(
+        undefined,
+        "sessionId is a required string parameter",
+      );
+    }
+
+    if (this.sessions[sessionId]) {
+      delete this.sessions[sessionId];
+    }
+
+    return {};
+  }
+
+  private async setSessionTitle(
+    params: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const sessionId = params.sessionId;
+    const title = params.title;
+    if (typeof sessionId !== "string" || typeof title !== "string") {
+      throw RequestError.invalidParams(
+        undefined,
+        "sessionId and title are required string parameters",
+      );
+    }
+
+    const session = this.sessions[sessionId];
+    if (!session) {
+      throw RequestError.invalidParams(undefined, "Session not found");
+    }
+
+    const titleEntry = JSON.stringify({
+      type: "title",
+      title: sanitizeTitle(title),
+      sessionId,
+    });
+    await fs.promises.appendFile(sessionFilePath(session.cwd, sessionId), titleEntry + "\n");
+
+    return {};
   }
 
   canUseTool(sessionId: string): CanUseTool {
@@ -1193,6 +1289,7 @@ export class ClaudeAcpAgent implements Agent {
       query: q,
       input: input,
       cancelled: false,
+      cwd: params.cwd,
       permissionMode,
       settingsManager,
     };
@@ -1293,10 +1390,10 @@ function getAvailableSlashCommands(commands: SlashCommand[]): AvailableCommand[]
     .map((command) => {
       const input = command.argumentHint
         ? {
-            hint: Array.isArray(command.argumentHint)
-              ? command.argumentHint.join(" ")
-              : command.argumentHint,
-          }
+          hint: Array.isArray(command.argumentHint)
+            ? command.argumentHint.join(" ")
+            : command.argumentHint,
+        }
         : null;
       let name = command.name;
       if (command.name.endsWith(" (MCP)")) {
