@@ -183,6 +183,44 @@ export type ToolUseCache = {
 const IS_ROOT = (process.geteuid?.() ?? process.getuid?.()) === 0;
 const ALLOW_BYPASS = !IS_ROOT || !!process.env.IS_SANDBOX;
 
+const PERMISSION_MODE_ALIASES: Record<string, PermissionMode> = {
+  default: "default",
+  acceptedits: "acceptEdits",
+  dontask: "dontAsk",
+  plan: "plan",
+  delegate: "delegate",
+  bypasspermissions: "bypassPermissions",
+  bypass: "bypassPermissions",
+};
+
+function resolvePermissionMode(defaultMode?: unknown): PermissionMode {
+  if (defaultMode === undefined) {
+    return "default";
+  }
+
+  if (typeof defaultMode !== "string") {
+    throw new Error("Invalid permissions.defaultMode: expected a string.");
+  }
+
+  const normalized = defaultMode.trim().toLowerCase();
+  if (normalized === "") {
+    throw new Error("Invalid permissions.defaultMode: expected a non-empty string.");
+  }
+
+  const mapped = PERMISSION_MODE_ALIASES[normalized];
+  if (!mapped) {
+    throw new Error(`Invalid permissions.defaultMode: ${defaultMode}.`);
+  }
+
+  if (mapped === "bypassPermissions" && !ALLOW_BYPASS) {
+    throw new Error(
+      "Invalid permissions.defaultMode: bypassPermissions is not available when running as root.",
+    );
+  }
+
+  return mapped;
+}
+
 // Implement the ACP Agent interface
 export class ClaudeAcpAgent implements Agent {
   sessions: {
@@ -750,6 +788,7 @@ export class ClaudeAcpAgent implements Agent {
       case "default":
       case "acceptEdits":
       case "bypassPermissions":
+      case "delegate":
       case "dontAsk":
       case "plan":
         this.sessions[params.sessionId].permissionMode = params.modeId;
@@ -1052,7 +1091,9 @@ export class ClaudeAcpAgent implements Agent {
       }
     }
 
-    const permissionMode = "default";
+    const permissionMode = resolvePermissionMode(
+      settingsManager.getSettings().permissions?.defaultMode,
+    );
 
     // Extract options from _meta if provided
     const userProvidedOptions = (params._meta as NewSessionMeta | undefined)?.claudeCode?.options;
@@ -1218,6 +1259,11 @@ export class ClaudeAcpAgent implements Agent {
         description: "Planning mode, no actual tool execution",
       },
       {
+        id: "delegate",
+        name: "Delegate Mode",
+        description: "Restricts tool use to teammates and tasks",
+      },
+      {
         id: "dontAsk",
         name: "Don't Ask",
         description: "Don't prompt for permissions, deny if not pre-approved",
@@ -1243,6 +1289,90 @@ export class ClaudeAcpAgent implements Agent {
   }
 }
 
+// Claude Code CLI persists display strings like "opus[1m]", but the SDK doesn't normalize them.
+const MODEL_CONTEXT_HINT_PATTERN = /\[(\d+m)\]$/i;
+
+function tokenizeModelPreference(model: string): { tokens: string[]; contextHint?: string } {
+  const trimmed = model.trim();
+  const lower = trimmed.toLowerCase();
+  const contextHint = lower.match(MODEL_CONTEXT_HINT_PATTERN)?.[1]?.toLowerCase();
+
+  const normalized = lower.replace(MODEL_CONTEXT_HINT_PATTERN, " $1 ");
+  const rawTokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  const tokens = rawTokens
+    .map((token) => {
+      if (token === "opusplan") {
+        return "opus";
+      }
+      if (token === "best" || token === "default") {
+        return "";
+      }
+      return token;
+    })
+    .filter((token) => token && token !== "claude")
+    .filter((token) => /[a-z]/.test(token) || token.endsWith("m"));
+
+  return { tokens, contextHint };
+}
+
+function scoreModelMatch(model: ModelInfo, tokens: string[], contextHint?: string): number {
+  const haystack = `${model.value} ${model.displayName}`.toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (haystack.includes(token)) {
+      score += token === contextHint ? 3 : 1;
+    }
+  }
+  return score;
+}
+
+function resolveModelPreference(models: ModelInfo[], preference: string): ModelInfo | null {
+  const trimmed = preference.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const lower = trimmed.toLowerCase();
+  const directMatch = models.find(
+    (model) =>
+      model.value === trimmed ||
+      model.value.toLowerCase() === lower ||
+      model.displayName.toLowerCase() === lower,
+  );
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const includesMatch = models.find((model) => {
+    const value = model.value.toLowerCase();
+    const display = model.displayName.toLowerCase();
+    return value.includes(lower) || display.includes(lower) || lower.includes(value);
+  });
+  if (includesMatch) {
+    return includesMatch;
+  }
+
+  const { tokens, contextHint } = tokenizeModelPreference(trimmed);
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  let bestMatch: ModelInfo | null = null;
+  let bestScore = 0;
+  models.forEach((model) => {
+    const score = scoreModelMatch(model, tokens, contextHint);
+    if (score <= 0) {
+      return;
+    }
+    if (!bestMatch || score > bestScore) {
+      bestMatch = model;
+      bestScore = score;
+    }
+  });
+
+  return bestMatch;
+}
+
 async function getAvailableModels(
   query: Query,
   models: ModelInfo[],
@@ -1253,14 +1383,7 @@ async function getAvailableModels(
   let currentModel = models[0];
 
   if (settings.model) {
-    const match = models.find(
-      (m) =>
-        m.value === settings.model ||
-        m.value.includes(settings.model!) ||
-        settings.model!.includes(m.value) ||
-        m.displayName.toLowerCase() === settings.model!.toLowerCase() ||
-        m.displayName.toLowerCase().includes(settings.model!.toLowerCase()),
-    );
+    const match = resolveModelPreference(models, settings.model);
     if (match) {
       currentModel = match;
     }
