@@ -784,7 +784,7 @@ function toolCommandOutput(
 
   if (exitStatus) {
     if (typeof exitStatus.exitCode === "number") {
-      toolOutput += `Exited with code ${exitStatus.exitCode}.`;
+      toolOutput += `Exited with code ${exitStatus.exitCode}.\n\n`;
     }
 
     if (typeof exitStatus.signal === "string") {
