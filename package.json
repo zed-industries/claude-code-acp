@@ -82,6 +82,6 @@
     "prettier": "3.9.6",
     "ts-node": "10.9.2",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "5.0.0"
   }
 }
