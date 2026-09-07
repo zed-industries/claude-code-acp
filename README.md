@@ -33,6 +33,18 @@ tool-call representation and child interactions stay on the root session. Client
 historical `_meta["subagent-transcript"]` capability or `forwardSubagentText` session option retain
 the flattened child transcript behavior.
 
+## Session title generation
+
+Set `ACP_DISABLE_TITLE_GENERATION=1` in the adapter process environment to skip its
+extra model request for a session title. This applies to every session handled by
+the process and is useful for background jobs, CI, and clients that manage titles
+themselves. Unset or other values retain automatic generation. Existing titles
+and stored summary fallbacks are still published through `session_info_update`.
+
+This adapter-specific option controls the adapter's explicit `generateSessionTitle`
+request. Claude Code's native `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` setting does not
+suppress that explicit request.
+
 ## Contribution Policy
 
 This project does not require a Contributor License Agreement (CLA). Instead, contributions are accepted under the following terms:

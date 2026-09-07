@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { ClaudeAcpAgent, type AcpClient } from "../acp-agent.js";
@@ -46,7 +46,9 @@ describe("SDK title generation contract", () => {
 describe("session titles at turn-end", () => {
   beforeEach(() => {
     vi.mocked(getSessionInfo).mockReset();
+    vi.stubEnv("ACP_DISABLE_TITLE_GENERATION", undefined);
   });
+  afterEach(() => vi.unstubAllEnvs());
 
   /** Collect every `session_info_update` an agent pushes. */
   function titleRecorder() {
@@ -149,7 +151,8 @@ describe("session titles at turn-end", () => {
     expect(titles()).toEqual(["Stable title"]);
   });
 
-  it("generates a title at turn-end instead of publishing the raw prompt", async () => {
+  it.each([undefined, "0"])("generates a title when the switch is %s", async (value) => {
+    vi.stubEnv("ACP_DISABLE_TITLE_GENERATION", value);
     const { client, titles } = titleRecorder();
     const agent = newAgent(client);
 
@@ -182,6 +185,39 @@ describe("session titles at turn-end", () => {
     // The raw prompt was never published — only the generated title.
     expect(titles()).toEqual(["Explain add() in hello.py"]);
   });
+
+  it.each(["missing", "summary", "custom"])(
+    "skips title generation when disabled and session metadata is %s",
+    async (metadata) => {
+      vi.stubEnv("ACP_DISABLE_TITLE_GENERATION", "1");
+      vi.mocked(getSessionInfo).mockResolvedValue(
+        metadata === "missing"
+          ? undefined
+          : {
+              sessionId: "test-session",
+              summary: LONG_PROMPT,
+              lastModified: 1_700_000_000_000,
+              ...(metadata === "custom" ? { customTitle: "My review" } : {}),
+            },
+      );
+      const { client, titles } = titleRecorder();
+      const agent = newAgent(client);
+      const input = new Pushable<any>();
+      const { query, generateSessionTitle } = wrapTitleQuery(oneTurn(input), "Unwanted title");
+      agent.sessions["test-session"] = mockSessionState({ query, input }, agent);
+
+      await agent.prompt({
+        sessionId: "test-session",
+        prompt: [{ type: "text", text: LONG_PROMPT }],
+      });
+      await agent.sessions["test-session"]?.consumer;
+
+      expect(generateSessionTitle).not.toHaveBeenCalled();
+      expect(titles()).toEqual(
+        metadata === "missing" ? [] : [metadata === "custom" ? "My review" : LONG_PROMPT],
+      );
+    },
+  );
 
   it("adopts a stored title and never generates over it", async () => {
     const { client, titles } = titleRecorder();

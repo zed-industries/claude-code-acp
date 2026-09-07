@@ -192,6 +192,7 @@ export class SessionTitles {
   /** Whether to ask the SDK for a generated title now: once per session, on a
    *  live query, with enough collected text for the generator to work with. */
   private canRequest(session: Session): boolean {
+    if (process.env.ACP_DISABLE_TITLE_GENERATION === "1") return false;
     if (this.settled || session.queryClosed || session.cancelled) {
       return false;
     }
