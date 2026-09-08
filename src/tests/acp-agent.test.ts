@@ -49,8 +49,17 @@ import {
   type StreamedToolInputCache,
 } from "../acp-agent.js";
 import { SessionTitles } from "../session-titles.js";
-import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "../usage-markdown.js";
-import { formatMcpStatusMarkdown, isMcpStatusCommand } from "../mcp-status-markdown.js";
+import {
+  formatUsageResponse,
+  isUsageCommandText,
+  parseUsageResponse,
+  usageBillingContext,
+} from "../usage-markdown.js";
+import {
+  fetchMcpStatusMarkdown,
+  formatMcpStatusMarkdown,
+  isMcpStatusCommand,
+} from "../mcp-status-markdown.js";
 import { Pushable } from "../utils.js";
 import {
   deleteSession,
@@ -1935,12 +1944,93 @@ describe("usage Markdown", () => {
   it("renders limits, session totals, and MCP contributions from structured data", () => {
     const formatted = formatUsageResponse(usageResponse);
     expect(formatted).toContain("## Usage");
-    expect(formatted).toContain("**5-hour limit** — **3%**");
-    expect(formatted).toContain("**Weekly · Fable** — **0%**");
+    expect(formatted).toContain("**5-hour limit** · `█░░░░░░░░░░░░░░░░░░░` **3%**");
+    expect(formatted).toContain("**Weekly · Fable** · `░░░░░░░░░░░░░░░░░░░░` **0%**");
     expect(formatted).toContain("| $0.33 | 20s | 1m 9s |");
-    expect(formatted).toContain("| Cache read | 98.7K |");
+    expect(formatted).toContain("| Cache read | 98.7k |");
     expect(formatted).toContain("**Last 24h** · 34 requests · 3 sessions");
-    expect(formatted).toContain("| ccd\\_session\\_mgmt | `███░░░░░░░░░░░░░░░░░` 13% |");
+    expect(formatted).toContain("MCP: ccd\\_session\\_mgmt 13%");
+  });
+
+  it("explains billing semantics for subscription, API key, token, and external providers", () => {
+    const withoutLimits = {
+      ...usageResponse,
+      subscription_type: null,
+      rate_limits_available: false,
+      rate_limits: null,
+      behaviors: null,
+    };
+
+    expect(
+      formatUsageResponse(usageResponse, { kind: "subscription", label: "Claude Max" }),
+    ).toContain("> Claude Max · Subscription");
+    expect(
+      formatUsageResponse(withoutLimits, { kind: "api_key", label: "Anthropic API key" }),
+    ).toContain("> Anthropic API key · Usage-based billing · Plan limits do not apply");
+    const inconsistentApiKeyPayload = formatUsageResponse(usageResponse, {
+      kind: "api_key",
+      label: "Anthropic API key",
+    });
+    expect(inconsistentApiKeyPayload).not.toContain("### Limits");
+    expect(inconsistentApiKeyPayload).not.toContain("What’s using your limits?");
+    expect(
+      formatUsageResponse(withoutLimits, { kind: "token", label: "Bearer or OAuth token" }),
+    ).toContain("> Bearer or OAuth token · Token-authenticated usage · Plan limits do not apply");
+    expect(
+      formatUsageResponse(withoutLimits, { kind: "external", label: "AWS Bedrock" }),
+    ).toContain("> AWS Bedrock · Provider billing · Plan limits do not apply");
+  });
+
+  it("uses the credential that actually pays when account signals overlap", () => {
+    expect(
+      usageBillingContext({
+        apiProvider: "firstParty",
+        apiKeySource: "ANTHROPIC_API_KEY",
+        subscriptionType: "max",
+      }),
+    ).toEqual({ kind: "api_key", label: "Anthropic API key" });
+    expect(
+      usageBillingContext({
+        apiProvider: "firstParty",
+        apiKeySource: "none",
+        tokenSource: "ANTHROPIC_AUTH_TOKEN",
+        subscriptionType: "pro",
+      }),
+    ).toEqual({ kind: "token", label: "Bearer or OAuth token" });
+    expect(usageBillingContext({ apiProvider: "vertex" })).toEqual({
+      kind: "external",
+      label: "Google Vertex AI",
+    });
+    expect(usageBillingContext({ apiProvider: "gateway" })).toEqual({
+      kind: "gateway",
+      label: "Custom model gateway",
+    });
+  });
+
+  it("keeps estimated session cost separate from actual extra-usage credits", () => {
+    const formatted = formatUsageResponse({
+      ...usageResponse,
+      rate_limits: {
+        ...usageResponse.rate_limits,
+        extra_usage: {
+          is_enabled: true,
+          monthly_limit: 20,
+          used_credits: 0.8,
+          utilization: 4,
+          currency: "USD",
+        },
+      },
+    });
+    expect(formatted).toContain("| Estimated cost | API time | Active |");
+    expect(formatted).toContain("Extra usage · $0.80 / $20.00");
+  });
+
+  it("does not round a small estimated cost down to zero", () => {
+    const formatted = formatUsageResponse({
+      ...usageResponse,
+      session: { ...usageResponse.session, total_cost_usd: 0.0012 },
+    });
+    expect(formatted).toContain("| $0.0012 | 20s | 1m 9s |");
   });
 
   it("escapes and limits MCP contribution rows", () => {
@@ -1984,7 +2074,8 @@ describe("usage Markdown", () => {
       },
     });
     expect(formatted).not.toContain("### Limits");
-    expect(formatted).toContain("### This session");
+    expect(formatted).toContain("Plan limits unavailable");
+    expect(formatted).toContain("### Current runtime");
   });
 
   it.each(["/usage", "/cost", "/stats"])(
@@ -2046,7 +2137,7 @@ describe("usage Markdown", () => {
       expect(getUsage).toHaveBeenCalledOnce();
       expect(forwardedPrompt).toBe(command);
       expect(text).toContain("## Usage");
-      expect(text).toContain("### This session");
+      expect(text).toContain("### Current runtime");
       expect(text).not.toContain(raw);
     },
   );
@@ -8235,6 +8326,11 @@ describe("terminal slash command filtering", () => {
       { name: "doctor", description: "Diagnose your setup" },
       { name: "color", description: "Change the theme" },
       { name: "compact", description: "Compact the conversation" },
+      {
+        name: "mcp",
+        description: "Manage MCP servers",
+        argumentHint: "[reconnect|enable|disable [<server>|all]]",
+      },
     ]);
     Object.assign(agent.sessions["test-session"].query, { supportedCommands });
 
@@ -8251,6 +8347,11 @@ describe("terminal slash command filtering", () => {
       "compact",
       "mcp",
     ]);
+    expect(commandsUpdate.availableCommands.at(-1)).toEqual({
+      name: "mcp",
+      description: "Show status; reconnect, enable, or disable MCP servers",
+      input: { hint: "[reconnect|enable|disable [<server>|all]]" },
+    });
   });
 
   it("does not re-advertise when a later init repeats the same latch", async () => {
@@ -8354,6 +8455,39 @@ describe("MCP status command", () => {
     }
   });
 
+  it("puts actionable failures first and bounds verbose tools and errors", () => {
+    const markdown = formatMcpStatusMarkdown([
+      {
+        name: "healthy",
+        status: "connected",
+        tools: Array.from({ length: 8 }, (_, index) => ({ name: `tool_${index}` })),
+      },
+      { name: "auth", status: "needs-auth" },
+      { name: "broken", status: "failed", error: "x".repeat(500) },
+    ]);
+
+    expect(markdown.indexOf("`broken`")).toBeLessThan(markdown.indexOf("`auth`"));
+    expect(markdown.indexOf("`auth`")).toBeLessThan(markdown.indexOf("`healthy`"));
+    expect(markdown).toContain("and 3 more");
+    expect(markdown).not.toContain("tool_7");
+    expect(markdown).toContain("…`");
+    expect(markdown.length).toBeLessThan(700);
+  });
+
+  it("renders a compact icon-free diagnostic when MCP inspection fails", async () => {
+    const logger = { error: vi.fn() };
+    const markdown = await fetchMcpStatusMarkdown(
+      { mcpServerStatus: vi.fn(async () => Promise.reject(new Error("offline"))) } as any,
+      new AbortController().signal,
+      logger,
+    );
+    expect(markdown).toBe(
+      "## MCP servers\n\nUnable to read MCP server status. Check the agent logs for details.",
+    );
+    expect(markdown).not.toContain("⚠️");
+    expect(logger.error).toHaveBeenCalledOnce();
+  });
+
   it("handles /mcp locally and hides the adapter's internal MCP server", async () => {
     const updates: SessionNotification[] = [];
     const agent = new ClaudeAcpAgent(
@@ -8367,8 +8501,20 @@ describe("MCP status command", () => {
       { name: "github", status: "connected" as const, tools: [{ name: "get_issue" }] },
       { name: "claude_agent_acp", status: "connected" as const },
     ]);
+    async function* messages() {
+      const user = await input[Symbol.asyncIterator]().next();
+      yield userEcho(user.value);
+      yield {
+        type: "system",
+        subtype: "local_command_output",
+        content: "Native terminal MCP manager",
+        uuid: randomUUID(),
+        session_id: "test-session",
+      };
+      yield successfulResultMessage();
+    }
     agent.sessions["test-session"] = mockSessionState({
-      query: Object.assign(wrapQuery((async function* () {})()), { mcpServerStatus }),
+      query: Object.assign(wrapQuery(messages()), { mcpServerStatus }),
       input,
     });
 
@@ -8379,14 +8525,131 @@ describe("MCP status command", () => {
 
     expect(response.stopReason).toBe("end_turn");
     expect(mcpServerStatus).toHaveBeenCalledOnce();
-    expect(updates).toHaveLength(1);
-    expect(updates[0].update).toMatchObject({
+    const message = updates.find((update) => update.update.sessionUpdate === "agent_message_chunk");
+    expect(message?.update).toMatchObject({
       sessionUpdate: "agent_message_chunk",
       content: { type: "text" },
     });
-    const content = (updates[0].update as any).content.text as string;
+    const content = (message!.update as any).content.text as string;
     expect(content).toContain("`github`");
     expect(content).not.toContain("claude_agent_acp");
+    expect(content).not.toContain("Native terminal MCP manager");
+  });
+
+  it("waits for earlier turns before reading and publishing MCP status", async () => {
+    const agent = new ClaudeAcpAgent({ sessionUpdate: async () => {} } as unknown as AcpClient, {
+      log: () => {},
+      error: () => {},
+    });
+    const input = new Pushable<any>();
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => (firstStarted = resolve));
+    let releaseFirst!: () => void;
+    const release = new Promise<void>((resolve) => (releaseFirst = resolve));
+    async function* messages() {
+      const iterator = input[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      yield userEcho(first.value);
+      firstStarted();
+      await release;
+      yield successfulResultMessage();
+      yield { type: "system", subtype: "session_state_changed", state: "idle" };
+
+      const second = await iterator.next();
+      yield userEcho(second.value);
+      yield {
+        type: "system",
+        subtype: "local_command_output",
+        content: "Native MCP output",
+        uuid: randomUUID(),
+        session_id: "test-session",
+      };
+      yield successfulResultMessage();
+      yield { type: "system", subtype: "session_state_changed", state: "idle" };
+    }
+    const mcpServerStatus = vi.fn(async () => []);
+    agent.sessions["test-session"] = mockSessionState({
+      query: Object.assign(wrapQuery(messages()), { mcpServerStatus }),
+      input,
+    });
+
+    const firstPrompt = agent.prompt({
+      sessionId: "test-session",
+      prompt: [{ type: "text", text: "finish first" }],
+    });
+    await started;
+    const mcpPrompt = agent.prompt({
+      sessionId: "test-session",
+      prompt: [{ type: "text", text: "/mcp" }],
+    });
+    await Promise.resolve();
+    expect(mcpServerStatus).not.toHaveBeenCalled();
+
+    releaseFirst();
+    await Promise.all([firstPrompt, mcpPrompt]);
+    expect(mcpServerStatus).toHaveBeenCalledOnce();
+  });
+});
+
+describe("context status command", () => {
+  it("publishes the structured /context occupancy without replacing it with synthetic zero usage", async () => {
+    const updates: SessionNotification[] = [];
+    const agent = new ClaudeAcpAgent(
+      {
+        sessionUpdate: async (notification: SessionNotification) => updates.push(notification),
+      } as unknown as AcpClient,
+      { log: () => {}, error: () => {} },
+    );
+    const input = new Pushable<any>();
+    async function* messages() {
+      const user = await input[Symbol.asyncIterator]().next();
+      yield userEcho(user.value);
+      yield {
+        type: "assistant",
+        parent_tool_use_id: null,
+        uuid: randomUUID(),
+        session_id: "test-session",
+        context_usage: {
+          model: "claude-opus",
+          total_tokens: 18_500,
+          raw_max_tokens: 1_000_000,
+          percentage: 2,
+          categories: [],
+          mcp_tools: [],
+          memory_files: [],
+          agents: [],
+        },
+        message: {
+          id: "context-result",
+          type: "message",
+          role: "assistant",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "## Context Usage" }],
+          stop_reason: "stop_sequence",
+          usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      };
+      yield successfulResultMessage();
+    }
+    agent.sessions["test-session"] = mockSessionState({ query: wrapQuery(messages()), input });
+
+    await agent.prompt({
+      sessionId: "test-session",
+      prompt: [{ type: "text", text: "/context" }],
+    });
+
+    const usageUpdates = updates
+      .filter((update) => update.update.sessionUpdate === "usage_update")
+      .map((update) => update.update);
+    expect(usageUpdates).toEqual([
+      { sessionUpdate: "usage_update", used: 18_500, size: 1_000_000 },
+    ]);
+    expect(agent.sessions["test-session"].contextUsedTokens).toBe(18_500);
   });
 });
 

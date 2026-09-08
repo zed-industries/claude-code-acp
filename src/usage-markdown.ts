@@ -1,9 +1,29 @@
-import type { Query, SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  AccountInfo,
+  Query,
+  SDKControlGetUsageResponse,
+} from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import type { AuthStatus } from "./auth-status.js";
 
 const STRUCTURED_USAGE_TIMEOUT_MS = 5_000;
 
 type UsageLogger = { error(...args: unknown[]): void };
+
+export type UsageBillingContext = {
+  kind: "subscription" | "api_key" | "token" | "external" | "gateway" | "none" | "unknown";
+  label: string;
+};
+
+const EXTERNAL_PROVIDER_LABELS: Record<string, string> = {
+  bedrock: "AWS Bedrock",
+  vertex: "Google Vertex AI",
+  foundry: "Azure AI Foundry",
+  anthropicAws: "AWS Bedrock",
+  anthropicGoogleCloud: "Google Vertex AI",
+  mantle: "Mantle",
+};
+const ACTIVE_API_KEY_SOURCES = new Set(["ANTHROPIC_API_KEY", "apiKeyHelper", "/login managed key"]);
 
 const countSchema = z.number().finite().nonnegative();
 const percentSchema = countSchema.max(100);
@@ -121,9 +141,10 @@ export async function fetchStructuredUsageMarkdown(
   query: Query,
   signal: AbortSignal,
   logger: UsageLogger,
+  billing?: UsageBillingContext,
 ): Promise<string | null> {
   const usage = await fetchStructuredUsage(query, signal, logger);
-  return usage ? formatUsageResponse(usage) : null;
+  return usage ? formatUsageResponse(usage, billing) : null;
 }
 
 export function usageBar(percent: number): string {
@@ -146,9 +167,85 @@ export function formatDuration(milliseconds: number): string {
 }
 
 export function formatCount(value: number): string {
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
-    value,
-  );
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
+    .format(value)
+    .replace(/([KMBT])$/, (suffix) => suffix.toLowerCase());
+}
+
+function planLabel(plan: string): string {
+  const titled = plan.replace(/\S+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1));
+  return /^claude(\s|$)/i.test(plan) ? titled : `Claude ${titled}`;
+}
+
+/** Resolve the credential that pays for this session. AccountInfo wins because
+ * it describes the live Query; AuthStatus fills gaps left by older CLIs. */
+export function usageBillingContext(
+  account: AccountInfo | undefined,
+  fallback?: AuthStatus,
+): UsageBillingContext | undefined {
+  const provider = account?.apiProvider;
+  if (provider === "gateway") return { kind: "gateway", label: "Custom model gateway" };
+  if (provider && provider !== "firstParty") {
+    return { kind: "external", label: EXTERNAL_PROVIDER_LABELS[provider] ?? provider };
+  }
+  if (account?.apiKeySource && ACTIVE_API_KEY_SOURCES.has(account.apiKeySource)) {
+    return { kind: "api_key", label: "Anthropic API key" };
+  }
+  if (account?.tokenSource) return { kind: "token", label: "Bearer or OAuth token" };
+  if (account?.subscriptionType) {
+    return { kind: "subscription", label: planLabel(account.subscriptionType) };
+  }
+  if (account?.apiKeySource && account.apiKeySource !== "none") {
+    return { kind: "api_key", label: "Anthropic API key" };
+  }
+  if (!fallback) return undefined;
+  if (fallback.kind === "account") return { kind: "subscription", label: fallback.label };
+  return { kind: fallback.kind, label: fallback.label };
+}
+
+function inferredBillingContext(
+  usage: SDKControlGetUsageResponse,
+  billing?: UsageBillingContext,
+): UsageBillingContext {
+  if (billing) return billing;
+  if (usage.subscription_type) {
+    return { kind: "subscription", label: planLabel(usage.subscription_type) };
+  }
+  return { kind: "unknown", label: "API or external provider" };
+}
+
+function billingSummary(context: UsageBillingContext): string {
+  switch (context.kind) {
+    case "subscription":
+      return `${context.label} · Subscription`;
+    case "api_key":
+      return `${context.label} · Usage-based billing · Plan limits do not apply`;
+    case "token":
+      return `${context.label} · Token-authenticated usage · Plan limits do not apply`;
+    case "external":
+      return `${context.label} · Provider billing · Plan limits do not apply`;
+    case "gateway":
+      return `${context.label} · External billing · Plan limits do not apply`;
+    case "none":
+      return `${context.label} · Usage data may be incomplete`;
+    case "unknown":
+      return `${context.label} · Plan limits do not apply`;
+    default:
+      return context.label;
+  }
+}
+
+function formatMoney(value: number, currency = "USD"): string {
+  try {
+    return new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${escapeMarkdown(currency)}`;
+  }
 }
 
 export function formatReset(value: string | null): string {
@@ -161,6 +258,7 @@ export function formatReset(value: string | null): string {
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
+    timeZone: "UTC",
   }).format(reset)}`;
 }
 
@@ -196,7 +294,7 @@ function usageLimitProgress(usage: SDKControlGetUsageResponse): UsageLimitProgre
   if (extra?.is_enabled && extra.utilization !== null) {
     const amount =
       extra.used_credits !== null && extra.monthly_limit !== null
-        ? ` · ${formatCount(extra.used_credits)} / ${formatCount(extra.monthly_limit)}${extra.currency ? ` ${extra.currency}` : ""}`
+        ? ` · ${formatMoney(extra.used_credits, extra.currency ?? "USD")} / ${formatMoney(extra.monthly_limit, extra.currency ?? "USD")}`
         : "";
     rows.push({
       label: `Extra usage${amount}`,
@@ -209,10 +307,7 @@ function usageLimitProgress(usage: SDKControlGetUsageResponse): UsageLimitProgre
 
 function appendLimit(lines: string[], limit: UsageLimitProgress): void {
   lines.push(
-    `**${escapeMarkdown(limit.label)}** — **${limit.utilization}%**${formatReset(limit.resetsAt)}`,
-    "",
-    `\`${usageBar(limit.utilization)}\``,
-    "",
+    `**${escapeMarkdown(limit.label)}** · \`${usageBar(limit.utilization)}\` **${limit.utilization}%**${formatReset(limit.resetsAt)}`,
   );
 }
 
@@ -230,22 +325,27 @@ function appendContributions(
     `**${label}** · ${period.request_count} requests · ${period.session_count} sessions`,
   );
   if (period.mcp_servers.length === 0) return;
-  lines.push("", "| MCP server | Usage |", "|:--|--:|");
-  for (const server of [...period.mcp_servers].sort((a, b) => b.pct - a.pct).slice(0, 3)) {
-    lines.push(`| ${escapeMarkdown(server.name)} | \`${usageBar(server.pct)}\` ${server.pct}% |`);
-  }
+  const servers = [...period.mcp_servers]
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 3)
+    .map((server) => `${escapeMarkdown(server.name)} ${server.pct}%`);
+  lines.push(`MCP: ${servers.join(" · ")}`);
 }
 
 /** Render the SDK's structured `/usage` response as Markdown. */
-export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
-  const lines = ["## Usage"];
-  if (usage.subscription_type) {
-    lines.push("", `> Claude ${escapeMarkdown(usage.subscription_type)} subscription usage`);
-  }
+export function formatUsageResponse(
+  usage: SDKControlGetUsageResponse,
+  billing?: UsageBillingContext,
+): string {
+  const context = inferredBillingContext(usage, billing);
+  const limits = usageLimitProgress(usage);
+  const limitsUnavailable = context.kind === "subscription" && limits.length === 0;
+  const summary = `${billingSummary(context)}${limitsUnavailable ? " · Plan limits unavailable" : ""}`;
+  const lines = ["## Usage", "", `> ${escapeMarkdown(summary)}`];
 
-  if (usage.rate_limits_available && usage.rate_limits) {
+  if (context.kind === "subscription" || context.kind === "unknown") {
     const limitLines: string[] = [];
-    for (const limit of usageLimitProgress(usage)) appendLimit(limitLines, limit);
+    for (const limit of limits) appendLimit(limitLines, limit);
     if (limitLines.length > 0) {
       if (limitLines.at(-1) === "") limitLines.pop();
       lines.push("", "### Limits", "", ...limitLines);
@@ -266,11 +366,11 @@ export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
     "",
     "---",
     "",
-    "### This session",
+    "### Current runtime",
     "",
-    "| Cost | API time | Active |",
+    "| Estimated cost | API time | Active |",
     "|:--|:--|:--|",
-    `| $${usage.session.total_cost_usd.toFixed(2)} | ${formatDuration(usage.session.total_api_duration_ms)} | ${formatDuration(usage.session.total_duration_ms)} |`,
+    `| ${formatMoney(usage.session.total_cost_usd)} | ${formatDuration(usage.session.total_api_duration_ms)} | ${formatDuration(usage.session.total_duration_ms)} |`,
     "",
     "| Breakdown | Tokens |",
     "|:--|--:|",
@@ -280,7 +380,7 @@ export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
     `| Cache write | ${formatCount(totals.cacheWrite)} |`,
   );
 
-  if (usage.behaviors) {
+  if (usage.behaviors && (context.kind === "subscription" || context.kind === "unknown")) {
     lines.push(
       "",
       "---",

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { ClaudeAcpAgent, type AcpClient } from "../acp-agent.js";
-import { appendTitleContext } from "../session-titles.js";
+import { appendTitleContext, SessionTitles } from "../session-titles.js";
 import { Pushable } from "../utils.js";
 import { getSessionInfo } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -85,6 +85,27 @@ describe("session titles at turn-end", () => {
   }
 
   const LONG_PROMPT = "Explain what the add function in hello.py does, in one sentence";
+
+  it("does not publish a raw status command as the session title", async () => {
+    const { client, titles } = titleRecorder();
+    const agent = newAgent(client);
+    vi.mocked(getSessionInfo).mockResolvedValue({
+      sessionId: "test-session",
+      summary: "/mcp",
+      lastModified: 1_700_000_000_000,
+    } as any);
+    const titleState = new SessionTitles(agent, "test-session");
+    const session = mockSessionState(
+      { titles: titleState, query: wrapQuery((async function* () {})()) },
+      agent,
+    );
+    agent.sessions["test-session"] = session;
+
+    titleState.onPrompt([{ type: "text", text: "/mcp" }]);
+    await titleState.onTurnEnd(session);
+
+    expect(titles()).toEqual([]);
+  });
 
   it("pushes a session_info_update when the SDK generates a title at turn-end", async () => {
     const sessionUpdates: any[] = [];
