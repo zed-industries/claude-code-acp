@@ -1,9 +1,42 @@
 import type {
   AccountInfo,
   McpServerStatus,
+  ModelInfo,
+  Query,
   SDKControlGetUsageResponse,
 } from "@anthropic-ai/claude-agent-sdk";
-import { formatCount, formatDuration, formatReset, usageBar } from "./usage-markdown.js";
+import type { SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk";
+import { EFFORT_CONFIG_ID } from "./session-config-ids.js";
+import {
+  fetchStructuredUsage,
+  formatCount,
+  formatDuration,
+  formatReset,
+  usageBar,
+} from "./usage-markdown.js";
+
+type StatusLogger = { error(...args: unknown[]): void };
+
+export type StatusSession = {
+  query: Query;
+  abortController: AbortController;
+  cwd: string;
+  models: { currentModelId: string };
+  modelInfos: ModelInfo[];
+  modes: SessionModeState;
+  configOptions: SessionConfigOption[];
+  contextUsedTokens?: number;
+  contextWindowSize: number;
+  claudeCodeVersion?: string;
+};
+
+export type BuildStatusMarkdownOptions = {
+  sessionId: string;
+  session: StatusSession;
+  adapterVersion: string;
+  hiddenMcpServerNames?: readonly string[];
+  logger: StatusLogger;
+};
 
 export type StatusMarkdownInput = {
   sessionId: string;
@@ -22,6 +55,48 @@ export type StatusMarkdownInput = {
 
 export function isStatusCommand(text: string): boolean {
   return text.trim() === "/status";
+}
+
+/** Collect the structured status sources and render their combined snapshot.
+ * This keeps SDK parsing and presentation out of the central prompt handler. */
+export async function buildStatusMarkdown({
+  sessionId,
+  session,
+  adapterVersion,
+  hiddenMcpServerNames = [],
+  logger,
+}: BuildStatusMarkdownOptions): Promise<string> {
+  const [usage, account, mcpServers] = await Promise.all([
+    fetchStructuredUsage(session.query, session.abortController.signal, logger, "/status"),
+    session.query.accountInfo().catch((error) => {
+      logger.error(`Failed to inspect account for /status: ${error}`);
+      return undefined;
+    }),
+    session.query.mcpServerStatus().catch((error) => {
+      logger.error(`Failed to inspect MCP servers for /status: ${error}`);
+      return [] as McpServerStatus[];
+    }),
+  ]);
+  const model = session.modelInfos.find((item) => item.value === session.models.currentModelId);
+  const mode = session.modes.availableModes.find((item) => item.id === session.modes.currentModeId);
+  const effort = session.configOptions.find((option) => option.id === EFFORT_CONFIG_ID);
+
+  return formatStatusMarkdown({
+    sessionId,
+    model: model?.displayName ?? session.models.currentModelId,
+    mode: mode?.name ?? session.modes.currentModeId,
+    ...(typeof effort?.currentValue === "string" && effort.currentValue !== "default"
+      ? { effort: effort.currentValue }
+      : {}),
+    account,
+    cwd: session.cwd,
+    contextUsed: session.contextUsedTokens,
+    contextSize: session.contextWindowSize,
+    usage: usage ?? undefined,
+    mcpServers: mcpServers.filter((server) => !hiddenMcpServerNames.includes(server.name)),
+    claudeCodeVersion: session.claudeCodeVersion,
+    adapterVersion,
+  });
 }
 
 function inlineCode(value: string): string {

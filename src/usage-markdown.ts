@@ -1,5 +1,9 @@
-import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
+import type { Query, SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+
+const STRUCTURED_USAGE_TIMEOUT_MS = 5_000;
+
+type UsageLogger = { error(...args: unknown[]): void };
 
 const countSchema = z.number().finite().nonnegative();
 const percentSchema = countSchema.max(100);
@@ -71,6 +75,56 @@ export function parseUsageResponse(value: unknown): SDKControlGetUsageResponse |
 
 export function isUsageCommandText(text: string): boolean {
   return text.trim() === "/usage";
+}
+
+/** Read and validate the SDK's experimental structured usage response without
+ * allowing the control request to hold a local command indefinitely. */
+export async function fetchStructuredUsage(
+  query: Query,
+  signal: AbortSignal,
+  logger: UsageLogger,
+  command: "/usage" | "/status",
+): Promise<SDKControlGetUsageResponse | null> {
+  if (signal.aborted) return null;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    const response = await Promise.race([
+      query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
+      new Promise<null>((resolve) => {
+        timeout = setTimeout(() => resolve(null), STRUCTURED_USAGE_TIMEOUT_MS);
+        timeout.unref?.();
+      }),
+      new Promise<null>((resolve) => {
+        onAbort = () => resolve(null);
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+    if (response === null) {
+      if (!signal.aborted) logger.error(`Structured ${command} timed out`);
+      return null;
+    }
+    const usage = parseUsageResponse(response);
+    if (!usage) logger.error(`Structured ${command} returned an incompatible response`);
+    return usage;
+  } catch (error) {
+    logger.error(`Structured ${command} failed: ${error}`);
+    return null;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
+/** Best-effort structured presentation for the local `/usage` turn. */
+export async function fetchStructuredUsageMarkdown(
+  query: Query,
+  signal: AbortSignal,
+  logger: UsageLogger,
+): Promise<string | null> {
+  const usage = await fetchStructuredUsage(query, signal, logger, "/usage");
+  return usage ? formatUsageResponse(usage) : null;
 }
 
 export function usageBar(percent: number): string {

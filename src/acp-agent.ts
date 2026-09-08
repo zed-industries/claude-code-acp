@@ -77,7 +77,6 @@ import {
   query,
   SDKAssistantMessageError,
   SDKActiveGoalMessage,
-  SDKControlGetUsageResponse,
   SDKMessage,
   SDKMessageOrigin,
   SDKPartialAssistantMessage,
@@ -242,9 +241,9 @@ import {
 } from "./exit-plan.js";
 import { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { parseToolResultMeta } from "./tool-result-meta.js";
-import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "./usage-markdown.js";
+import { fetchStructuredUsageMarkdown, isUsageCommandText } from "./usage-markdown.js";
 import { formatMcpStatusMarkdown, isMcpStatusCommand } from "./mcp-status-markdown.js";
-import { formatStatusMarkdown, isStatusCommand } from "./status-markdown.js";
+import { buildStatusMarkdown, isStatusCommand } from "./status-markdown.js";
 
 export { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { MODE_CONFIG_ID, SessionModeManager } from "./session-mode.js";
@@ -322,65 +321,6 @@ const DEFAULT_CONTEXT_WINDOW = 200000;
  *  "obviously stuck" ceiling, not a guess at interrupt latency, so it can't
  *  pre-empt a slow-but-healthy interrupt. */
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
-const STRUCTURED_USAGE_TIMEOUT_MS = 5_000;
-
-/** Best-effort structured usage shared by `/usage` and the ACP-local `/status`.
- * The timeout prevents the experimental control request from holding a command
- * indefinitely. */
-async function structuredUsageResponse(
-  query: Query,
-  signal: AbortSignal,
-  logger: Logger,
-  command: "/usage" | "/status",
-): Promise<SDKControlGetUsageResponse | null> {
-  if (signal.aborted) return null;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let onAbort: (() => void) | undefined;
-  try {
-    const response = await Promise.race([
-      // Keeping the deliberately unstable method name visible makes an SDK
-      // upgrade fail at compile time if Anthropic removes or renames it.
-      query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
-      new Promise<null>((resolve) => {
-        timeout = setTimeout(() => resolve(null), STRUCTURED_USAGE_TIMEOUT_MS);
-        timeout.unref?.();
-      }),
-      new Promise<null>((resolve) => {
-        onAbort = () => resolve(null);
-        if (signal.aborted) onAbort();
-        else signal.addEventListener("abort", onAbort, { once: true });
-      }),
-    ]);
-    if (response === null) {
-      if (!signal.aborted) {
-        logger.error(`Structured ${command} timed out`);
-      }
-      return null;
-    }
-    const usage = parseUsageResponse(response);
-    if (!usage) {
-      logger.error(`Structured ${command} returned an incompatible response`);
-      return null;
-    }
-    return usage;
-  } catch (error) {
-    logger.error(`Structured ${command} failed: ${error}`);
-    return null;
-  } finally {
-    if (timeout) clearTimeout(timeout);
-    if (onAbort) signal.removeEventListener("abort", onAbort);
-  }
-}
-
-/** Best-effort structured presentation for a local `/usage` turn. */
-async function structuredUsageMarkdown(
-  query: Query,
-  signal: AbortSignal,
-  logger: Logger,
-): Promise<string | null> {
-  const usage = await structuredUsageResponse(query, signal, logger, "/usage");
-  return usage ? formatUsageResponse(usage) : null;
-}
 
 /** Claude Code keeps the OAuth callback listener open in the background after
  *  `mcpAuthenticate` returns the authorization URL. The SDK does not expose
@@ -2636,44 +2576,12 @@ export class ClaudeAcpAgent {
       isStatusCommand(params.prompt[0].text);
     if (isStatus) {
       session.titles.onPrompt(params.prompt);
-      const [usage, account, mcpServers] = await Promise.all([
-        structuredUsageResponse(
-          session.query,
-          session.abortController.signal,
-          this.logger,
-          "/status",
-        ),
-        session.query.accountInfo().catch((error) => {
-          this.logger.error(`Failed to inspect account for /status: ${error}`);
-          return undefined;
-        }),
-        session.query.mcpServerStatus().catch((error) => {
-          this.logger.error(`Failed to inspect MCP servers for /status: ${error}`);
-          return [] as McpServerStatus[];
-        }),
-      ]);
-      const currentModel = session.modelInfos.find(
-        (model) => model.value === session.models.currentModelId,
-      );
-      const currentMode = session.modes.availableModes.find(
-        (mode) => mode.id === session.modes.currentModeId,
-      );
-      const effort = session.configOptions.find((option) => option.id === EFFORT_CONFIG_ID);
-      const markdown = formatStatusMarkdown({
+      const markdown = await buildStatusMarkdown({
         sessionId: params.sessionId,
-        model: currentModel?.displayName ?? session.models.currentModelId,
-        mode: currentMode?.name ?? session.modes.currentModeId,
-        ...(typeof effort?.currentValue === "string" && effort.currentValue !== "default"
-          ? { effort: effort.currentValue }
-          : {}),
-        account,
-        cwd: session.cwd,
-        contextUsed: session.contextUsedTokens,
-        contextSize: session.contextWindowSize,
-        usage: usage ?? undefined,
-        mcpServers: mcpServers.filter((server) => server.name !== FILE_CHANGE_AUDIT_SERVER_NAME),
-        claudeCodeVersion: session.claudeCodeVersion,
+        session,
         adapterVersion: packageJson.version,
+        hiddenMcpServerNames: [FILE_CHANGE_AUDIT_SERVER_NAME],
+        logger: this.logger,
       });
       await this.client.sessionUpdate({
         sessionId: params.sessionId,
@@ -3405,7 +3313,7 @@ export class ClaudeAcpAgent {
 
     const ensureUsageMarkdown = (turn: Turn): Promise<string | null> | undefined => {
       if (!turn.isUsageCommand || !turn.usageMarkdownAbort) return undefined;
-      turn.usageMarkdown ??= structuredUsageMarkdown(
+      turn.usageMarkdown ??= fetchStructuredUsageMarkdown(
         session.query,
         turn.usageMarkdownAbort.signal,
         this.logger,
