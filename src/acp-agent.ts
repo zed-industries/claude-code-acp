@@ -243,7 +243,6 @@ import { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { parseToolResultMeta } from "./tool-result-meta.js";
 import { fetchStructuredUsageMarkdown, isUsageCommandText } from "./usage-markdown.js";
 import { formatMcpStatusMarkdown, isMcpStatusCommand } from "./mcp-status-markdown.js";
-import { buildStatusMarkdown, isStatusCommand } from "./status-markdown.js";
 
 export { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { MODE_CONFIG_ID, SessionModeManager } from "./session-mode.js";
@@ -707,8 +706,6 @@ export type Session = {
    *  terminal (e.g. /doctor, /color). ACP clients aren't that terminal, so
    *  these are filtered out of `available_commands_update` payloads. */
   terminalSlashCommands?: string[];
-  /** Claude Code runtime version from the latest system/init frame. */
-  claudeCodeVersion?: string;
   /** The long-lived consumer task. Lazily started on the first `prompt()` and
    *  kept alive for the session so between-turn/background messages are still
    *  drained and forwarded. */
@@ -2570,29 +2567,6 @@ export class ClaudeAcpAgent {
       await this.publishTaskPlan(params.sessionId, session.taskState);
     }
 
-    const isStatus =
-      params.prompt.length === 1 &&
-      params.prompt[0]?.type === "text" &&
-      isStatusCommand(params.prompt[0].text);
-    if (isStatus) {
-      session.titles.onPrompt(params.prompt);
-      const markdown = await buildStatusMarkdown({
-        sessionId: params.sessionId,
-        session,
-        adapterVersion: packageJson.version,
-        hiddenMcpServerNames: [FILE_CHANGE_AUDIT_SERVER_NAME],
-        logger: this.logger,
-      });
-      await this.client.sessionUpdate({
-        sessionId: params.sessionId,
-        update: {
-          sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: markdown },
-        },
-      });
-      return turnOutcome(session, "end_turn");
-    }
-
     const isMcpStatus =
       params.prompt.length === 1 &&
       params.prompt[0]?.type === "text" &&
@@ -4064,7 +4038,6 @@ export class ClaudeAcpAgent {
           case "system":
             switch (message.subtype) {
               case "init":
-                session.claudeCodeVersion = message.claude_code_version;
                 // Latch the lifecycle capability so cancel() routes orphan
                 // accounting through `orphanCommands` (per-uuid, exact)
                 // instead of the coalescing-blind count. Never unlatch: init
@@ -9531,12 +9504,7 @@ function getAvailableSlashCommands(
     .filter((command: AvailableCommand) => !UNSUPPORTED_COMMANDS.includes(command.name));
 
   return [
-    ...availableCommands.filter((command) => command.name !== "mcp" && command.name !== "status"),
-    {
-      name: "status",
-      description: "Show session, usage, MCP, and runtime status",
-      input: null,
-    },
+    ...availableCommands.filter((command) => command.name !== "mcp"),
     {
       name: "mcp",
       description: "Show configured MCP servers and their connection status",

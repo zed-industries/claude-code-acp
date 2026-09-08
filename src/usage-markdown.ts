@@ -74,7 +74,7 @@ export function parseUsageResponse(value: unknown): SDKControlGetUsageResponse |
 }
 
 export function isUsageCommandText(text: string): boolean {
-  return text.trim() === "/usage";
+  return ["/usage", "/cost", "/stats"].includes(text.trim());
 }
 
 /** Read and validate the SDK's experimental structured usage response without
@@ -83,7 +83,6 @@ export async function fetchStructuredUsage(
   query: Query,
   signal: AbortSignal,
   logger: UsageLogger,
-  command: "/usage" | "/status",
 ): Promise<SDKControlGetUsageResponse | null> {
   if (signal.aborted) return null;
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -102,14 +101,14 @@ export async function fetchStructuredUsage(
       }),
     ]);
     if (response === null) {
-      if (!signal.aborted) logger.error(`Structured ${command} timed out`);
+      if (!signal.aborted) logger.error("Structured usage timed out");
       return null;
     }
     const usage = parseUsageResponse(response);
-    if (!usage) logger.error(`Structured ${command} returned an incompatible response`);
+    if (!usage) logger.error("Structured usage returned an incompatible response");
     return usage;
   } catch (error) {
-    logger.error(`Structured ${command} failed: ${error}`);
+    logger.error(`Structured usage failed: ${error}`);
     return null;
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -123,7 +122,7 @@ export async function fetchStructuredUsageMarkdown(
   signal: AbortSignal,
   logger: UsageLogger,
 ): Promise<string | null> {
-  const usage = await fetchStructuredUsage(query, signal, logger, "/usage");
+  const usage = await fetchStructuredUsage(query, signal, logger);
   return usage ? formatUsageResponse(usage) : null;
 }
 
@@ -165,15 +164,14 @@ export function formatReset(value: string | null): string {
   }).format(reset)}`;
 }
 
-export type UsageLimitProgress = {
+type UsageLimitProgress = {
   label: string;
   utilization: number;
   resetsAt: string | null;
 };
 
-/** Every quota window exposed by structured usage, in display order. Shared by
- * `/usage` and `/status` so the compact view cannot silently drop a limit. */
-export function usageLimitProgress(usage: SDKControlGetUsageResponse): UsageLimitProgress[] {
+/** Every quota window exposed by structured usage, in display order. */
+function usageLimitProgress(usage: SDKControlGetUsageResponse): UsageLimitProgress[] {
   if (!usage.rate_limits_available || !usage.rate_limits) return [];
   const limits = usage.rate_limits;
   const rows: UsageLimitProgress[] = [];
