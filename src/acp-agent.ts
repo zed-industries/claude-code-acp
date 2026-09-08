@@ -8336,7 +8336,13 @@ export class ClaudeAcpAgent {
         sessionFailureState: createSessionFailureState(),
         claudeSubscriptionGuard,
         accountKind: fromAccountInfo(initializationResult.account)?.kind,
-        usageBilling: usageBillingContext(initializationResult.account, this.currentAuthStatus),
+        usageBilling: usageBillingContext(
+          initializationResult.account,
+          // A client provider override reroutes this Query without changing the
+          // agent-owned login reported by currentAuthStatus. Falling back to
+          // that unrelated identity would mislabel who pays for this session.
+          this.providerConfig ? undefined : this.currentAuthStatus,
+        ),
         fileChangeReportRequestIds: new Set(),
         fileChangeAuditSupport,
       };
