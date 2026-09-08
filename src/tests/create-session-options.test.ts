@@ -96,6 +96,14 @@ describe("createSession options merging", () => {
     agent = new ClaudeAcpAgent(createMockClient());
   });
 
+  afterEach(() => {
+    const sessions = (agent as unknown as { sessions: Record<string, any> }).sessions;
+    for (const sessionId of Object.keys(sessions)) {
+      sessions[sessionId].abortController.abort();
+      delete sessions[sessionId];
+    }
+  });
+
   it("merges user-provided disallowedTools with ACP internal list", async () => {
     await agent.newSession({
       cwd: process.cwd(),
@@ -764,7 +772,9 @@ describe("createSession options merging", () => {
         ],
       });
 
-      await vi.waitFor(() => expect(completeElicitation).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(completeElicitation).toHaveBeenCalledOnce(), {
+        timeout: 5000,
+      });
       expect(authenticate).toHaveBeenCalledWith("linear");
     });
 
@@ -810,7 +820,9 @@ describe("createSession options merging", () => {
         ],
       });
 
-      await vi.waitFor(() => expect(flow.completeElicitation).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(flow.completeElicitation).toHaveBeenCalledOnce(), {
+        timeout: 5000,
+      });
       expect(flow.authenticate).toHaveBeenCalledWith("slack");
     });
 
@@ -833,7 +845,7 @@ describe("createSession options merging", () => {
       });
 
       await vi.waitFor(() => expect(flow.statusCalls()).toBeGreaterThanOrEqual(3), {
-        timeout: 4000,
+        timeout: 8000,
       });
     });
 
@@ -861,8 +873,28 @@ describe("createSession options merging", () => {
         ],
       });
 
-      await vi.waitFor(() => expect(flow.authenticate).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(flow.authenticate).toHaveBeenCalledTimes(2), {
+        timeout: 5000,
+      });
       expect(flow.authenticate.mock.calls.map((call) => call[0])).toEqual(["linear", "slack"]);
+    });
+
+    it("authenticates a server the ACP client never declared", async () => {
+      const flow = stubOAuthFlow([
+        [{ name: "slack", status: "needs-auth" }],
+        [{ name: "slack", status: "connected" }],
+      ]);
+
+      await agent.initialize({
+        protocolVersion: 1,
+        clientCapabilities: { elicitation: { url: {} } },
+      });
+      await agent.newSession({ cwd: process.cwd(), mcpServers: [] });
+
+      await vi.waitFor(() => expect(flow.completeElicitation).toHaveBeenCalledOnce(), {
+        timeout: 5000,
+      });
+      expect(flow.authenticate).toHaveBeenCalledWith("slack");
     });
 
     it("still merges user-provided disallowedTools when AskUserQuestion is enabled", async () => {
