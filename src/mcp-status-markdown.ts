@@ -1,11 +1,11 @@
 import type { McpServerStatus } from "@anthropic-ai/claude-agent-sdk";
 
-const STATUS_PRESENTATION: Record<McpServerStatus["status"], { icon: string; label: string }> = {
-  connected: { icon: "✅", label: "Connected" },
-  pending: { icon: "⏳", label: "Connecting" },
-  "needs-auth": { icon: "🔐", label: "Authentication required" },
-  failed: { icon: "❌", label: "Failed" },
-  disabled: { icon: "⏸️", label: "Disabled" },
+const STATUS_LABELS: Record<McpServerStatus["status"], string> = {
+  connected: "Connected",
+  pending: "Connecting",
+  "needs-auth": "Authentication required",
+  failed: "Failed",
+  disabled: "Disabled",
 };
 
 const STATUS_ORDER: Record<McpServerStatus["status"], number> = {
@@ -53,31 +53,30 @@ export function formatMcpStatusMarkdown(statuses: readonly McpServerStatus[]): s
   for (const server of sorted) counts.set(server.status, (counts.get(server.status) ?? 0) + 1);
 
   const summary = [plural(sorted.length, "server")];
-  for (const status of Object.keys(STATUS_PRESENTATION) as McpServerStatus["status"][]) {
+  for (const status of Object.keys(STATUS_LABELS) as McpServerStatus["status"][]) {
     const count = counts.get(status);
-    if (count) summary.push(`${count} ${STATUS_PRESENTATION[status].label.toLowerCase()}`);
+    if (count) summary.push(`${count} ${STATUS_LABELS[status].toLowerCase()}`);
   }
 
-  const sections = sorted.map((server) => {
-    const presentation = STATUS_PRESENTATION[server.status];
-    const details = [`**Status:** ${presentation.label}`];
-    if (server.scope) details.push(`**Scope:** ${inlineCode(server.scope)}`);
+  const rows = sorted.map((server) => {
+    const details = [`**${STATUS_LABELS[server.status]}**`];
+    if (server.scope) details.push(`scope ${inlineCode(server.scope)}`);
     if (server.serverInfo) {
       details.push(
-        `**Server:** ${inlineCode(server.serverInfo.name)} ${inlineCode(server.serverInfo.version)}`,
+        `server ${inlineCode(server.serverInfo.name)} ${inlineCode(server.serverInfo.version)}`,
       );
     }
     if (server.tools) {
       details.push(
         server.tools.length === 0
-          ? "**Tools:** None"
-          : `**Tools (${server.tools.length}):** ${formatTools(server.tools)}`,
+          ? "no tools"
+          : `${plural(server.tools.length, "tool")}: ${formatTools(server.tools)}`,
       );
     }
-    if (server.error) details.push(`**Error:** ${inlineCode(server.error)}`);
+    if (server.error) details.push(`error ${inlineCode(server.error)}`);
 
-    return `### ${presentation.icon} ${inlineCode(server.name)}\n\n${details.join("  \n")}`;
+    return `- ${inlineCode(server.name)} — ${details.join(" · ")}`;
   });
 
-  return `## MCP servers\n\n${summary.join(" · ")}\n\n${sections.join("\n\n---\n\n")}`;
+  return `## MCP servers\n\n${summary.join(" · ")}\n\n${rows.join("\n")}`;
 }

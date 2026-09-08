@@ -8339,11 +8339,15 @@ describe("MCP status command", () => {
     ]);
 
     expect(markdown).toContain("2 servers · 1 connected · 1 failed");
-    expect(markdown).toContain("### ✅ `github`");
-    expect(markdown).toContain("**Server:** `GitHub MCP` `1.2.3`");
-    expect(markdown).toContain("**Tools (2):** `get_issue`, `search_repositories`");
-    expect(markdown).toContain("### ❌ `broken|server`");
-    expect(markdown).toContain("**Error:** `connection refused retry later`");
+    expect(markdown).toContain(
+      "- `github` — **Connected** · scope `user` · server `GitHub MCP` `1.2.3` · 2 tools: `get_issue`, `search_repositories`",
+    );
+    expect(markdown).toContain(
+      "- `broken|server` — **Failed** · scope `project` · error `connection refused retry later`",
+    );
+    for (const icon of ["✅", "⏳", "🔐", "❌", "⏸️"]) {
+      expect(markdown).not.toContain(icon);
+    }
   });
 
   it("handles /mcp locally and hides the adapter's internal MCP server", async () => {
