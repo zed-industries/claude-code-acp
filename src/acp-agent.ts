@@ -242,6 +242,7 @@ import {
 import { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { parseToolResultMeta } from "./tool-result-meta.js";
 import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "./usage-markdown.js";
+import { formatMcpStatusMarkdown, isMcpStatusCommand } from "./mcp-status-markdown.js";
 
 export { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { MODE_CONFIG_ID, SessionModeManager } from "./session-mode.js";
@@ -2615,6 +2616,33 @@ export class ClaudeAcpAgent {
 
     if (Array.from(session.taskState.values()).some((task) => task.status !== "completed")) {
       await this.publishTaskPlan(params.sessionId, session.taskState);
+    }
+
+    const isMcpStatus =
+      params.prompt.length === 1 &&
+      params.prompt[0]?.type === "text" &&
+      isMcpStatusCommand(params.prompt[0].text);
+    if (isMcpStatus) {
+      session.titles.onPrompt(params.prompt);
+      let markdown: string;
+      try {
+        const statuses = (await session.query.mcpServerStatus()).filter(
+          (server) => server.name !== FILE_CHANGE_AUDIT_SERVER_NAME,
+        );
+        markdown = formatMcpStatusMarkdown(statuses);
+      } catch (error) {
+        this.logger.error(`Failed to inspect MCP servers: ${error}`);
+        markdown =
+          "## MCP servers\n\n⚠️ Unable to read MCP server status. Check the agent logs for details.";
+      }
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: markdown },
+        },
+      });
+      return turnOutcome(session, "end_turn");
     }
 
     const userMessage = promptToClaude(params);
@@ -9504,7 +9532,7 @@ function getAvailableSlashCommands(
     "todos",
   ];
 
-  return commands
+  const availableCommands = commands
     .filter((command) => !terminalCommands?.includes(command.name))
     .map((command) => {
       const input = command.argumentHint
@@ -9525,6 +9553,15 @@ function getAvailableSlashCommands(
       };
     })
     .filter((command: AvailableCommand) => !UNSUPPORTED_COMMANDS.includes(command.name));
+
+  return [
+    ...availableCommands.filter((command) => command.name !== "mcp"),
+    {
+      name: "mcp",
+      description: "Show configured MCP servers and their connection status",
+      input: null,
+    },
+  ];
 }
 
 function formatUriAsLink(uri: string): string {

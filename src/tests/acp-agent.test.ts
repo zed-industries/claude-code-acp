@@ -50,6 +50,7 @@ import {
 } from "../acp-agent.js";
 import { SessionTitles } from "../session-titles.js";
 import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "../usage-markdown.js";
+import { formatMcpStatusMarkdown, isMcpStatusCommand } from "../mcp-status-markdown.js";
 import { Pushable } from "../utils.js";
 import {
   deleteSession,
@@ -8244,6 +8245,7 @@ describe("terminal slash command filtering", () => {
     expect(commandsUpdate).toBeDefined();
     expect(commandsUpdate.availableCommands.map((c: { name: string }) => c.name)).toEqual([
       "compact",
+      "mcp",
     ]);
   });
 
@@ -8309,6 +8311,74 @@ describe("terminal slash command filtering", () => {
     await agent.prompt({ sessionId: "test-session", prompt: [{ type: "text", text: "hi" }] });
 
     expect(supportedCommands).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MCP status command", () => {
+  it("recognizes only the standalone /mcp command", () => {
+    expect(isMcpStatusCommand(" /mcp ")).toBe(true);
+    expect(isMcpStatusCommand("/mcp server")).toBe(false);
+    expect(isMcpStatusCommand("show /mcp")).toBe(false);
+  });
+
+  it("formats server status, metadata, tools, and errors", () => {
+    const markdown = formatMcpStatusMarkdown([
+      {
+        name: "broken|server",
+        status: "failed",
+        scope: "project",
+        error: "connection refused\nretry later",
+      },
+      {
+        name: "github",
+        status: "connected",
+        scope: "user",
+        serverInfo: { name: "GitHub MCP", version: "1.2.3" },
+        tools: [{ name: "search_repositories" }, { name: "get_issue" }],
+      },
+    ]);
+
+    expect(markdown).toContain("2 servers · 1 connected · 1 failed");
+    expect(markdown).toContain("### ✅ `github`");
+    expect(markdown).toContain("**Server:** `GitHub MCP` `1.2.3`");
+    expect(markdown).toContain("**Tools (2):** `get_issue`, `search_repositories`");
+    expect(markdown).toContain("### ❌ `broken|server`");
+    expect(markdown).toContain("**Error:** `connection refused retry later`");
+  });
+
+  it("handles /mcp locally and hides the adapter's internal MCP server", async () => {
+    const updates: SessionNotification[] = [];
+    const agent = new ClaudeAcpAgent(
+      {
+        sessionUpdate: async (notification: SessionNotification) => updates.push(notification),
+      } as unknown as AcpClient,
+      { log: () => {}, error: () => {} },
+    );
+    const input = new Pushable<any>();
+    const mcpServerStatus = vi.fn(async () => [
+      { name: "github", status: "connected" as const, tools: [{ name: "get_issue" }] },
+      { name: "claude_agent_acp", status: "connected" as const },
+    ]);
+    agent.sessions["test-session"] = mockSessionState({
+      query: Object.assign(wrapQuery((async function* () {})()), { mcpServerStatus }),
+      input,
+    });
+
+    const response = await agent.prompt({
+      sessionId: "test-session",
+      prompt: [{ type: "text", text: "/mcp" }],
+    });
+
+    expect(response.stopReason).toBe("end_turn");
+    expect(mcpServerStatus).toHaveBeenCalledOnce();
+    expect(updates).toHaveLength(1);
+    expect(updates[0].update).toMatchObject({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text" },
+    });
+    const content = (updates[0].update as any).content.text as string;
+    expect(content).toContain("`github`");
+    expect(content).not.toContain("claude_agent_acp");
   });
 });
 
