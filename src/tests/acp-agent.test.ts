@@ -51,6 +51,7 @@ import {
 import { SessionTitles } from "../session-titles.js";
 import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "../usage-markdown.js";
 import { formatMcpStatusMarkdown, isMcpStatusCommand } from "../mcp-status-markdown.js";
+import { formatStatusMarkdown, isStatusCommand } from "../status-markdown.js";
 import { Pushable } from "../utils.js";
 import {
   deleteSession,
@@ -8245,6 +8246,7 @@ describe("terminal slash command filtering", () => {
     expect(commandsUpdate).toBeDefined();
     expect(commandsUpdate.availableCommands.map((c: { name: string }) => c.name)).toEqual([
       "compact",
+      "status",
       "mcp",
     ]);
   });
@@ -8382,6 +8384,120 @@ describe("MCP status command", () => {
     });
     const content = (updates[0].update as any).content.text as string;
     expect(content).toContain("`github`");
+    expect(content).not.toContain("claude_agent_acp");
+  });
+});
+
+describe("session status command", () => {
+  const usage = {
+    session: {
+      total_cost_usd: 0.42,
+      total_api_duration_ms: 72_000,
+      total_duration_ms: 480_000,
+      total_lines_added: 0,
+      total_lines_removed: 0,
+      model_usage: {
+        opus: {
+          inputTokens: 18_000,
+          outputTokens: 4_000,
+          cacheReadInputTokens: 30_000,
+          cacheCreationInputTokens: 2_000,
+          webSearchRequests: 0,
+          costUSD: 0.42,
+          contextWindow: 200_000,
+          maxOutputTokens: 32_000,
+        },
+      },
+    },
+    subscription_type: "max",
+    rate_limits_available: true,
+    rate_limits: {
+      five_hour: { utilization: 32, resets_at: null },
+      seven_day: { utilization: 64, resets_at: null },
+    },
+    behaviors: null,
+  } as SDKControlGetUsageResponse;
+
+  it("recognizes only the standalone /status command", () => {
+    expect(isStatusCommand(" /status ")).toBe(true);
+    expect(isStatusCommand("/status verbose")).toBe(false);
+    expect(isStatusCommand("show /status")).toBe(false);
+  });
+
+  it("formats identity, context and limits, session usage, MCP, and runtime", () => {
+    const markdown = formatStatusMarkdown({
+      sessionId: "session-123",
+      model: "Claude Opus 4.1",
+      mode: "default",
+      effort: "high",
+      account: { subscriptionType: "max", email: "user@example.com" },
+      cwd: "/workspace/project",
+      contextUsed: 42_000,
+      contextSize: 200_000,
+      usage,
+      mcpServers: [
+        { name: "github", status: "connected", tools: [{ name: "get_issue" }] },
+        { name: "notion", status: "needs-auth", tools: [{ name: "search" }] },
+      ],
+      claudeCodeVersion: "2.1.257",
+      adapterVersion: "0.75.1",
+    });
+
+    expect(markdown).toContain("**Model:** Claude Opus 4.1 · Default mode · High effort");
+    expect(markdown).toContain("**Account:** Claude Max · `user@example.com`");
+    expect(markdown).toContain("**Context — 42K / 200K — 21%**");
+    expect(markdown).toContain("`████░░░░░░░░░░░░░░░░`");
+    expect(markdown).toContain("**5-hour limit — 32%**");
+    expect(markdown).toContain("**Weekly limit — 64%**");
+    expect(markdown).toContain("**Session:** $0.42 · 54K tokens · API 1m 12s · Active 8m");
+    expect(markdown).toContain("**MCP:** 1 connected · 1 auth required · 2 tools");
+    expect(markdown).toContain("**Runtime:** Claude Code 2.1.257 · ACP adapter 0.75.1");
+  });
+
+  it("handles /status locally with structured SDK data", async () => {
+    const updates: SessionNotification[] = [];
+    const agent = new ClaudeAcpAgent(
+      {
+        sessionUpdate: async (notification: SessionNotification) => updates.push(notification),
+      } as unknown as AcpClient,
+      { log: () => {}, error: () => {} },
+    );
+    const query = Object.assign(wrapQuery((async function* () {})()), {
+      accountInfo: vi.fn(async () => ({ subscriptionType: "max", email: "user@example.com" })),
+      mcpServerStatus: vi.fn(async () => [
+        { name: "github", status: "connected" as const, tools: [{ name: "get_issue" }] },
+        { name: "claude_agent_acp", status: "connected" as const },
+      ]),
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi.fn(async () => usage),
+    });
+    agent.sessions["test-session"] = mockSessionState({
+      query,
+      input: new Pushable<any>(),
+      cwd: "/workspace/project",
+      models: { currentModelId: "opus", availableModels: [] },
+      modelInfos: [{ value: "opus", displayName: "Claude Opus 4.1", description: "" }],
+      modes: {
+        currentModeId: "default",
+        availableModes: [{ id: "default", name: "Default" }],
+      },
+      configOptions: [{ id: "effort", currentValue: "high" }],
+      contextUsedTokens: 42_000,
+      contextWindowSize: 200_000,
+      claudeCodeVersion: "2.1.257",
+    });
+
+    const response = await agent.prompt({
+      sessionId: "test-session",
+      prompt: [{ type: "text", text: "/status" }],
+    });
+
+    expect(response.stopReason).toBe("end_turn");
+    expect(query.accountInfo).toHaveBeenCalledOnce();
+    expect(query.mcpServerStatus).toHaveBeenCalledOnce();
+    expect(query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET).toHaveBeenCalledOnce();
+    const content = (updates[0].update as any).content.text as string;
+    expect(content).toContain("## Status");
+    expect(content).toContain("**MCP:** 1 connected · 1 tool");
     expect(content).not.toContain("claude_agent_acp");
   });
 });

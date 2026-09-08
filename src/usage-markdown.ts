@@ -73,7 +73,7 @@ export function isUsageCommandText(text: string): boolean {
   return text.trim() === "/usage";
 }
 
-function usageBar(percent: number): string {
+export function usageBar(percent: number): string {
   const cells = 20;
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = clamped === 0 ? 0 : Math.max(1, Math.round((clamped / 100) * cells));
@@ -84,7 +84,7 @@ function escapeMarkdown(value: string): string {
   return value.replace(/([\\`*_[\]<>|])/g, "\\$1").replace(/[\r\n]+/g, " ");
 }
 
-function formatDuration(milliseconds: number): string {
+export function formatDuration(milliseconds: number): string {
   const seconds = Math.max(0, Math.round(milliseconds / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -92,13 +92,13 @@ function formatDuration(milliseconds: number): string {
   return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
 }
 
-function formatCount(value: number): string {
+export function formatCount(value: number): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
     value,
   );
 }
 
-function formatReset(value: string | null): string {
+export function formatReset(value: string | null): string {
   if (!value) return "";
   const reset = new Date(value);
   if (Number.isNaN(reset.getTime())) return ` · Resets ${escapeMarkdown(value)}`;

@@ -77,6 +77,7 @@ import {
   query,
   SDKAssistantMessageError,
   SDKActiveGoalMessage,
+  SDKControlGetUsageResponse,
   SDKMessage,
   SDKMessageOrigin,
   SDKPartialAssistantMessage,
@@ -243,6 +244,7 @@ import { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { parseToolResultMeta } from "./tool-result-meta.js";
 import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "./usage-markdown.js";
 import { formatMcpStatusMarkdown, isMcpStatusCommand } from "./mcp-status-markdown.js";
+import { formatStatusMarkdown, isStatusCommand } from "./status-markdown.js";
 
 export { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { MODE_CONFIG_ID, SessionModeManager } from "./session-mode.js";
@@ -322,15 +324,15 @@ const DEFAULT_CONTEXT_WINDOW = 200000;
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
 const STRUCTURED_USAGE_TIMEOUT_MS = 5_000;
 
-/** Best-effort structured presentation for a local `/usage` turn. The command
- * itself always runs through Claude Code; null tells the consumer to forward
- * its original output unchanged. The timeout prevents an unstable control
- * request from holding an otherwise-completed local command indefinitely. */
-async function structuredUsageMarkdown(
+/** Best-effort structured usage shared by `/usage` and the ACP-local `/status`.
+ * The timeout prevents the experimental control request from holding a command
+ * indefinitely. */
+async function structuredUsageResponse(
   query: Query,
   signal: AbortSignal,
   logger: Logger,
-): Promise<string | null> {
+  command: "/usage" | "/status",
+): Promise<SDKControlGetUsageResponse | null> {
   if (signal.aborted) return null;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
@@ -351,25 +353,33 @@ async function structuredUsageMarkdown(
     ]);
     if (response === null) {
       if (!signal.aborted) {
-        logger.error("Structured /usage timed out; preserving Claude Code output");
+        logger.error(`Structured ${command} timed out`);
       }
       return null;
     }
     const usage = parseUsageResponse(response);
     if (!usage) {
-      logger.error(
-        "Structured /usage returned an incompatible response; preserving Claude Code output",
-      );
+      logger.error(`Structured ${command} returned an incompatible response`);
       return null;
     }
-    return formatUsageResponse(usage);
+    return usage;
   } catch (error) {
-    logger.error(`Structured /usage failed; preserving Claude Code output: ${error}`);
+    logger.error(`Structured ${command} failed: ${error}`);
     return null;
   } finally {
     if (timeout) clearTimeout(timeout);
     if (onAbort) signal.removeEventListener("abort", onAbort);
   }
+}
+
+/** Best-effort structured presentation for a local `/usage` turn. */
+async function structuredUsageMarkdown(
+  query: Query,
+  signal: AbortSignal,
+  logger: Logger,
+): Promise<string | null> {
+  const usage = await structuredUsageResponse(query, signal, logger, "/usage");
+  return usage ? formatUsageResponse(usage) : null;
 }
 
 /** Claude Code keeps the OAuth callback listener open in the background after
@@ -757,6 +767,8 @@ export type Session = {
    *  terminal (e.g. /doctor, /color). ACP clients aren't that terminal, so
    *  these are filtered out of `available_commands_update` payloads. */
   terminalSlashCommands?: string[];
+  /** Claude Code runtime version from the latest system/init frame. */
+  claudeCodeVersion?: string;
   /** The long-lived consumer task. Lazily started on the first `prompt()` and
    *  kept alive for the session so between-turn/background messages are still
    *  drained and forwarded. */
@@ -2618,6 +2630,61 @@ export class ClaudeAcpAgent {
       await this.publishTaskPlan(params.sessionId, session.taskState);
     }
 
+    const isStatus =
+      params.prompt.length === 1 &&
+      params.prompt[0]?.type === "text" &&
+      isStatusCommand(params.prompt[0].text);
+    if (isStatus) {
+      session.titles.onPrompt(params.prompt);
+      const [usage, account, mcpServers] = await Promise.all([
+        structuredUsageResponse(
+          session.query,
+          session.abortController.signal,
+          this.logger,
+          "/status",
+        ),
+        session.query.accountInfo().catch((error) => {
+          this.logger.error(`Failed to inspect account for /status: ${error}`);
+          return undefined;
+        }),
+        session.query.mcpServerStatus().catch((error) => {
+          this.logger.error(`Failed to inspect MCP servers for /status: ${error}`);
+          return [] as McpServerStatus[];
+        }),
+      ]);
+      const currentModel = session.modelInfos.find(
+        (model) => model.value === session.models.currentModelId,
+      );
+      const currentMode = session.modes.availableModes.find(
+        (mode) => mode.id === session.modes.currentModeId,
+      );
+      const effort = session.configOptions.find((option) => option.id === EFFORT_CONFIG_ID);
+      const markdown = formatStatusMarkdown({
+        sessionId: params.sessionId,
+        model: currentModel?.displayName ?? session.models.currentModelId,
+        mode: currentMode?.name ?? session.modes.currentModeId,
+        ...(typeof effort?.currentValue === "string" && effort.currentValue !== "default"
+          ? { effort: effort.currentValue }
+          : {}),
+        account,
+        cwd: session.cwd,
+        contextUsed: session.contextUsedTokens,
+        contextSize: session.contextWindowSize,
+        usage: usage ?? undefined,
+        mcpServers: mcpServers.filter((server) => server.name !== FILE_CHANGE_AUDIT_SERVER_NAME),
+        claudeCodeVersion: session.claudeCodeVersion,
+        adapterVersion: packageJson.version,
+      });
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: markdown },
+        },
+      });
+      return turnOutcome(session, "end_turn");
+    }
+
     const isMcpStatus =
       params.prompt.length === 1 &&
       params.prompt[0]?.type === "text" &&
@@ -4089,6 +4156,7 @@ export class ClaudeAcpAgent {
           case "system":
             switch (message.subtype) {
               case "init":
+                session.claudeCodeVersion = message.claude_code_version;
                 // Latch the lifecycle capability so cancel() routes orphan
                 // accounting through `orphanCommands` (per-uuid, exact)
                 // instead of the coalescing-blind count. Never unlatch: init
@@ -9555,7 +9623,12 @@ function getAvailableSlashCommands(
     .filter((command: AvailableCommand) => !UNSUPPORTED_COMMANDS.includes(command.name));
 
   return [
-    ...availableCommands.filter((command) => command.name !== "mcp"),
+    ...availableCommands.filter((command) => command.name !== "mcp" && command.name !== "status"),
+    {
+      name: "status",
+      description: "Show session, usage, MCP, and runtime status",
+      input: null,
+    },
     {
       name: "mcp",
       description: "Show configured MCP servers and their connection status",
