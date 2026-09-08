@@ -8414,6 +8414,18 @@ describe("session status command", () => {
     rate_limits: {
       five_hour: { utilization: 32, resets_at: null },
       seven_day: { utilization: 64, resets_at: null },
+      seven_day_oauth_apps: { utilization: 12, resets_at: null },
+      model_scoped: [
+        { display_name: "Opus", utilization: 48, resets_at: null },
+        { display_name: "Sonnet", utilization: 27, resets_at: null },
+      ],
+      extra_usage: {
+        is_enabled: true,
+        monthly_limit: 100,
+        used_credits: 25,
+        utilization: 25,
+        currency: "USD",
+      },
     },
     behaviors: null,
   } as SDKControlGetUsageResponse;
@@ -8448,7 +8460,11 @@ describe("session status command", () => {
     expect(markdown).toContain("**Context — 42K / 200K — 21%**");
     expect(markdown).toContain("`████░░░░░░░░░░░░░░░░`");
     expect(markdown).toContain("**5-hour limit — 32%**");
-    expect(markdown).toContain("**Weekly limit — 64%**");
+    expect(markdown).toContain("**Weekly · all models — 64%**");
+    expect(markdown).toContain("**Weekly · OAuth apps — 12%**");
+    expect(markdown).toContain("**Weekly · Opus — 48%**");
+    expect(markdown).toContain("**Weekly · Sonnet — 27%**");
+    expect(markdown).toContain("**Extra usage · 25 / 100 USD — 25%**");
     expect(markdown).toContain("**Session:** $0.42 · 54K tokens · API 1m 12s · Active 8m");
     expect(markdown).toContain("**MCP:** 1 connected · 1 auth required · 2 tools");
     expect(markdown).toContain("**Runtime:** Claude Code 2.1.257 · ACP adapter 0.75.1");

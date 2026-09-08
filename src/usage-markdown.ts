@@ -165,16 +165,55 @@ export function formatReset(value: string | null): string {
   }).format(reset)}`;
 }
 
-function appendLimit(
-  lines: string[],
-  label: string,
-  window: { utilization: number | null; resets_at: string | null } | null | undefined,
-): void {
-  if (!window || window.utilization === null) return;
+export type UsageLimitProgress = {
+  label: string;
+  utilization: number;
+  resetsAt: string | null;
+};
+
+/** Every quota window exposed by structured usage, in display order. Shared by
+ * `/usage` and `/status` so the compact view cannot silently drop a limit. */
+export function usageLimitProgress(usage: SDKControlGetUsageResponse): UsageLimitProgress[] {
+  if (!usage.rate_limits_available || !usage.rate_limits) return [];
+  const limits = usage.rate_limits;
+  const rows: UsageLimitProgress[] = [];
+  const add = (
+    label: string,
+    window: { utilization: number | null; resets_at: string | null } | null | undefined,
+  ) => {
+    if (window?.utilization === null || window?.utilization === undefined) return;
+    rows.push({ label, utilization: window.utilization, resetsAt: window.resets_at });
+  };
+
+  add("5-hour limit", limits.five_hour);
+  add("Weekly · all models", limits.seven_day);
+  add("Weekly · OAuth apps", limits.seven_day_oauth_apps);
+  const modelWindows = limits.model_scoped ?? [];
+  for (const model of modelWindows) add(`Weekly · ${model.display_name}`, model);
+  if (modelWindows.length === 0) {
+    add("Weekly · Opus", limits.seven_day_opus);
+    add("Weekly · Sonnet", limits.seven_day_sonnet);
+  }
+  const extra = limits.extra_usage;
+  if (extra?.is_enabled && extra.utilization !== null) {
+    const amount =
+      extra.used_credits !== null && extra.monthly_limit !== null
+        ? ` · ${formatCount(extra.used_credits)} / ${formatCount(extra.monthly_limit)}${extra.currency ? ` ${extra.currency}` : ""}`
+        : "";
+    rows.push({
+      label: `Extra usage${amount}`,
+      utilization: extra.utilization,
+      resetsAt: null,
+    });
+  }
+  return rows;
+}
+
+function appendLimit(lines: string[], limit: UsageLimitProgress): void {
   lines.push(
-    `**${escapeMarkdown(label)}** — **${window.utilization}%**${formatReset(window.resets_at)}`,
+    `**${escapeMarkdown(limit.label)}** — **${limit.utilization}%**${formatReset(limit.resetsAt)}`,
     "",
-    `\`${usageBar(window.utilization)}\``,
+    `\`${usageBar(limit.utilization)}\``,
     "",
   );
 }
@@ -208,16 +247,7 @@ export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
 
   if (usage.rate_limits_available && usage.rate_limits) {
     const limitLines: string[] = [];
-    appendLimit(limitLines, "5-hour limit", usage.rate_limits.five_hour);
-    appendLimit(limitLines, "Weekly · all models", usage.rate_limits.seven_day);
-    const modelWindows = usage.rate_limits.model_scoped ?? [];
-    for (const model of modelWindows) {
-      appendLimit(limitLines, `Weekly · ${model.display_name}`, model);
-    }
-    if (modelWindows.length === 0) {
-      appendLimit(limitLines, "Weekly · Opus", usage.rate_limits.seven_day_opus);
-      appendLimit(limitLines, "Weekly · Sonnet", usage.rate_limits.seven_day_sonnet);
-    }
+    for (const limit of usageLimitProgress(usage)) appendLimit(limitLines, limit);
     if (limitLines.length > 0) {
       if (limitLines.at(-1) === "") limitLines.pop();
       lines.push("", "### Limits", "", ...limitLines);

@@ -13,6 +13,7 @@ import {
   formatDuration,
   formatReset,
   usageBar,
+  usageLimitProgress,
 } from "./usage-markdown.js";
 
 type StatusLogger = { error(...args: unknown[]): void };
@@ -196,22 +197,8 @@ export function formatStatusMarkdown(status: StatusMarkdownInput): string {
     lines.push("", "**Context:** Available after the first model response");
   }
 
-  const limits = status.usage?.rate_limits_available ? status.usage.rate_limits : undefined;
-  if (limits?.five_hour?.utilization !== null && limits?.five_hour?.utilization !== undefined) {
-    appendProgress(
-      lines,
-      "5-hour limit",
-      limits.five_hour.utilization,
-      formatReset(limits.five_hour.resets_at),
-    );
-  }
-  if (limits?.seven_day?.utilization !== null && limits?.seven_day?.utilization !== undefined) {
-    appendProgress(
-      lines,
-      "Weekly limit",
-      limits.seven_day.utilization,
-      formatReset(limits.seven_day.resets_at),
-    );
+  for (const limit of status.usage ? usageLimitProgress(status.usage) : []) {
+    appendProgress(lines, limit.label, limit.utilization, formatReset(limit.resetsAt));
   }
 
   if (status.usage) {
