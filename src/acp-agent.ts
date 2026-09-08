@@ -9538,8 +9538,15 @@ function getAvailableSlashCommands(
     .filter((command: AvailableCommand) => !UNSUPPORTED_COMMANDS.includes(command.name));
 
   const nativeMcp = availableCommands.find((command) => command.name === "mcp");
+  const usageAliases: AvailableCommand[] = [
+    { name: "cost", description: "Alias for /usage", input: null },
+    { name: "stats", description: "Alias for /usage", input: null },
+  ];
   return [
-    ...availableCommands.filter((command) => command.name !== "mcp"),
+    ...availableCommands.filter(
+      (command) =>
+        command.name !== "mcp" && !usageAliases.some((alias) => alias.name === command.name),
+    ),
     nativeMcp
       ? {
           ...nativeMcp,
@@ -9550,6 +9557,7 @@ function getAvailableSlashCommands(
           description: "Show configured MCP servers and their connection status",
           input: null,
         },
+    ...usageAliases,
   ];
 }
 

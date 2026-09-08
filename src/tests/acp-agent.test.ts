@@ -8346,12 +8346,20 @@ describe("terminal slash command filtering", () => {
     expect(commandsUpdate.availableCommands.map((c: { name: string }) => c.name)).toEqual([
       "compact",
       "mcp",
+      "cost",
+      "stats",
     ]);
-    expect(commandsUpdate.availableCommands.at(-1)).toEqual({
+    expect(
+      commandsUpdate.availableCommands.find((c: { name: string }) => c.name === "mcp"),
+    ).toEqual({
       name: "mcp",
       description: "Show status; reconnect, enable, or disable MCP servers",
       input: { hint: "[reconnect|enable|disable [<server>|all]]" },
     });
+    expect(commandsUpdate.availableCommands.slice(-2)).toEqual([
+      { name: "cost", description: "Alias for /usage", input: null },
+      { name: "stats", description: "Alias for /usage", input: null },
+    ]);
   });
 
   it("does not re-advertise when a later init repeats the same latch", async () => {
