@@ -206,4 +206,72 @@ describe("buildConfigOptions recommended values presentation", () => {
     );
     expect(model._meta).toBeUndefined();
   });
+
+  it.each(["claude-sonnet-4-6[1m]", "claude-sonnet-5"])(
+    "does not substitute a similar model for the unavailable default %s",
+    (resolvedModel) => {
+      const infos = MODEL_INFOS.map((model) =>
+        model.value === "default" ? { ...model, resolvedModel } : model,
+      );
+      const options = buildConfigOptions(
+        MODES,
+        MODELS,
+        infos,
+        undefined,
+        [],
+        "default",
+        undefined,
+        RECOMMENDED_PRESENTATION,
+      );
+      expect(selectOption(options, "model")).toMatchObject({ currentValue: "default" });
+      expect(selectOption(options, "model")._meta).toBeUndefined();
+    },
+  );
+
+  it("matches equivalent SDK context suffix spellings exactly", () => {
+    const infos = MODEL_INFOS.map((model) => ({
+      ...model,
+      resolvedModel:
+        model.value === "default"
+          ? "claude-sonnet-4-6-1m"
+          : model.value === "sonnet"
+            ? "claude-sonnet-4-6[1m]"
+            : model.resolvedModel,
+    }));
+    const options = buildConfigOptions(
+      MODES,
+      MODELS,
+      infos,
+      undefined,
+      [],
+      "default",
+      undefined,
+      RECOMMENDED_PRESENTATION,
+    );
+    expect(selectOption(options, "model")).toMatchObject({
+      currentValue: "sonnet",
+      _meta: recommendedMeta("sonnet"),
+    });
+  });
+
+  it("uses an available effort when medium is not supported", () => {
+    const infos = MODEL_INFOS.map((model) => ({
+      ...model,
+      supportedEffortLevels: ["high", "max"] as ModelInfo["supportedEffortLevels"],
+    }));
+    const options = buildConfigOptions(
+      MODES,
+      MODELS,
+      infos,
+      undefined,
+      [],
+      "default",
+      undefined,
+      RECOMMENDED_PRESENTATION,
+    );
+    expect(selectOption(options, "effort")).toMatchObject({
+      currentValue: "high",
+      _meta: recommendedMeta("high"),
+    });
+  });
 });

@@ -97,6 +97,59 @@ describe("ClaudeAcpAgent settings", () => {
     expect(response.modes.currentModeId).toBe("default");
   }, 15_000);
 
+  it.each([
+    { recommended: false, setting: undefined, explicit: undefined, expected: "default" },
+    { recommended: true, setting: undefined, explicit: undefined, expected: "medium" },
+    { recommended: true, setting: "high", explicit: undefined, expected: "high" },
+    { recommended: true, setting: "high", explicit: "max", expected: "max" },
+  ])(
+    "initial effort reflects SDK state: %j",
+    async ({ recommended, setting, explicit, expected }) => {
+      await fs.promises.writeFile(
+        path.join(tempDir, "settings.json"),
+        JSON.stringify({ effortLevel: setting }),
+      );
+      const applyFlagSettings = vi.fn();
+      querySpy.mockReturnValue(
+        makeMockQuery({
+          initializationResult: async () => ({
+            models: [
+              {
+                value: "default",
+                displayName: "Default",
+                description: "",
+                supportsEffort: true,
+                supportedEffortLevels: ["low", "medium", "high", "max"],
+              },
+            ],
+          }),
+          applyFlagSettings,
+        }),
+      );
+      const { ClaudeAcpAgent } = await import("../acp-agent.js");
+      const agent = new ClaudeAcpAgent(createMockClient());
+      if (recommended) {
+        (agent as any).clientCapabilities = {
+          _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+        };
+      }
+      const response = await (agent as any).createSession({
+        cwd: tempDir,
+        mcpServers: [],
+        _meta: { disableBuiltInTools: true, claudeCode: { options: { effort: explicit } } },
+      });
+      expect(
+        response.configOptions.find((option: any) => option.id === "effort").currentValue,
+      ).toBe(expected);
+      if (recommended) {
+        expect(applyFlagSettings).toHaveBeenCalledWith({ effortLevel: expected });
+        expect(agent.sessions[response.sessionId].effortPinnedByUser).toBe(explicit !== undefined);
+      } else {
+        expect(applyFlagSettings).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("supports acceptEdits mode defaults", async () => {
     await fs.promises.writeFile(
       path.join(tempDir, "settings.json"),

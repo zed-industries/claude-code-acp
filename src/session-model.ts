@@ -158,8 +158,15 @@ export function buildModelConfigOption(
   const concreteInfos = modelInfos.filter(
     (model) => model.value !== "default" && selectableIds.has(model.value),
   );
-  const recommended = defaultInfo?.resolvedModel
-    ? resolveModelPreference(concreteInfos, defaultInfo.resolvedModel)
+  // Recommendations describe the running default, so fuzzy family matching
+  // must never substitute a different generation or context window.
+  const defaultResolved = defaultInfo?.resolvedModel;
+  const recommended = defaultResolved
+    ? (concreteInfos.find(
+        (model) =>
+          canonicalizeModelId(model.resolvedModel ?? model.value) ===
+          canonicalizeModelId(defaultResolved),
+      ) ?? null)
     : null;
   const concreteRecommendation = useRecommendedValue && recommended !== null;
   const available = concreteRecommendation
@@ -408,7 +415,13 @@ export async function getAvailableModels(
   return {
     availableModels: models.map((model) => ({
       modelId: model.value,
-      name: model.displayName,
+      // SDK 0.3.257 exposes a single named Opus entry; keep the context size
+      // in its description. The SDK contract test requires review on upgrades.
+      name:
+        model.displayName === "Opus (1M context)" &&
+        !models.some((other) => other !== model && other.displayName === "Opus")
+          ? "Opus"
+          : model.displayName,
       description: model.description,
     })),
     currentModelId: currentModel.value,

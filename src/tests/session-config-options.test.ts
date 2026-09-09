@@ -607,6 +607,62 @@ describe("session config options", () => {
       populateSession();
     });
 
+    it("applies concrete defaults and re-seeds automatic effort from each model's settings", async () => {
+      (agent as any).clientCapabilities = {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+      };
+      const session = agent.sessions[SESSION_ID];
+      session.settingsManager.getSettings = () => ({
+        modelSettings: { "claude-opus-4-5": { effortLevel: "high" } },
+      });
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+      expect(response.configOptions.find((o) => o.id === "effort")).toMatchObject({
+        currentValue: "medium",
+        _meta: { jetbrains: { air: { recommendedValue: "medium" } } },
+      });
+      expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "medium" });
+      expect(session.effortPinnedByUser).not.toBe(true);
+
+      await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-opus-4-5",
+      });
+      expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "high" });
+      expect(session.effortPinnedByUser).not.toBe(true);
+
+      session.modelInfos[1].supportsEffort = false;
+      await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+      expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: null });
+    });
+
+    it("clears an unsupported user pin before choosing the new model's concrete effort", async () => {
+      (agent as any).clientCapabilities = {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+      };
+      const session = agent.sessions[SESSION_ID];
+      session.modelInfos[0].supportedEffortLevels = ["low", "medium", "high", "max"];
+      session.settingsManager.getSettings = () => ({ effortLevel: "low" });
+      session.configOptions.find((o) => o.id === "effort")!.currentValue = "max";
+      session.effortPinnedByUser = true;
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+      expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("low");
+      expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "low" });
+      expect(session.effortPinnedByUser).toBe(false);
+    });
+
     it("drops effort option when switching to a model without effort support", async () => {
       // Make sonnet not support effort
       const session = (agent as unknown as { sessions: Record<string, any> }).sessions[SESSION_ID];

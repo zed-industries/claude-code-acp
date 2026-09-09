@@ -65,7 +65,8 @@ different value.
 ## Model behavior
 
 The SDK's `default` model entry may carry a `resolvedModel` identifying the model currently
-recommended by Claude. The adapter resolves that identifier back to a selectable named model,
+recommended by Claude. The adapter matches that identifier exactly to a selectable named model
+(accepting equivalent `-1m` and `[1m]` suffix spellings),
 removes the `default` row, and advertises the named value in
 `_meta.jetbrains.air.recommendedValue`. When the session itself is still using the SDK default, the
 same concrete value is presented as `currentValue`.
@@ -74,11 +75,35 @@ If the SDK recommendation cannot be mapped to an advertised named model, the ada
 legacy `default` row for that selector and omits `recommendedValue`. This prevents a client from
 receiving a recommendation or current value it cannot select.
 
+The SDK label `Opus (1M context)` is displayed as `Opus`, with its model ID and description
+preserved. If another selectable entry is already named `Opus`, the suffix is retained to keep
+the choices distinct. This label simplification also applies to legacy clients.
+
 ## Effort behavior
 
 When the current model supports effort selection, the adapter removes the `default` effort row and
 advertises `medium` as the recommendation. An existing explicit or settings-derived effort remains
 the `currentValue`; an absent or legacy `default` current effort is presented as `medium`.
 
+The adapter applies the displayed effort to the SDK on session creation and model switches, so
+the concrete selection reflects the effort actually used. Explicit SDK `options.effort` and ACP
+picker choices remain pinned across model switches while supported. Otherwise each switch
+re-reads the new model's settings before falling back to the recommendation. Switching to a
+model without effort support clears the flag override. Legacy clients continue to let the SDK
+resolve automatic effort.
+
 If a future model exposes effort choices without `medium`, the first SDK-advertised effort level is
 used so both `recommendedValue` and `currentValue` remain valid option values.
+
+## SDK upgrade check
+
+The ordinary test suite pins the SDK version whose Opus label was verified. When updating the
+SDK, first run the live contract test in an authenticated environment:
+
+```sh
+RUN_INTEGRATION_TESTS=true npx vitest run src/tests/model-presentation.test.ts
+```
+
+Review any changes to the available Opus entries and their labels before updating the version
+guard and, if necessary, the normalization. The live test only initializes the SDK; it sends no
+model prompt.

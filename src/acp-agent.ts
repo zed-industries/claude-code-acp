@@ -824,8 +824,9 @@ export type Session = {
   /** Whether the user picked a non-default effort through the ACP picker this
    *  session. A pin lives at the SDK's flag layer, which overrides the CLI's
    *  persisted effort (including the per-model `modelSettings` entries), so it
-   *  follows the session across model switches; without one, the CLI resolves
-   *  effort itself and the Effort option is display-only. Cleared when the
+   *  follows the session across model switches. Without a pin, opted-in clients
+   *  apply the settings-derived effort or concrete recommendation on each switch;
+   *  legacy clients leave resolution to the CLI. Cleared when the
    *  user picks "Default" (the flag layer is cleared with it) or when a model
    *  switch clamps the pin away. */
   effortPinnedByUser?: boolean;
@@ -7397,6 +7398,15 @@ export class ClaudeAcpAgent {
       const effortOpt = session.configOptions.find((o) => o.id === EFFORT_CONFIG_ID);
       const currentEffort =
         typeof effortOpt?.currentValue === "string" ? effortOpt.currentValue : undefined;
+      const useRecommendedValue = clientSupportsRecommendedConfigValue(this.clientCapabilities);
+      if (
+        useRecommendedValue &&
+        session.effortPinnedByUser &&
+        (!newModelInfo?.supportsEffort ||
+          !newModelInfo.supportedEffortLevels?.some((level) => level === currentEffort))
+      ) {
+        session.effortPinnedByUser = false;
+      }
       const seedEffort = session.effortPinnedByUser
         ? currentEffort
         : settingsEffortForModel(session.settingsManager.getSettings(), newModelInfo, value);
@@ -7417,22 +7427,25 @@ export class ClaudeAcpAgent {
           disabledReason: session.fastModeDisabledReason,
         },
         {
-          useRecommendedValue: clientSupportsRecommendedConfigValue(this.clientCapabilities),
+          useRecommendedValue,
         },
       );
 
-      // Sync effort with the SDK only when a user pin changed across the
+      // Opted-in clients apply the concrete displayed effort on every switch,
+      // including settings-derived values, so a previous automatic flag cannot
+      // shadow the new model's settings. This does not create a user pin.
+      // For legacy clients, sync only when a user pin changed across the
       // switch — i.e. the new model clamped it away (buildConfigOptions
       // validated the seed against the new model's levels), where the flag
       // must be cleared too or the SDK would keep running the old pin
       // invisibly. Settings-derived seeds are display-only: the CLI resolves
       // persisted effort itself, and pinning it at the flag layer would
       // shadow the per-model values on every later switch.
-      if (session.effortPinnedByUser) {
+      if (useRecommendedValue || session.effortPinnedByUser) {
         const newEffortOpt = session.configOptions.find((o) => o.id === EFFORT_CONFIG_ID);
         const newEffort =
           typeof newEffortOpt?.currentValue === "string" ? newEffortOpt.currentValue : undefined;
-        if (newEffort !== currentEffort) {
+        if (useRecommendedValue || newEffort !== currentEffort) {
           await session.query.applyFlagSettings({
             effortLevel: toSdkEffortLevel(newEffort),
           });
@@ -8261,26 +8274,28 @@ export class ClaudeAcpAgent {
         disabledReason: fastModeDisabledReason,
       };
 
-      // The Effort picker seed mirrors what the CLI itself resolves from the
-      // persisted settings — the current model's `modelSettings` entry first
-      // (the CLI persists /effort per model), then the legacy top-level value.
-      // Display-only: no applyFlagSettings here. The CLI reads the same
-      // settings, so pinning the seed at the flag layer was always redundant —
-      // and it would override the CLI's own per-model restore on every later
-      // model switch. Only a user's explicit ACP picker choice pins the flag
-      // (see applyConfigOptionValue / Session.effortPinnedByUser).
+      // Concrete effort must also be applied to the SDK: its automatic default
+      // need not be our "medium" recommendation. Preserve explicit SDK options
+      // and persisted settings; automatic values re-seed on every model switch.
+      // Legacy clients still leave effort resolution entirely to the CLI.
+      const useRecommendedValue = clientSupportsRecommendedConfigValue(this.clientCapabilities);
       const configOptions = buildConfigOptions(
         modes,
         models,
         modelInfos,
-        settingsEffortForModel(settingsManager.getSettings(), currentModelInfo),
+        (useRecommendedValue ? userProvidedOptions?.effort : undefined) ??
+          settingsEffortForModel(settingsManager.getSettings(), currentModelInfo),
         agents,
         currentAgent,
         fastMode,
         {
-          useRecommendedValue: clientSupportsRecommendedConfigValue(this.clientCapabilities),
+          useRecommendedValue,
         },
       );
+      const initialEffort = configOptions.find((option) => option.id === EFFORT_CONFIG_ID);
+      if (useRecommendedValue && typeof initialEffort?.currentValue === "string") {
+        await q.applyFlagSettings({ effortLevel: toSdkEffortLevel(initialEffort.currentValue) });
+      }
       // Seed the context window without extra IPC. The cached authoritative
       // window from a prior turn wins (`result.modelUsage`, cross-session),
       // then the text heuristic, then the default. We deliberately do NOT issue
@@ -8331,6 +8346,10 @@ export class ClaudeAcpAgent {
         autoModeFallbackWarningShown: false,
         autoModeFallbackWarningPending,
         configOptions,
+        effortPinnedByUser:
+          useRecommendedValue &&
+          userProvidedOptions?.effort !== undefined &&
+          initialEffort?.currentValue === userProvidedOptions.effort,
         agents,
         currentAgent,
         fastModeEnabled,
