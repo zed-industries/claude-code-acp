@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.76.0](https://github.com/agentclientprotocol/claude-agent-acp/compare/v0.75.1...v0.76.0) (2026-09-09)
+
+
+### Features
+
+* advertise recommended config values ([#1111](https://github.com/agentclientprotocol/claude-agent-acp/issues/1111)) ([2b666c3](https://github.com/agentclientprotocol/claude-agent-acp/commit/2b666c3d35566c60edafc5050d23cf2ce7ea1e95))
+* **deps-dev:** Bump vitest from 4.1.11 to 5.0.0 ([#1099](https://github.com/agentclientprotocol/claude-agent-acp/issues/1099)) ([194e195](https://github.com/agentclientprotocol/claude-agent-acp/commit/194e195b057497311558fea2a5fbd1b4953ea29d))
+* **deps:** Bump fast-uri from 3.1.6 to 3.1.7 ([#1100](https://github.com/agentclientprotocol/claude-agent-acp/issues/1100)) ([d870ebd](https://github.com/agentclientprotocol/claude-agent-acp/commit/d870ebd2fd14bda95f81ec4b86d76ef4ae258005))
+
 ## [0.75.1](https://github.com/agentclientprotocol/claude-agent-acp/compare/v0.75.0...v0.75.1) (2026-09-05)
 
 
