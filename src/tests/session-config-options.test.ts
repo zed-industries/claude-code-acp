@@ -681,6 +681,29 @@ describe("session config options", () => {
       expect(session.effortPinnedByUser).toBe(false);
     });
 
+    it("retains the original pin value when a legacy clamp fails", async () => {
+      const session = agent.sessions[SESSION_ID];
+      session.modelInfos[0].supportedEffortLevels = ["low", "medium", "high", "max"];
+      session.settingsManager.getSettings = () => ({ effortLevel: "low" });
+      session.configOptions.find((o) => o.id === "effort")!.currentValue = "max";
+      session.effortPinnedByUser = true;
+      applyFlagSettingsSpy.mockRejectedValueOnce(new Error("effort clear failed"));
+
+      await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-opus-4-5",
+      });
+
+      expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("max");
+      expect(session.effortPinnedLevel).toBe("max");
+    });
+
     it("returns the new model state when effort synchronization fails", async () => {
       (agent as any).clientCapabilities = {
         _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },

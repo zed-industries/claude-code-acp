@@ -830,6 +830,10 @@ export type Session = {
    *  user picks "Default" (the flag layer is cleared with it) or when a model
    *  switch clamps the pin away. */
   effortPinnedByUser?: boolean;
+  /** The flag-layer effort selected by the user. Kept separately from the
+   *  displayed option so a failed clamp does not mistake the new model's
+   *  settings-derived display value for the still-active user pin. */
+  effortPinnedLevel?: string;
   /** Why the SDK currently can't serve Fast mode, when the reason is one worth
    *  telling the user about (see {@link FAST_MODE_UNAVAILABLE_EXPLANATIONS} —
    *  routine states like the SDK's own opt-in requirement normalize to
@@ -7399,13 +7403,15 @@ export class ClaudeAcpAgent {
       const currentEffort =
         typeof effortOpt?.currentValue === "string" ? effortOpt.currentValue : undefined;
       const useRecommendedValue = clientSupportsRecommendedConfigValue(this.clientCapabilities);
-      const effortWasPinned = session.effortPinnedByUser === true;
+      const pinnedEffort =
+        session.effortPinnedLevel ?? (session.effortPinnedByUser ? currentEffort : undefined);
+      const effortWasPinned = pinnedEffort !== undefined;
       const effortPinnedForNewModel =
         effortWasPinned &&
         newModelInfo?.supportsEffort === true &&
-        newModelInfo.supportedEffortLevels?.some((level) => level === currentEffort) === true;
+        newModelInfo.supportedEffortLevels?.some((level) => level === pinnedEffort) === true;
       const seedEffort = effortPinnedForNewModel
-        ? currentEffort
+        ? pinnedEffort
         : settingsEffortForModel(session.settingsManager.getSettings(), newModelInfo, value);
       session.configOptions = buildConfigOptions(
         session.modes,
@@ -7453,6 +7459,7 @@ export class ClaudeAcpAgent {
               effortLevel: useRecommendedValue ? toSdkEffortLevel(newEffort) : null,
             });
             session.effortPinnedByUser = effortPinnedForNewModel;
+            session.effortPinnedLevel = effortPinnedForNewModel ? pinnedEffort : undefined;
           } catch (error) {
             // setModel has already succeeded. Effort synchronization is a
             // secondary, best-effort operation: propagating this error would
@@ -7462,6 +7469,7 @@ export class ClaudeAcpAgent {
             // update left that layer unchanged, and still publish/return the
             // truthful model state below.
             session.effortPinnedByUser = effortWasPinned;
+            session.effortPinnedLevel = pinnedEffort;
             this.logger.error(
               `Failed to synchronize effort after model switch to "${value}":`,
               error,
@@ -7469,6 +7477,7 @@ export class ClaudeAcpAgent {
           }
         } else {
           session.effortPinnedByUser = effortPinnedForNewModel;
+          session.effortPinnedLevel = effortPinnedForNewModel ? pinnedEffort : undefined;
         }
       }
 
@@ -7506,6 +7515,7 @@ export class ClaudeAcpAgent {
         // effort back to the CLI's persisted per-model resolution — so it
         // un-pins; any other pick pins effort for the session.
         session.effortPinnedByUser = value !== "default";
+        session.effortPinnedLevel = value !== "default" ? value : undefined;
       }
     }
   }
@@ -8367,6 +8377,12 @@ export class ClaudeAcpAgent {
           useRecommendedValue &&
           userProvidedOptions?.effort !== undefined &&
           initialEffort?.currentValue === userProvidedOptions.effort,
+        effortPinnedLevel:
+          useRecommendedValue &&
+          userProvidedOptions?.effort !== undefined &&
+          initialEffort?.currentValue === userProvidedOptions.effort
+            ? userProvidedOptions.effort
+            : undefined,
         agents,
         currentAgent,
         fastModeEnabled,
