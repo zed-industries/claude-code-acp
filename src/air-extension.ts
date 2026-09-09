@@ -1,6 +1,7 @@
 export const AIR_NATIVE_SUBAGENT_SESSIONS_CAPABILITY = "nativeSubagentSessions";
 export const AIR_ASYNC_TASKS_CAPABILITY = "asyncTasks";
 export const AIR_SESSION_FAILURE_CAPABILITY = "sessionFailure";
+export const AIR_RECOMMENDED_CONFIG_VALUE_CAPABILITY = "recommendedValue";
 
 const JETBRAINS_META_KEY = "jetbrains";
 const AIR_META_KEY = "air";

@@ -8385,6 +8385,7 @@ describe("logout", () => {
         "agentFileChangeReport",
         "nativeSubagentSessions",
         "asyncTasks",
+        "recommendedValue",
       ],
     });
   });
@@ -8403,6 +8404,7 @@ describe("logout", () => {
         "agentFileChangeReport",
         "nativeSubagentSessions",
         "asyncTasks",
+        "recommendedValue",
       ],
     });
   });
