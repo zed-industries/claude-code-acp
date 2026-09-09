@@ -59,7 +59,6 @@ import {
   AgentInfo,
   CanUseTool,
   deleteSession,
-  EffortLevel,
   FastModeDisabledReason,
   FastModeState,
   getSessionMessages,
@@ -82,7 +81,6 @@ import {
   SDKPartialAssistantMessage,
   SessionMessage,
   SDKUserMessage,
-  Settings,
   SlashCommand,
   ThinkingConfig,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -112,7 +110,12 @@ import {
   NativeSubagent,
   NativeSubagentRuntime,
 } from "./native-subagents.js";
-import { AIR_ASYNC_TASKS_CAPABILITY, withAirMeta } from "./air-extension.js";
+import {
+  AIR_ASYNC_TASKS_CAPABILITY,
+  AIR_RECOMMENDED_CONFIG_VALUE_CAPABILITY,
+  clientSupportsAirCapability,
+  withAirMeta,
+} from "./air-extension.js";
 import {
   AsyncTaskRuntime,
   backgroundBashTaskFromToolResult,
@@ -239,12 +242,34 @@ import {
   exitPlanModeRawOutput,
   observeExitPlanToolResults,
 } from "./exit-plan.js";
-import { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
+import { DEFAULT_AGENT_ID } from "./session-config-ids.js";
 import { parseToolResultMeta } from "./tool-result-meta.js";
 import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "./usage-markdown.js";
 
-export { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
+export { DEFAULT_AGENT_ID } from "./session-config-ids.js";
 import { MODE_CONFIG_ID, SessionModeManager } from "./session-mode.js";
+import {
+  applyAvailableModelsAllowlist,
+  buildModelConfigOption,
+  getAvailableModels,
+  MODEL_CONFIG_ID,
+  resolveModelPreference,
+  type SessionModelState,
+} from "./session-model.js";
+import {
+  buildEffortConfigOption,
+  EFFORT_CONFIG_ID,
+  settingsEffortForModel,
+  toSdkEffortLevel,
+} from "./session-effort.js";
+
+export { EFFORT_CONFIG_ID, settingsEffortForModel } from "./session-effort.js";
+export {
+  applyAvailableModelsAllowlist,
+  matchResumedModel,
+  MODEL_CONFIG_ID,
+  resolveModelPreference,
+} from "./session-model.js";
 
 export const CLAUDE_CONFIG_DIR =
   process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
@@ -528,15 +553,6 @@ function parseSteerRequest(params: unknown): SteerRequest {
     _meta: _meta as SteerMeta | null | undefined,
   };
 }
-
-/** Internal model-selection state. Mirrors the shape the ACP SDK exposed as
- *  `SessionModelState` before model selection moved entirely into
- *  `SessionConfigOption` (category "model"). Retained internally to track the
- *  current model and build the "model" config option. */
-type SessionModelState = {
-  availableModels: Array<{ modelId: string; name: string; description?: string }>;
-  currentModelId: string;
-};
 
 /** One in-flight `prompt()` call. A persistent per-session consumer (see
  *  `runConsumer`) drains the SDK query stream for the whole session and settles
@@ -2100,6 +2116,7 @@ export class ClaudeAcpAgent {
           AGENT_FILE_CHANGE_REPORT_CAPABILITY,
           AIR_NATIVE_SUBAGENT_SESSIONS_CAPABILITY,
           AIR_ASYNC_TASKS_CAPABILITY,
+          AIR_RECOMMENDED_CONFIG_VALUE_CAPABILITY,
         ),
         steering: {
           supported: true,
@@ -7399,6 +7416,9 @@ export class ClaudeAcpAgent {
           useBooleanOption: clientSupportsBooleanConfigOptions(this.clientCapabilities),
           disabledReason: session.fastModeDisabledReason,
         },
+        {
+          useRecommendedValue: clientSupportsRecommendedConfigValue(this.clientCapabilities),
+        },
       );
 
       // Sync effort with the SDK only when a user pin changed across the
@@ -8257,6 +8277,9 @@ export class ClaudeAcpAgent {
         agents,
         currentAgent,
         fastMode,
+        {
+          useRecommendedValue: clientSupportsRecommendedConfigValue(this.clientCapabilities),
+        },
       );
       // Seed the context window without extra IPC. The cached authoritative
       // window from a prior turn wins (`result.modelUsage`, cross-session),
@@ -8758,45 +8781,6 @@ function isValidBaseUrl(baseUrl: string | undefined): baseUrl is string {
   return parsed.protocol === "http:" || parsed.protocol === "https:";
 }
 
-// Translate a UI effort value into the flag-layer payload. The SDK
-// shallow-merges `applyFlagSettings`, drops `undefined` during JSON transport,
-// and only clears a key when an explicit `null` is sent — see
-// `applyFlagSettings` in @anthropic-ai/claude-agent-sdk. Mapping both the
-// `"default"` sentinel and `undefined` (effort option absent for the model) to
-// `null` ensures any previously-applied flag is actually cleared. Typed as
-// `EffortLevel` (not `Settings["effortLevel"]`): the picker offers whatever
-// `supportedEffortLevels` reports, which includes the session-scoped `"max"`
-// that the persisted Settings shape deliberately excludes.
-function toSdkEffortLevel(value: string | undefined): EffortLevel | null {
-  return value === undefined || value === "default" ? null : (value as EffortLevel);
-}
-
-/** The effort level the CLI itself resolves for a model from the persisted
- *  settings: the per-model entry (`modelSettings`, keyed by canonical model
- *  name — the CLI persists /effort per model since 2.1.243) wins over the
- *  legacy top-level `effortLevel`. Alias picker rows are looked up by their
- *  resolved model id first, then the row value, then the raw config value
- *  for models not in the picker. Exact keys only — the CLI's canonical-form
- *  fallback matching isn't replicated, so a miss simply falls back to the
- *  top-level value (best-effort display; `buildConfigOptions` still
- *  validates the result against the model's supported levels). */
-export function settingsEffortForModel(
-  settings: Settings,
-  modelInfo: ModelInfo | undefined,
-  modelId?: string,
-): string | undefined {
-  const modelSettings = settings.modelSettings;
-  if (modelSettings) {
-    for (const key of [modelInfo?.resolvedModel, modelInfo?.value, modelId]) {
-      const perModel = key !== undefined ? modelSettings[key]?.effortLevel : undefined;
-      if (typeof perModel === "string") {
-        return perModel;
-      }
-    }
-  }
-  return settings.effortLevel;
-}
-
 // `supportedAgents()` always returns Claude Code's built-in subagents — the
 // ones used for Task-tool delegation (Explore, Plan, etc.) — even when the user
 // has configured none of their own. Those aren't meaningful *main-thread*
@@ -8834,7 +8818,6 @@ export async function discoverCustomAgents(q: Query): Promise<AgentInfo[]> {
  *  handlers in `setSessionConfigOption`/`applyConfigOptionValue` reference the
  *  same identifiers and can't drift apart. */
 export { MODE_CONFIG_ID };
-export const MODEL_CONFIG_ID = "model";
 export const AGENT_CONFIG_ID = "agent";
 export const FAST_MODE_CONFIG_ID = "fast";
 
@@ -8890,6 +8873,15 @@ export function clientSupportsBooleanConfigOptions(
   clientCapabilities?: ClientCapabilities | null,
 ): boolean {
   return clientCapabilities?.session?.configOptions?.boolean != null;
+}
+
+/** Whether the Client advertised the AIR `recommendedValue` capability for
+ *  select-style model and effort options. Missing or malformed AIR metadata
+ *  retains the legacy `default` entries. */
+export function clientSupportsRecommendedConfigValue(
+  clientCapabilities?: ClientCapabilities | null,
+): boolean {
+  return clientSupportsAirCapability(clientCapabilities, AIR_RECOMMENDED_CONFIG_VALUE_CAPABILITY);
 }
 
 /** Build the Fast mode config option. When the Client supports boolean config
@@ -8961,6 +8953,12 @@ export type FastModeOptionState = {
   disabledReason?: FastModeDisabledReason;
 };
 
+export type ConfigOptionPresentation = {
+  /** Replace ambiguous `default` rows with concrete values and advertise the
+   *  SDK/adapter recommendation as `_meta.jetbrains.air.recommendedValue`. */
+  useRecommendedValue: boolean;
+};
+
 export function buildConfigOptions(
   modes: SessionModeState,
   models: SessionModelState,
@@ -8969,68 +8967,19 @@ export function buildConfigOptions(
   agents: AgentInfo[] = [],
   currentAgent: string = DEFAULT_AGENT_ID,
   fastMode?: FastModeOptionState,
+  presentation?: ConfigOptionPresentation,
 ): SessionConfigOption[] {
   const options: SessionConfigOption[] = [
     SessionModeManager.configOption(modes),
-    {
-      id: MODEL_CONFIG_ID,
-      name: "Model",
-      description: "AI model to use",
-      category: "model",
-      type: "select",
-      currentValue: models.currentModelId,
-      options: models.availableModels.map((m) => {
-        if (m.modelId === "default") {
-          const defaultInfo = modelInfos.find((mi) => mi.value === "default");
-          const resolvedModel = defaultInfo?.resolvedModel;
-          if (resolvedModel) {
-            const namedMatch = modelInfos.find(
-              (mi) => mi.value !== "default" && mi.resolvedModel === resolvedModel,
-            );
-            return {
-              value: m.modelId,
-              name: m.name,
-              description: namedMatch?.displayName ?? resolvedModel,
-            };
-          }
-        }
-        return { value: m.modelId, name: m.name, description: m.description ?? undefined };
-      }),
-    },
+    buildModelConfigOption(models, modelInfos, presentation?.useRecommendedValue === true),
   ];
-
-  // Add effort level option based on the currently selected model
-  const currentModelInfo = modelInfos.find((m) => m.value === models.currentModelId);
-  const supportedLevels = currentModelInfo?.supportsEffort
-    ? (currentModelInfo.supportedEffortLevels ?? [])
-    : [];
-
-  if (supportedLevels.length > 0) {
-    const effortOptions = [
-      { value: "default", name: "Default" },
-      ...supportedLevels.map((level) => ({
-        value: level,
-        name: level
-          .split(/[_-]/)
-          .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
-          .join(" "),
-      })),
-    ];
-
-    const includes = (l: string) => l === "default" || (supportedLevels as string[]).includes(l);
-    const validEffort =
-      currentEffortLevel && includes(currentEffortLevel) ? currentEffortLevel : "default";
-
-    options.push({
-      id: EFFORT_CONFIG_ID,
-      name: "Effort",
-      description: "Available effort levels for this model",
-      category: "thought_level",
-      type: "select",
-      currentValue: validEffort,
-      options: effortOptions,
-    });
-  }
+  const effort = buildEffortConfigOption(
+    modelInfos,
+    models.currentModelId,
+    currentEffortLevel,
+    presentation?.useRecommendedValue === true,
+  );
+  if (effort) options.push(effort);
 
   // Surface the Fast mode toggle only when the current model supports it. The
   // option renders as a native boolean toggle for Clients that opted in, and a
@@ -9068,422 +9017,6 @@ export function buildConfigOptions(
   }
 
   return options;
-}
-
-// Claude Code CLI persists display strings like "opus[1m]" in settings,
-// but the SDK model list uses IDs like "claude-opus-4-6-1m".
-const MODEL_CONTEXT_HINT_PATTERN = /\[(\d+m)\]$/i;
-
-// The id-suffix spelling of a context hint ("-1m" in "claude-opus-4-6-1m");
-// shared by the strip and canonicalize helpers below so the two can't drift.
-const CONTEXT_HINT_SUFFIX_PATTERN = /-(\d+m)$/i;
-
-/** Remove context-window hints — the display form "[1m]" and the SDK id
- *  suffix form "-1m" — from a model string. Those digits describe context
- *  size, not model identity or generation version. */
-function stripContextHints(s: string): string {
-  return s.replace(/\[\d+m\]/gi, "").replace(CONTEXT_HINT_SUFFIX_PATTERN, "");
-}
-
-/** Canonicalize a model id for exact comparison: trimmed, lowercased, with
- *  the id-suffix hint spelling unified to the bracket form ("-1m" → "[1m]").
- *  The hint itself is kept — bare and 1M ids must stay distinct. */
-function canonicalizeModelId(s: string): string {
-  return s.trim().toLowerCase().replace(CONTEXT_HINT_SUFFIX_PATTERN, "[$1]");
-}
-
-/** The context hint a model string carries ("1m" for either spelling), or
- *  null for a bare id. */
-function contextHintOf(s: string): string | null {
-  return canonicalizeModelId(s).match(MODEL_CONTEXT_HINT_PATTERN)?.[1] ?? null;
-}
-
-// Captures a model family version: `4-6`/`4.7` for dated generations, or a
-// bare `5` for single-number ones like "Sonnet 5". Used to keep a pinned
-// `claude-opus-4-6` from matching the `opus` alias once it points at 4.7.
-const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)(?:[-.](\d+))?\b/;
-
-function extractModelFamilyVersion(s: string): string | null {
-  const match = stripContextHints(s).match(MODEL_FAMILY_VERSION_PATTERN);
-  if (!match) return null;
-  return match[2] ? `${match[1]}.${match[2]}` : match[1];
-}
-
-function modelVersionsCompatible(preference: string, candidate: ModelInfo): boolean {
-  const preferred = extractModelFamilyVersion(preference);
-  if (!preferred) return true;
-  const candidateVersion =
-    extractModelFamilyVersion(candidate.value) ??
-    extractModelFamilyVersion(candidate.displayName) ??
-    extractModelFamilyVersion(candidate.description);
-  if (!candidateVersion) return true;
-  return preferred === candidateVersion;
-}
-
-function tokenizeModelPreference(model: string): { tokens: string[]; contextHint?: string } {
-  const lower = model.trim().toLowerCase();
-  const contextHint = lower.match(MODEL_CONTEXT_HINT_PATTERN)?.[1]?.toLowerCase();
-
-  const normalized = lower.replace(MODEL_CONTEXT_HINT_PATTERN, " $1 ");
-  const rawTokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
-  const tokens = rawTokens
-    .map((token) => {
-      if (token === "opusplan") return "opus";
-      if (token === "best" || token === "default") return "";
-      return token;
-    })
-    .filter((token) => token && token !== "claude")
-    .filter((token) => /[a-z]/.test(token) || token.endsWith("m"));
-
-  return { tokens, contextHint };
-}
-
-function scoreModelMatch(model: ModelInfo, tokens: string[], contextHint?: string): number {
-  const haystack = `${model.value} ${model.displayName}`.toLowerCase();
-  let score = 0;
-  let nonHintMatched = false;
-  for (const token of tokens) {
-    if (haystack.includes(token)) {
-      if (token !== contextHint) nonHintMatched = true;
-      score += token === contextHint ? 3 : 1;
-    }
-  }
-  if (contextHint && !nonHintMatched) return 0;
-  return score;
-}
-
-export function resolveModelPreference(models: ModelInfo[], preference: string): ModelInfo | null {
-  const trimmed = preference.trim();
-  if (!trimmed) return null;
-
-  const lower = trimmed.toLowerCase();
-
-  // Exact match on value or display name. Values compare on the canonical
-  // hint spelling so "opus-1m" hits an "opus[1m]" row (and vice versa).
-  const canonicalPreference = canonicalizeModelId(trimmed);
-  const directMatch = models.find(
-    (model) =>
-      model.value === trimmed ||
-      canonicalizeModelId(model.value) === canonicalPreference ||
-      model.displayName.toLowerCase() === lower,
-  );
-  if (directMatch) return directMatch;
-
-  // Exact match on the alias's canonical resolved id (e.g. a pinned
-  // "claude-sonnet-5" against the "sonnet" row's `resolvedModel`). SDK-
-  // reported and unambiguous, so it's tried before the fuzzier tiers below.
-  // Compared on the canonical hint spelling so a "-1m"-suffix pin matches a
-  // "[1m]"-spelled resolvedModel instead of falling into the substring tier
-  // (which would land on the bare 200k sibling). "default" is skipped first
-  // since it shares a resolvedModel with whichever alias the CLI currently
-  // recommends — a specific pin should land on that named alias, not
-  // "default".
-  const matchesResolved = (model: ModelInfo) =>
-    model.resolvedModel != null && canonicalizeModelId(model.resolvedModel) === canonicalPreference;
-  const resolvedMatch =
-    models.find((model) => model.value !== "default" && matchesResolved(model)) ??
-    models.find(matchesResolved);
-  if (resolvedMatch) return resolvedMatch;
-
-  // Substring match. Skips candidates whose context hint disagrees with the
-  // preference's — a bare row must not absorb a 1M-hinted preference (nor
-  // vice versa); such pairs fall through to the tokenized tier, which
-  // weighs hints in its scoring and still finds the best same-family row.
-  const preferenceHint = contextHintOf(trimmed);
-  const includesMatch = models.find((model) => {
-    if (!modelVersionsCompatible(trimmed, model)) return false;
-    if (contextHintOf(model.value) !== preferenceHint) return false;
-    const value = model.value.toLowerCase();
-    const display = model.displayName.toLowerCase();
-    return value.includes(lower) || display.includes(lower) || lower.includes(value);
-  });
-  if (includesMatch) return includesMatch;
-
-  // Tokenized matching for aliases like "opus[1m]"
-  const { tokens, contextHint } = tokenizeModelPreference(trimmed);
-  if (tokens.length === 0) return null;
-
-  let bestMatch: ModelInfo | null = null;
-  let bestScore = 0;
-  for (const model of models) {
-    if (!modelVersionsCompatible(trimmed, model)) continue;
-    const score = scoreModelMatch(model, tokens, contextHint);
-    if (0 < score && (!bestMatch || bestScore < score)) {
-      bestMatch = model;
-      bestScore = score;
-    }
-  }
-
-  return bestMatch;
-}
-
-/** Map the live model reported by a resumed session onto the picker's model
- *  list. The CLI restores a resumed session's model from the transcript's
- *  last assistant message, which records the concrete API id (e.g.
- *  "claude-opus-4-6") with any "[1m]" context hint dropped. Tiers, in order:
- *  1. Exact match with the Default entry's resolution — when a named alias
- *     shares Default's resolvedModel verbatim, the live id can't tell the
- *     two apart, and a never-customized session should stay on Default.
- *  2. Exact resolvedModel match on a named row. Checked before the
- *     hint-stripped Default comparison so a live "claude-sonnet-5[1m]" lands
- *     on the "sonnet[1m]" row rather than a Default that resolves to the
- *     bare "claude-sonnet-5" — the two rows differ in context window, which
- *     drives `contextWindowSize` and capability gating downstream.
- *  3. Hint-stripped match with Default's resolution — a session that never
- *     left the default resumes as the bare transcript id, and shouldn't show
- *     a concrete picker entry.
- *  4. `resolveModelPreference` over the picker entries.
- *  5. A model with no picker counterpart (e.g. excluded by an
- *     `availableModels` allowlist) is tracked verbatim, mirroring
- *     `syncModelAfterExternalSwitch`: the picker shows no selection, but the
- *     model-dependent bookkeeping stays truthful to what the SDK is running. */
-export function matchResumedModel(models: ModelInfo[], liveModel: string): ModelInfo {
-  const live = canonicalizeModelId(liveModel);
-  const defaultEntry = models.find((m) => m.value === "default");
-  const defaultResolved = defaultEntry?.resolvedModel
-    ? canonicalizeModelId(defaultEntry.resolvedModel)
-    : undefined;
-
-  if (defaultEntry && defaultResolved === live) {
-    return defaultEntry;
-  }
-
-  // No default-row exclusion needed: a default row matching `live` exactly
-  // already returned at the tier above.
-  const exactMatch = models.find(
-    (m) => m.resolvedModel && canonicalizeModelId(m.resolvedModel) === live,
-  );
-  if (exactMatch) return exactMatch;
-
-  if (
-    defaultEntry &&
-    defaultResolved &&
-    stripContextHints(defaultResolved) === stripContextHints(live)
-  ) {
-    return defaultEntry;
-  }
-
-  return (
-    resolveModelPreference(models, liveModel) ?? {
-      value: liveModel,
-      displayName: liveModel,
-      description: "",
-    }
-  );
-}
-
-function resolveSettingsModel(
-  models: ModelInfo[],
-  settingsModel: unknown,
-  logger: Logger,
-): ModelInfo | null {
-  if (settingsModel === undefined) {
-    return null;
-  }
-  if (typeof settingsModel !== "string") {
-    const typeLabel = settingsModel === null ? "null" : typeof settingsModel;
-    logger.error(`Ignoring model from settings: expected a string, got ${typeLabel}.`);
-    return null;
-  }
-  return resolveModelPreference(models, settingsModel);
-}
-
-/**
- * Restrict the SDK's model list to the user's `availableModels` allowlist
- * (already merged-and-deduped across settings sources by `SettingsManager`).
- * The user's exact entries become the model IDs surfaced via configOptions
- * and passed to `setModel`, which prevents Claude Code from silently
- * substituting a date-pinned variant (e.g. `haiku` →
- * `claude-haiku-4-5-20251001`) that the user may not have access to.
- *
- * Display info and capability flags are copied from the closest SDK match so
- * the UI still renders sensible names and effort levels.
- *
- * Semantics from https://code.claude.com/docs/en/model-config#restrict-model-selection:
- * - `undefined` is handled by the caller (no allowlist applied).
- * - The Default option is unaffected by `availableModels` — it always remains
- *   available, even when the allowlist is `[]`.
- */
-export function applyAvailableModelsAllowlist(
-  sdkModels: ModelInfo[],
-  allowlist: string[],
-  settingsModelOverrides?: Record<string, string>,
-): ModelInfo[] {
-  // Default is always preserved per the docs. Synthesize one if the SDK
-  // didn't surface it so downstream code (e.g. `getAvailableModels` picking
-  // `models[0]` as a fallback) still has something to work with.
-  const defaultModel = sdkModels.find((m) => m.value === "default") ?? {
-    value: "default",
-    displayName: "Default",
-    description: "",
-  };
-  const result: ModelInfo[] = [defaultModel];
-  const seen = new Set<string>([defaultModel.value]);
-
-  const sdkModelsWithoutDefault = sdkModels.filter((m) => m.value !== "default");
-
-  // Bedrock/Vertex deployments enforce short aliases (e.g. "claude-opus-4-6")
-  // in availableModels but require provider-specific IDs at the API. We still
-  // resolve `sdkMatch` against the alias (`trimmed`) — that's what the
-  // matching heuristics above are built for, and override targets (ARNs,
-  // opaque provider IDs) often won't textually resemble anything in
-  // `sdkModelsWithoutDefault`. Only the entry's surfaced `value` becomes the
-  // override target, so it's what `setModel` ends up passing to the API.
-  for (const entry of allowlist) {
-    const trimmed = entry.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-
-    const overridden = settingsModelOverrides?.[trimmed];
-    const effective = overridden ?? trimmed;
-    if (seen.has(effective)) continue;
-
-    const sdkMatch = resolveModelPreference(sdkModelsWithoutDefault, trimmed);
-    if (sdkMatch) {
-      result.push({ ...sdkMatch, value: effective });
-    } else {
-      result.push({ value: effective, displayName: trimmed, description: "" });
-    }
-    seen.add(effective);
-  }
-
-  // The custom model option (ANTHROPIC_CUSTOM_MODEL_OPTION) is exempt from the
-  // allowlist, the same way Default is. Per the model-config docs it adds an
-  // entry "without replacing the built-in aliases" and "appears at the bottom of
-  // the /model picker", so we append it last and skip the allowlist filter; this
-  // keeps a slim alias allowlist from hiding the custom model row.
-  // https://code.claude.com/docs/en/model-config#add-a-custom-model-option
-  const customModelOption = process.env.ANTHROPIC_CUSTOM_MODEL_OPTION?.trim();
-  if (customModelOption && !seen.has(customModelOption)) {
-    const customModel = sdkModels.find((m) => m.value === customModelOption);
-    if (customModel) {
-      result.push(customModel);
-      seen.add(customModel.value);
-    }
-  }
-
-  return result;
-}
-
-/** Whether a rejected `setModel` was vetoed by a user-configured
- *  PreModelSwitch hook. The CLI's rejection message is the stable,
- *  distinguishable marker ("Model switch blocked by a PreModelSwitch hook:
- *  <reason>"); a format change makes this stop matching and the failure
- *  falls back to the ordinary fail-loud path, no worse than before. */
-function isPreModelSwitchHookBlock(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("blocked by a PreModelSwitch hook");
-}
-
-async function getAvailableModels(
-  query: Query,
-  models: ModelInfo[],
-  sdkModels: ModelInfo[],
-  settingsManager: SettingsManager,
-  logger: Logger,
-  isResumedSession: boolean,
-  sessionId: string,
-  resumedModelHint?: string,
-): Promise<SessionModelState> {
-  const settings = settingsManager.getSettings();
-
-  let currentModel = models[0];
-  let resolvedFromInput: string | undefined;
-  // Model priority (highest to lowest):
-  // 1. ANTHROPIC_MODEL environment variable
-  // 2. settings.model (user configuration)
-  // 3. the resumed session's live model (resumed sessions only)
-  // 4. models[0] (default first model)
-  if (process.env.ANTHROPIC_MODEL) {
-    const match = resolveModelPreference(models, process.env.ANTHROPIC_MODEL);
-    if (match) {
-      currentModel = match;
-      resolvedFromInput = process.env.ANTHROPIC_MODEL;
-    }
-  } else if (typeof settings.model === "string") {
-    const match = resolveSettingsModel(models, settings.model, logger);
-    if (match) {
-      currentModel = match;
-      resolvedFromInput = settings.model;
-    }
-  }
-
-  // A resumed session restores the model from its last real assistant
-  // transcript record. Use that same local record instead of getContextUsage:
-  // the latter is a control request to the live CLI process and can add tens
-  // of seconds to session/load before its first turn. No `setModel` here: the
-  // SDK is already running this model, and pushing a picker alias back (e.g.
-  // "opus[1m]") could change the live model rather than describe it.
-  if (resolvedFromInput === undefined && isResumedSession) {
-    currentModel = resumedModelHint ? matchResumedModel(models, resumedModelHint) : currentModel;
-  }
-
-  // Skip the setModel round-trip when we can prove the SDK has already landed
-  // on the same model. Two cases qualify:
-  //  (a) No override applied — currentModel is the SDK's own default (or, on
-  //      resume, the live model read back from the SDK above); nothing to sync.
-  //  (b) The resolver returned the user's input verbatim AND that value exists
-  //      in the SDK's original model list — meaning no fuzzy match or
-  //      allowlist rewrite was involved, and the SDK (which reads the same
-  //      ANTHROPIC_MODEL / settings.json) will have arrived at the same entry.
-  //      This only holds for fresh sessions: a resumed session lands on the
-  //      transcript's model regardless of env/settings, so the override must
-  //      be re-asserted to keep the reported model truthful.
-  // Anything else (fuzzy match, allowlist-synthesized value, alias) gets a
-  // setModel call so we don't drift from the user's intended pin.
-  const sdkSawSameValue = sdkModels.some((m) => m.value === currentModel.value);
-  const skipSetModel =
-    resolvedFromInput === undefined ||
-    (!isResumedSession && currentModel.value === resolvedFromInput && sdkSawSameValue);
-  if (!skipSetModel) {
-    const setModelStartedAt = performance.now();
-    try {
-      await query.setModel(currentModel.value);
-      logger.log(
-        `[session/models] sessionId=${sessionId} phase=set-model durationMs=${Math.round(performance.now() - setModelStartedAt)} model=${currentModel.value} outcome=success`,
-      );
-    } catch (error) {
-      logger.log(
-        `[session/models] sessionId=${sessionId} phase=set-model durationMs=${Math.round(performance.now() - setModelStartedAt)} model=${currentModel.value} outcome=error`,
-      );
-      // On a fresh session the pin is a defining option — fail loudly. A
-      // resumed session already runs fine on the transcript's model, so
-      // failing the whole session/load over the re-assert would be worse
-      // than loading with the pin unapplied (mirrors the setPermissionMode
-      // containment in createSession). The SDK then stayed on the
-      // transcript's model, so read that back rather than reporting the
-      // pin the session isn't running.
-      //
-      // One fresh-session failure is advisory, not defining: a
-      // user-configured PreModelSwitch hook can veto the pin (CLI 2.1.251+;
-      // 'deny', or 'ask' — which headless sessions refuse), and the SDK
-      // rejects setModel with "Model switch blocked by a PreModelSwitch
-      // hook: …". Terminal Claude Code never lets a hook veto its startup
-      // model (the spawn model isn't a switch), so failing session/new here
-      // would make the same hook config fatal only over ACP. The session
-      // stays on the SDK's own default — report that. We can't read the
-      // live model back on this path: getContextUsage isn't serviced on a
-      // fresh session until the first prompt turn (issues #886/#880).
-      if (!isResumedSession) {
-        if (!isPreModelSwitchHookBlock(error)) throw error;
-        logger.error(
-          `Model pin "${currentModel.value}" was vetoed by a PreModelSwitch hook; staying on the default model:`,
-          error,
-        );
-        currentModel = models[0];
-      } else {
-        logger.error(`Failed to re-assert model "${currentModel.value}" on resume:`, error);
-        currentModel = resumedModelHint ? matchResumedModel(models, resumedModelHint) : models[0];
-      }
-    }
-  }
-
-  return {
-    availableModels: models.map((model) => ({
-      modelId: model.value,
-      name: model.displayName,
-      description: model.description,
-    })),
-    currentModelId: currentModel.value,
-  };
 }
 
 function getAvailableSlashCommands(

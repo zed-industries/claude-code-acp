@@ -1,0 +1,84 @@
+# Recommended config values extension
+
+This document defines the experimental AIR `recommendedValue` session configuration extension
+implemented by `claude-agent-acp`. It lets a client show concrete model and effort choices without
+an ambiguous `default` row while preserving legacy config options for every client that does not
+opt in.
+
+Permission modes and all other session config options are outside this extension and remain
+unchanged.
+
+## Capability negotiation
+
+A client opts in through the common AIR capability list in `initialize`:
+
+```json
+{
+  "clientCapabilities": {
+    "_meta": {
+      "jetbrains": {
+        "air": {
+          "version": 1,
+          "capabilities": ["recommendedValue"]
+        }
+      }
+    }
+  }
+}
+```
+
+The adapter enables the extension only when the AIR version is a finite integer greater than or
+equal to `1` and `capabilities` contains the singular `recommendedValue` capability. Otherwise it
+preserves the existing `default` rows, current values, and metadata exactly. The adapter advertises
+the same capability in its top-level initialize-response `_meta.jetbrains.air.capabilities` list.
+
+## Config option metadata
+
+For each selector transformed by the extension, the adapter writes the concrete recommendation
+through the common AIR metadata envelope at `_meta.jetbrains.air.recommendedValue`:
+
+```json
+{
+  "id": "model",
+  "type": "select",
+  "currentValue": "sonnet",
+  "options": [
+    { "value": "opus", "name": "Claude Opus" },
+    { "value": "sonnet", "name": "Claude Sonnet" },
+    { "value": "haiku", "name": "Claude Haiku" }
+  ],
+  "_meta": {
+    "jetbrains": {
+      "air": {
+        "version": 1,
+        "recommendedValue": "sonnet"
+      }
+    }
+  }
+}
+```
+
+`recommendedValue` always names one of that selector's advertised option values. It is independent
+from `currentValue`: a user's explicit selection remains current even when the SDK recommends a
+different value.
+
+## Model behavior
+
+The SDK's `default` model entry may carry a `resolvedModel` identifying the model currently
+recommended by Claude. The adapter resolves that identifier back to a selectable named model,
+removes the `default` row, and advertises the named value in
+`_meta.jetbrains.air.recommendedValue`. When the session itself is still using the SDK default, the
+same concrete value is presented as `currentValue`.
+
+If the SDK recommendation cannot be mapped to an advertised named model, the adapter retains the
+legacy `default` row for that selector and omits `recommendedValue`. This prevents a client from
+receiving a recommendation or current value it cannot select.
+
+## Effort behavior
+
+When the current model supports effort selection, the adapter removes the `default` effort row and
+advertises `medium` as the recommendation. An existing explicit or settings-derived effort remains
+the `currentValue`; an absent or legacy `default` current effort is presented as `medium`.
+
+If a future model exposes effort choices without `medium`, the first SDK-advertised effort level is
+used so both `recommendedValue` and `currentValue` remain valid option values.

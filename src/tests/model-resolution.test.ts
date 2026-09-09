@@ -6,8 +6,8 @@ import {
   resolveModelPreference,
   applyAvailableModelsAllowlist,
   matchResumedModel,
-  settingsEffortForModel,
-} from "../acp-agent.js";
+} from "../session-model.js";
+import { settingsEffortForModel } from "../session-effort.js";
 
 // Mirrors a real `supportedModels()` response: alias rows carry
 // `resolvedModel`, and "Sonnet 5" has no `major.minor` dot unlike older
