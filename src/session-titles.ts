@@ -27,6 +27,7 @@ const MAX_TITLE_CONTEXT_LENGTH = 1000;
 /** Below this the generator returns null without calling the model, so there is
  *  nothing to gain by asking yet. */
 const MIN_TITLE_CONTEXT_LENGTH = 10;
+const UNTITLED_STATUS_COMMANDS = new Set(["/mcp", "/usage", "/cost", "/stats", "/context"]);
 
 /** `generateSessionTitle` is present on the SDK's runtime `Query` class but is
  *  not declared in `sdk.d.ts` (0.3.220), so it is reached through this optional
@@ -78,6 +79,10 @@ export class SessionTitles {
    *  {@link MAX_TITLE_CONTEXT_LENGTH}. Dropped once a title exists. */
   private context?: string;
 
+  /** The transcript currently contains only status commands that should not
+   * fall back to the SDK's raw first-prompt summary as a title. */
+  private onlyUntitledStatusPrompts = false;
+
   /** Set once this session has a title or has asked for one. A title is
    *  generated at most once per session: the SDK reports a generated title in
    *  the same field as a user `/rename`, so re-titling could silently overwrite
@@ -98,7 +103,12 @@ export class SessionTitles {
     const promptText = prompt
       .flatMap((chunk) => (chunk.type === "text" ? [chunk.text] : []))
       .join("\n");
+    if (UNTITLED_STATUS_COMMANDS.has(promptText.trim())) {
+      if (!this.context?.trim()) this.onlyUntitledStatusPrompts = true;
+      return;
+    }
 
+    this.onlyUntitledStatusPrompts = false;
     this.context = appendTitleContext(this.context, `\n${promptText}\n`);
   }
 
@@ -117,6 +127,7 @@ export class SessionTitles {
     this.settled = false;
     this.context = undefined;
     this.lastTitle = undefined;
+    this.onlyUntitledStatusPrompts = false;
   }
 
   /** Turn-end title handling. `idle` is the SDK's turn-over signal, so it is
@@ -156,7 +167,7 @@ export class SessionTitles {
     // Only while this session has no title of its own: `summary` degrades to the
     // raw first prompt, which must never overwrite a generated title if the
     // persisted one is slow to show up in `info`.
-    if (fallback && !this.settled) {
+    if (fallback && !this.settled && !this.onlyUntitledStatusPrompts) {
       await this.publish(fallback.title, fallback.lastModified);
     }
   }

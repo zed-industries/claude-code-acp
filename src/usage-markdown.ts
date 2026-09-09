@@ -1,5 +1,29 @@
-import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  AccountInfo,
+  Query,
+  SDKControlGetUsageResponse,
+} from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import type { AuthStatus } from "./auth-status.js";
+
+const STRUCTURED_USAGE_TIMEOUT_MS = 5_000;
+
+type UsageLogger = { error(...args: unknown[]): void };
+
+export type UsageBillingContext = {
+  kind: "subscription" | "api_key" | "token" | "external" | "gateway" | "none" | "unknown";
+  label: string;
+};
+
+const EXTERNAL_PROVIDER_LABELS: Record<string, string> = {
+  bedrock: "AWS Bedrock",
+  vertex: "Google Vertex AI",
+  foundry: "Azure AI Foundry",
+  anthropicAws: "AWS Bedrock",
+  anthropicGoogleCloud: "Google Vertex AI",
+  mantle: "Mantle",
+};
+const ACTIVE_API_KEY_SOURCES = new Set(["ANTHROPIC_API_KEY", "apiKeyHelper", "/login managed key"]);
 
 const countSchema = z.number().finite().nonnegative();
 const percentSchema = countSchema.max(100);
@@ -70,10 +94,60 @@ export function parseUsageResponse(value: unknown): SDKControlGetUsageResponse |
 }
 
 export function isUsageCommandText(text: string): boolean {
-  return text.trim() === "/usage";
+  return ["/usage", "/cost", "/stats"].includes(text.trim());
 }
 
-function usageBar(percent: number): string {
+/** Read and validate the SDK's experimental structured usage response without
+ * allowing the control request to hold a local command indefinitely. */
+export async function fetchStructuredUsage(
+  query: Query,
+  signal: AbortSignal,
+  logger: UsageLogger,
+): Promise<SDKControlGetUsageResponse | null> {
+  if (signal.aborted) return null;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    const response = await Promise.race([
+      query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
+      new Promise<null>((resolve) => {
+        timeout = setTimeout(() => resolve(null), STRUCTURED_USAGE_TIMEOUT_MS);
+        timeout.unref?.();
+      }),
+      new Promise<null>((resolve) => {
+        onAbort = () => resolve(null);
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+    if (response === null) {
+      if (!signal.aborted) logger.error("Structured usage timed out");
+      return null;
+    }
+    const usage = parseUsageResponse(response);
+    if (!usage) logger.error("Structured usage returned an incompatible response");
+    return usage;
+  } catch (error) {
+    logger.error(`Structured usage failed: ${error}`);
+    return null;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
+/** Best-effort structured presentation for the local `/usage` turn. */
+export async function fetchStructuredUsageMarkdown(
+  query: Query,
+  signal: AbortSignal,
+  logger: UsageLogger,
+  billing?: UsageBillingContext,
+): Promise<string | null> {
+  const usage = await fetchStructuredUsage(query, signal, logger);
+  return usage ? formatUsageResponse(usage, billing) : null;
+}
+
+export function usageBar(percent: number): string {
   const cells = 20;
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = clamped === 0 ? 0 : Math.max(1, Math.round((clamped / 100) * cells));
@@ -84,7 +158,7 @@ function escapeMarkdown(value: string): string {
   return value.replace(/([\\`*_[\]<>|])/g, "\\$1").replace(/[\r\n]+/g, " ");
 }
 
-function formatDuration(milliseconds: number): string {
+export function formatDuration(milliseconds: number): string {
   const seconds = Math.max(0, Math.round(milliseconds / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -92,13 +166,89 @@ function formatDuration(milliseconds: number): string {
   return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
 }
 
-function formatCount(value: number): string {
-  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
-    value,
-  );
+export function formatCount(value: number): string {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
+    .format(value)
+    .replace(/([KMBT])$/, (suffix) => suffix.toLowerCase());
 }
 
-function formatReset(value: string | null): string {
+function planLabel(plan: string): string {
+  const titled = plan.replace(/\S+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1));
+  return /^claude(\s|$)/i.test(plan) ? titled : `Claude ${titled}`;
+}
+
+/** Resolve the credential that pays for this session. AccountInfo wins because
+ * it describes the live Query; AuthStatus fills gaps left by older CLIs. */
+export function usageBillingContext(
+  account: AccountInfo | undefined,
+  fallback?: AuthStatus,
+): UsageBillingContext | undefined {
+  const provider = account?.apiProvider;
+  if (provider === "gateway") return { kind: "gateway", label: "Custom model gateway" };
+  if (provider && provider !== "firstParty") {
+    return { kind: "external", label: EXTERNAL_PROVIDER_LABELS[provider] ?? provider };
+  }
+  if (account?.apiKeySource && ACTIVE_API_KEY_SOURCES.has(account.apiKeySource)) {
+    return { kind: "api_key", label: "Anthropic API key" };
+  }
+  if (account?.tokenSource) return { kind: "token", label: "Bearer or OAuth token" };
+  if (account?.subscriptionType) {
+    return { kind: "subscription", label: planLabel(account.subscriptionType) };
+  }
+  if (account?.apiKeySource && account.apiKeySource !== "none") {
+    return { kind: "api_key", label: "Anthropic API key" };
+  }
+  if (!fallback) return undefined;
+  if (fallback.kind === "account") return { kind: "subscription", label: fallback.label };
+  return { kind: fallback.kind, label: fallback.label };
+}
+
+function inferredBillingContext(
+  usage: SDKControlGetUsageResponse,
+  billing?: UsageBillingContext,
+): UsageBillingContext {
+  if (billing) return billing;
+  if (usage.subscription_type) {
+    return { kind: "subscription", label: planLabel(usage.subscription_type) };
+  }
+  return { kind: "unknown", label: "API or external provider" };
+}
+
+function billingSummary(context: UsageBillingContext): string {
+  switch (context.kind) {
+    case "subscription":
+      return `${context.label} · Subscription`;
+    case "api_key":
+      return `${context.label} · Usage-based billing · Plan limits do not apply`;
+    case "token":
+      return `${context.label} · Token-authenticated usage · Plan limits do not apply`;
+    case "external":
+      return `${context.label} · Provider billing · Plan limits do not apply`;
+    case "gateway":
+      return `${context.label} · External billing · Plan limits do not apply`;
+    case "none":
+      return `${context.label} · Usage data may be incomplete`;
+    case "unknown":
+      return `${context.label} · Plan limits do not apply`;
+    default:
+      return context.label;
+  }
+}
+
+function formatMoney(value: number, currency = "USD"): string {
+  try {
+    return new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${escapeMarkdown(currency)}`;
+  }
+}
+
+export function formatReset(value: string | null): string {
   if (!value) return "";
   const reset = new Date(value);
   if (Number.isNaN(reset.getTime())) return ` · Resets ${escapeMarkdown(value)}`;
@@ -108,20 +258,56 @@ function formatReset(value: string | null): string {
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
+    timeZone: "UTC",
   }).format(reset)}`;
 }
 
-function appendLimit(
-  lines: string[],
-  label: string,
-  window: { utilization: number | null; resets_at: string | null } | null | undefined,
-): void {
-  if (!window || window.utilization === null) return;
+type UsageLimitProgress = {
+  label: string;
+  utilization: number;
+  resetsAt: string | null;
+};
+
+/** Every quota window exposed by structured usage, in display order. */
+function usageLimitProgress(usage: SDKControlGetUsageResponse): UsageLimitProgress[] {
+  if (!usage.rate_limits_available || !usage.rate_limits) return [];
+  const limits = usage.rate_limits;
+  const rows: UsageLimitProgress[] = [];
+  const add = (
+    label: string,
+    window: { utilization: number | null; resets_at: string | null } | null | undefined,
+  ) => {
+    if (window?.utilization === null || window?.utilization === undefined) return;
+    rows.push({ label, utilization: window.utilization, resetsAt: window.resets_at });
+  };
+
+  add("5-hour limit", limits.five_hour);
+  add("Weekly · all models", limits.seven_day);
+  add("Weekly · OAuth apps", limits.seven_day_oauth_apps);
+  const modelWindows = limits.model_scoped ?? [];
+  for (const model of modelWindows) add(`Weekly · ${model.display_name}`, model);
+  if (modelWindows.length === 0) {
+    add("Weekly · Opus", limits.seven_day_opus);
+    add("Weekly · Sonnet", limits.seven_day_sonnet);
+  }
+  const extra = limits.extra_usage;
+  if (extra?.is_enabled && extra.utilization !== null) {
+    const amount =
+      extra.used_credits !== null && extra.monthly_limit !== null
+        ? ` · ${formatMoney(extra.used_credits, extra.currency ?? "USD")} / ${formatMoney(extra.monthly_limit, extra.currency ?? "USD")}`
+        : "";
+    rows.push({
+      label: `Extra usage${amount}`,
+      utilization: extra.utilization,
+      resetsAt: null,
+    });
+  }
+  return rows;
+}
+
+function appendLimit(lines: string[], limit: UsageLimitProgress): void {
   lines.push(
-    `**${escapeMarkdown(label)}** — **${window.utilization}%**${formatReset(window.resets_at)}`,
-    "",
-    `\`${usageBar(window.utilization)}\``,
-    "",
+    `**${escapeMarkdown(limit.label)}** · \`${usageBar(limit.utilization)}\` **${limit.utilization}%**${formatReset(limit.resetsAt)}`,
   );
 }
 
@@ -139,31 +325,27 @@ function appendContributions(
     `**${label}** · ${period.request_count} requests · ${period.session_count} sessions`,
   );
   if (period.mcp_servers.length === 0) return;
-  lines.push("", "| MCP server | Usage |", "|:--|--:|");
-  for (const server of [...period.mcp_servers].sort((a, b) => b.pct - a.pct).slice(0, 3)) {
-    lines.push(`| ${escapeMarkdown(server.name)} | \`${usageBar(server.pct)}\` ${server.pct}% |`);
-  }
+  const servers = [...period.mcp_servers]
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 3)
+    .map((server) => `${escapeMarkdown(server.name)} ${server.pct}%`);
+  lines.push(`MCP: ${servers.join(" · ")}`);
 }
 
 /** Render the SDK's structured `/usage` response as Markdown. */
-export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
-  const lines = ["## Usage"];
-  if (usage.subscription_type) {
-    lines.push("", `> Claude ${escapeMarkdown(usage.subscription_type)} subscription usage`);
-  }
+export function formatUsageResponse(
+  usage: SDKControlGetUsageResponse,
+  billing?: UsageBillingContext,
+): string {
+  const context = inferredBillingContext(usage, billing);
+  const limits = usageLimitProgress(usage);
+  const limitsUnavailable = context.kind === "subscription" && limits.length === 0;
+  const summary = `${billingSummary(context)}${limitsUnavailable ? " · Plan limits unavailable" : ""}`;
+  const lines = ["## Usage", "", `> ${escapeMarkdown(summary)}`];
 
-  if (usage.rate_limits_available && usage.rate_limits) {
+  if (context.kind === "subscription" || context.kind === "unknown") {
     const limitLines: string[] = [];
-    appendLimit(limitLines, "5-hour limit", usage.rate_limits.five_hour);
-    appendLimit(limitLines, "Weekly · all models", usage.rate_limits.seven_day);
-    const modelWindows = usage.rate_limits.model_scoped ?? [];
-    for (const model of modelWindows) {
-      appendLimit(limitLines, `Weekly · ${model.display_name}`, model);
-    }
-    if (modelWindows.length === 0) {
-      appendLimit(limitLines, "Weekly · Opus", usage.rate_limits.seven_day_opus);
-      appendLimit(limitLines, "Weekly · Sonnet", usage.rate_limits.seven_day_sonnet);
-    }
+    for (const limit of limits) appendLimit(limitLines, limit);
     if (limitLines.length > 0) {
       if (limitLines.at(-1) === "") limitLines.pop();
       lines.push("", "### Limits", "", ...limitLines);
@@ -184,11 +366,11 @@ export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
     "",
     "---",
     "",
-    "### This session",
+    "### Current runtime",
     "",
-    "| Cost | API time | Active |",
+    "| Estimated cost | API time | Active |",
     "|:--|:--|:--|",
-    `| $${usage.session.total_cost_usd.toFixed(2)} | ${formatDuration(usage.session.total_api_duration_ms)} | ${formatDuration(usage.session.total_duration_ms)} |`,
+    `| ${formatMoney(usage.session.total_cost_usd)} | ${formatDuration(usage.session.total_api_duration_ms)} | ${formatDuration(usage.session.total_duration_ms)} |`,
     "",
     "| Breakdown | Tokens |",
     "|:--|--:|",
@@ -198,7 +380,7 @@ export function formatUsageResponse(usage: SDKControlGetUsageResponse): string {
     `| Cache write | ${formatCount(totals.cacheWrite)} |`,
   );
 
-  if (usage.behaviors) {
+  if (usage.behaviors && (context.kind === "subscription" || context.kind === "unknown")) {
     lines.push(
       "",
       "---",

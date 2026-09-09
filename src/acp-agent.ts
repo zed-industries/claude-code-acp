@@ -241,7 +241,13 @@ import {
 } from "./exit-plan.js";
 import { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { parseToolResultMeta } from "./tool-result-meta.js";
-import { formatUsageResponse, isUsageCommandText, parseUsageResponse } from "./usage-markdown.js";
+import {
+  fetchStructuredUsageMarkdown,
+  isUsageCommandText,
+  type UsageBillingContext,
+  usageBillingContext,
+} from "./usage-markdown.js";
+import { fetchMcpStatusMarkdown, isMcpStatusCommand } from "./mcp-status-markdown.js";
 
 export { DEFAULT_AGENT_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
 import { MODE_CONFIG_ID, SessionModeManager } from "./session-mode.js";
@@ -319,57 +325,6 @@ const DEFAULT_CONTEXT_WINDOW = 200000;
  *  "obviously stuck" ceiling, not a guess at interrupt latency, so it can't
  *  pre-empt a slow-but-healthy interrupt. */
 const DEFAULT_FORCE_CANCEL_GRACE_MS = 30_000;
-const STRUCTURED_USAGE_TIMEOUT_MS = 5_000;
-
-/** Best-effort structured presentation for a local `/usage` turn. The command
- * itself always runs through Claude Code; null tells the consumer to forward
- * its original output unchanged. The timeout prevents an unstable control
- * request from holding an otherwise-completed local command indefinitely. */
-async function structuredUsageMarkdown(
-  query: Query,
-  signal: AbortSignal,
-  logger: Logger,
-): Promise<string | null> {
-  if (signal.aborted) return null;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let onAbort: (() => void) | undefined;
-  try {
-    const response = await Promise.race([
-      // Keeping the deliberately unstable method name visible makes an SDK
-      // upgrade fail at compile time if Anthropic removes or renames it.
-      query.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(),
-      new Promise<null>((resolve) => {
-        timeout = setTimeout(() => resolve(null), STRUCTURED_USAGE_TIMEOUT_MS);
-        timeout.unref?.();
-      }),
-      new Promise<null>((resolve) => {
-        onAbort = () => resolve(null);
-        if (signal.aborted) onAbort();
-        else signal.addEventListener("abort", onAbort, { once: true });
-      }),
-    ]);
-    if (response === null) {
-      if (!signal.aborted) {
-        logger.error("Structured /usage timed out; preserving Claude Code output");
-      }
-      return null;
-    }
-    const usage = parseUsageResponse(response);
-    if (!usage) {
-      logger.error(
-        "Structured /usage returned an incompatible response; preserving Claude Code output",
-      );
-      return null;
-    }
-    return formatUsageResponse(usage);
-  } catch (error) {
-    logger.error(`Structured /usage failed; preserving Claude Code output: ${error}`);
-    return null;
-  } finally {
-    if (timeout) clearTimeout(timeout);
-    if (onAbort) signal.removeEventListener("abort", onAbort);
-  }
-}
 
 /** Claude Code keeps the OAuth callback listener open in the background after
  *  `mcpAuthenticate` returns the authorization URL. The SDK does not expose
@@ -551,17 +506,20 @@ type Turn = {
    *  so the consumer can't promote them via the replay; it falls back to
    *  promoting the queue head when the result arrives. */
   isLocalOnlyCommand: boolean;
-  /** Structured presentation for an exact /usage command. The command still
-   * runs through the normal SDK turn so ordering, cancellation, persistence,
-   * and replay remain unchanged. Null means the experimental API failed and
-   * every output path must preserve Claude Code's original text. */
-  isUsageCommand?: boolean;
-  usageMarkdown?: Promise<string | null>;
-  usageMarkdownAbort?: AbortController;
-  /** The SDK can expose a local command through more than one message shape;
-   * publish the structured replacement at most once. */
-  usageMarkdownDelivered?: boolean;
-  usageOriginalOutput?: string;
+  /** Structured presentation for exact status commands. The command still runs
+   * through the SDK turn so ordering, cancellation, persistence, and replay
+   * remain unchanged. */
+  structuredCommand?: {
+    kind: "usage" | "mcp";
+    abort: AbortController;
+    markdown?: Promise<string | null>;
+    delivered?: boolean;
+    originalOutput?: string;
+  };
+  /** Status-only commands should not become the generated session title. */
+  suppressTitle?: boolean;
+  /** `/context` supplied an authoritative structured occupancy reading. */
+  contextUsageReported?: boolean;
   /** Optional hidden, model-authored file-change audit requested by the ACP
    *  client for this turn. The state is turn-owned so a late tool call can
    *  never be rebound to a newer prompt. */
@@ -1058,6 +1016,8 @@ export type Session = {
    *  cached account was swapped. Undefined when the account carried no
    *  identity signal, which is "nothing to compare", not a match. */
   accountKind?: AuthStatusKind;
+  /** Billing identity captured from the live Query's AccountInfo for `/usage`. */
+  usageBilling?: UsageBillingContext;
   /** Set under `--hide-claude-auth` when the CLI reported a sign-out during
    *  this session. The query is closed and the account it cached at
    *  `initialize` now describes a credential that no longer works, so the next
@@ -2639,11 +2599,14 @@ export class ClaudeAcpAgent {
       fileChangeAudit = createFileChangeAuditTurnState(fileChangeReportRequestId);
     }
 
-    const isUsageCommand =
+    const structuredCommandKind =
       params.prompt.length === 1 &&
       params.prompt[0]?.type === "text" &&
-      isUsageCommandText(params.prompt[0].text);
-    const usageMarkdownAbort = isUsageCommand ? new AbortController() : undefined;
+      (isUsageCommandText(params.prompt[0].text)
+        ? "usage"
+        : isMcpStatusCommand(params.prompt[0].text)
+          ? "mcp"
+          : undefined);
 
     session.titles.onPrompt(params.prompt);
 
@@ -2654,8 +2617,17 @@ export class ClaudeAcpAgent {
     const turn: Turn = {
       promptUuid,
       isLocalOnlyCommand,
-      ...(isUsageCommand ? { isUsageCommand: true } : {}),
-      ...(usageMarkdownAbort ? { usageMarkdownAbort } : {}),
+      ...(structuredCommandKind
+        ? {
+            structuredCommand: {
+              kind: structuredCommandKind,
+              abort: new AbortController(),
+            },
+          }
+        : {}),
+      ...((structuredCommandKind || firstText.trim() === "/context") && {
+        suppressTitle: true,
+      }),
       ...(fileChangeAudit ? { fileChangeAudit } : {}),
       settled: false,
       resolve: () => {},
@@ -3202,7 +3174,8 @@ export class ClaudeAcpAgent {
         }
         if (!claudeMeta?.parentToolUseId) {
           session.emittedAssistantText = true;
-          session.titles.onAssistantText(update.content);
+          const owningTurn = session.activeTurn ?? session.turnQueue?.find((turn) => !turn.settled);
+          if (!owningTurn?.suppressTitle) session.titles.onAssistantText(update.content);
         }
       }
       await this.client.sessionUpdate(routedNotification);
@@ -3308,14 +3281,24 @@ export class ClaudeAcpAgent {
         supportsAirSessionFailures(this.clientCapabilities) ? undefined : rawDetail,
       );
 
-    const ensureUsageMarkdown = (turn: Turn): Promise<string | null> | undefined => {
-      if (!turn.isUsageCommand || !turn.usageMarkdownAbort) return undefined;
-      turn.usageMarkdown ??= structuredUsageMarkdown(
-        session.query,
-        turn.usageMarkdownAbort.signal,
-        this.logger,
-      );
-      return turn.usageMarkdown;
+    const ensureStructuredCommandMarkdown = (turn: Turn): Promise<string | null> | undefined => {
+      const command = turn.structuredCommand;
+      if (!command) return undefined;
+      command.markdown ??=
+        command.kind === "usage"
+          ? fetchStructuredUsageMarkdown(
+              session.query,
+              command.abort.signal,
+              this.logger,
+              session.usageBilling,
+            )
+          : fetchMcpStatusMarkdown(
+              session.query,
+              command.abort.signal,
+              this.logger,
+              new Set([FILE_CHANGE_AUDIT_SERVER_NAME]),
+            );
+      return command.markdown;
     };
 
     const resetTurnScratch = () => {
@@ -3359,7 +3342,7 @@ export class ClaudeAcpAgent {
     const activateTurn = (turn: Turn) => {
       session.activeTurn = turn;
       session.cancelled = false;
-      ensureUsageMarkdown(turn);
+      ensureStructuredCommandMarkdown(turn);
       session.pendingOrphanResults = 0;
       session.orphanCommands?.clear();
       // Two-phase sweep of registry entries the level signal ended (see
@@ -3553,23 +3536,23 @@ export class ClaudeAcpAgent {
      * local-command output. Undefined means this is not a structured usage
      * turn (or its request failed), null means another SDK message shape
      * already delivered it, and string is the one replacement to publish. */
-    const takeUsageMarkdown = async (
+    const takeStructuredCommandMarkdown = async (
       originalOutput: string,
     ): Promise<string | null | undefined> => {
       const turn = session.activeTurn ?? firstUnsettledQueuedTurn();
       if (!turn) return undefined;
-      const usageMarkdown = ensureUsageMarkdown(turn);
-      if (!usageMarkdown) return undefined;
-      const markdown = await usageMarkdown;
+      const structuredMarkdown = ensureStructuredCommandMarkdown(turn);
+      if (!structuredMarkdown || !turn.structuredCommand) return undefined;
+      const markdown = await structuredMarkdown;
       if (markdown === null) return undefined;
-      if (turn.usageMarkdownDelivered) {
+      if (turn.structuredCommand.delivered) {
         // Different SDK message shapes can mirror the same local-command
         // output. Suppress an exact mirror, but let a later, distinct frame
         // (for example an interruption diagnostic) follow the normal path.
-        return turn.usageOriginalOutput === originalOutput ? null : undefined;
+        return turn.structuredCommand.originalOutput === originalOutput ? null : undefined;
       }
-      turn.usageMarkdownDelivered = true;
-      turn.usageOriginalOutput = originalOutput;
+      turn.structuredCommand.delivered = true;
+      turn.structuredCommand.originalOutput = originalOutput;
       return markdown;
     };
 
@@ -3648,7 +3631,7 @@ export class ClaudeAcpAgent {
       // Captured before the settled flip below (isHeldOpen tests !settled).
       const wasHeld = isHeldOpen(turn);
       turn.settled = true;
-      turn.usageMarkdownAbort?.abort();
+      turn.structuredCommand?.abort.abort();
       disarmForceCancel(session);
       session.turnQueue = (session.turnQueue ?? []).filter((t) => t !== turn);
       session.activeTurn = null;
@@ -4150,15 +4133,15 @@ export class ClaudeAcpAgent {
                 if (compaction.consumeDuplicateErrorOutput(message.content)) {
                   break;
                 }
-                const usageTurn = session.activeTurn ?? firstUnsettledQueuedTurn();
-                const usageMarkdown = await takeUsageMarkdown(message.content);
-                if (usageTurn?.isUsageCommand && session.cancelled) break;
-                if (usageMarkdown === null) break;
+                const structuredTurn = session.activeTurn ?? firstUnsettledQueuedTurn();
+                const structuredMarkdown = await takeStructuredCommandMarkdown(message.content);
+                if (structuredTurn?.structuredCommand && session.cancelled) break;
+                if (structuredMarkdown === null) break;
                 await sendUpdate({
                   sessionId: message.session_id,
                   update: {
                     sessionUpdate: "agent_message_chunk",
-                    content: { type: "text", text: usageMarkdown ?? message.content },
+                    content: { type: "text", text: structuredMarkdown ?? message.content },
                   },
                 });
                 break;
@@ -4917,7 +4900,7 @@ export class ClaudeAcpAgent {
               }
 
               // Send usage_update notification
-              if (lastAssistantTotalUsage !== null) {
+              if (lastAssistantTotalUsage !== null && !session.activeTurn?.contextUsageReported) {
                 await sendUpdate({
                   sessionId: params.sessionId,
                   update: {
@@ -5166,10 +5149,10 @@ export class ClaudeAcpAgent {
                       !deliveredCompactionOutput &&
                       (message.usage.output_tokens ?? 0) === 0);
                   if (shouldForwardResult) {
-                    const usageMarkdown = await takeUsageMarkdown(message.result);
-                    if (usageMarkdown === null) break;
+                    const structuredMarkdown = await takeStructuredCommandMarkdown(message.result);
+                    if (structuredMarkdown === null) break;
                     for (const notification of toAcpNotifications(
-                      usageMarkdown ?? message.result,
+                      structuredMarkdown ?? message.result,
                       "assistant",
                       params.sessionId,
                       session.toolUseCache,
@@ -5557,6 +5540,27 @@ export class ClaudeAcpAgent {
               lastAssistantUsage = snapshotFromUsage(message.message.usage);
               lastAssistantTotalUsage = totalTokens(lastAssistantUsage);
               session.contextUsedTokens = lastAssistantTotalUsage;
+              const contextUsage = message.context_usage;
+              if (
+                contextUsage &&
+                Number.isFinite(contextUsage.total_tokens) &&
+                contextUsage.total_tokens >= 0 &&
+                Number.isFinite(contextUsage.raw_max_tokens) &&
+                contextUsage.raw_max_tokens > 0
+              ) {
+                session.contextUsedTokens = contextUsage.total_tokens;
+                session.contextWindowSize = contextUsage.raw_max_tokens;
+                session.contextWindowAuthoritative = true;
+                if (session.activeTurn) session.activeTurn.contextUsageReported = true;
+                await sendUpdate({
+                  sessionId: message.session_id,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: contextUsage.total_tokens,
+                    size: contextUsage.raw_max_tokens,
+                  },
+                });
+              }
               lastAssistantWasUsageLimit = isSyntheticUsageLimitMessage(message.message);
               if (message.error || lastAssistantWasUsageLimit) {
                 lastAssistantFailureTitle = assistantMessageText(message.message);
@@ -5587,14 +5591,14 @@ export class ClaudeAcpAgent {
               message.parent_tool_use_id === null &&
               message.message.model === "<synthetic>"
             ) {
-              const usageMarkdown = await takeUsageMarkdown(
+              const structuredMarkdown = await takeStructuredCommandMarkdown(
                 assistantMessageText(message.message) ?? "",
               );
               if (session.cancelled) break;
-              if (usageMarkdown !== undefined) {
-                if (usageMarkdown !== null) {
+              if (structuredMarkdown !== undefined) {
+                if (structuredMarkdown !== null) {
                   for (const notification of toAcpNotifications(
-                    usageMarkdown,
+                    structuredMarkdown,
                     "assistant",
                     params.sessionId,
                     session.toolUseCache,
@@ -6012,7 +6016,7 @@ export class ClaudeAcpAgent {
       return;
     }
     session.cancelled = true;
-    for (const turn of session.turnQueue ?? []) turn.usageMarkdownAbort?.abort();
+    for (const turn of session.turnQueue ?? []) turn.structuredCommand?.abort.abort();
     session.pendingExitPlanModeInterruption = undefined;
     session.pendingExitPlanContextReset = undefined;
     // The stream already ended (see closeQueryStream): every in-flight turn was
@@ -8332,6 +8336,13 @@ export class ClaudeAcpAgent {
         sessionFailureState: createSessionFailureState(),
         claudeSubscriptionGuard,
         accountKind: fromAccountInfo(initializationResult.account)?.kind,
+        usageBilling: usageBillingContext(
+          initializationResult.account,
+          // A client provider override reroutes this Query without changing the
+          // agent-owned login reported by currentAuthStatus. Falling back to
+          // that unrelated identity would mislabel who pays for this session.
+          this.providerConfig ? undefined : this.currentAuthStatus,
+        ),
         fileChangeReportRequestIds: new Set(),
         fileChangeAuditSupport,
       };
@@ -9504,7 +9515,7 @@ function getAvailableSlashCommands(
     "todos",
   ];
 
-  return commands
+  const availableCommands = commands
     .filter((command) => !terminalCommands?.includes(command.name))
     .map((command) => {
       const input = command.argumentHint
@@ -9525,6 +9536,29 @@ function getAvailableSlashCommands(
       };
     })
     .filter((command: AvailableCommand) => !UNSUPPORTED_COMMANDS.includes(command.name));
+
+  const nativeMcp = availableCommands.find((command) => command.name === "mcp");
+  const usageAliases: AvailableCommand[] = [
+    { name: "cost", description: "Alias for /usage", input: null },
+    { name: "stats", description: "Alias for /usage", input: null },
+  ];
+  return [
+    ...availableCommands.filter(
+      (command) =>
+        command.name !== "mcp" && !usageAliases.some((alias) => alias.name === command.name),
+    ),
+    nativeMcp
+      ? {
+          ...nativeMcp,
+          description: "Show status; reconnect, enable, or disable MCP servers",
+        }
+      : {
+          name: "mcp",
+          description: "Show configured MCP servers and their connection status",
+          input: null,
+        },
+    ...usageAliases,
+  ];
 }
 
 function formatUriAsLink(uri: string): string {
