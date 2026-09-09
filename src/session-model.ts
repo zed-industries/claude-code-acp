@@ -52,7 +52,9 @@ function modelVersionsCompatible(preference: string, candidate: ModelInfo): bool
 
 function displayModelVersion(model: ModelInfo, family: string): string | undefined {
   const familyVersion = new RegExp(`\\b${family}[-\\s]+(\\d+)(?:[-.](\\d+))?`, "i");
-  for (const source of [model.resolvedModel, model.description, model.value, model.displayName]) {
+  // The display name is the value we are deciding whether to rewrite, so it
+  // cannot validate its own normalization. Require independent SDK metadata.
+  for (const source of [model.resolvedModel, model.description, model.value]) {
     const match = source?.match(familyVersion);
     if (match) return match[2] ? `${match[1]}.${match[2]}` : match[1];
   }
@@ -67,8 +69,9 @@ function versionedModelDisplayName(model: ModelInfo): string {
   const versionable = model.displayName.match(VERSIONABLE_MODEL_DISPLAY_PATTERN);
   if (!versionable) return model.displayName;
   const withoutContext = model.displayName.replace(DISPLAY_CONTEXT_SUFFIX_PATTERN, "");
-  if (/\b\d+(?:\.\d+)?\b/.test(withoutContext)) return withoutContext;
   const version = displayModelVersion(model, versionable[1]);
+  if (!version) return model.displayName;
+  if (/\b\d+(?:\.\d+)?\b/.test(withoutContext)) return withoutContext;
   return version ? `${withoutContext} ${version}` : model.displayName;
 }
 

@@ -52,8 +52,7 @@ describe("versioned model display names", () => {
     expect(state.availableModels).toEqual(
       models.map((model) => ({
         modelId: model.value,
-        name:
-          model === OPUS ? "Opus 5" : model.value === "sonnet[1m]" ? "Sonnet 5" : model.displayName,
+        name: model === OPUS ? "Opus 5" : model.displayName,
         description: model.description,
       })),
     );
@@ -96,6 +95,7 @@ describe("versioned model display names", () => {
       },
       { value: "custom", displayName: "My Sonnet", description: "" },
       { value: "future", displayName: "Haiku (1M context)", description: "" },
+      { value: "custom-versioned", displayName: "Fable 5.1 (1M context)", description: "" },
     ];
     const state = await getAvailableModels(
       {} as Query,
@@ -114,6 +114,7 @@ describe("versioned model display names", () => {
       "Opus 5",
       "My Sonnet",
       "Haiku (1M context)",
+      "Fable 5.1 (1M context)",
     ]);
   });
 

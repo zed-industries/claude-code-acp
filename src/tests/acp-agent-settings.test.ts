@@ -154,6 +154,58 @@ describe("ClaudeAcpAgent settings", () => {
     },
   );
 
+  it("seeds effort from higher-priority programmatic model settings", async () => {
+    await fs.promises.writeFile(
+      path.join(tempDir, "settings.json"),
+      JSON.stringify({ effortLevel: "high" }),
+    );
+    const applyFlagSettings = vi.fn();
+    querySpy.mockReturnValue(
+      makeMockQuery({
+        initializationResult: async () => ({
+          models: [
+            {
+              value: "sonnet[1m]",
+              resolvedModel: "claude-sonnet-5[1m]",
+              displayName: "Sonnet",
+              description: "",
+              supportsEffort: true,
+              supportedEffortLevels: ["low", "medium", "high"],
+            },
+          ],
+        }),
+        applyFlagSettings,
+      }),
+    );
+    const { ClaudeAcpAgent } = await import("../acp-agent.js");
+    const agent = new ClaudeAcpAgent(createMockClient());
+    (agent as any).clientCapabilities = {
+      _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+    };
+
+    const response = await (agent as any).createSession({
+      cwd: tempDir,
+      mcpServers: [],
+      _meta: {
+        disableBuiltInTools: true,
+        claudeCode: {
+          options: {
+            settings: {
+              effortLevel: "medium",
+              modelSettings: { "claude-sonnet-5-1m": { effortLevel: "low" } },
+            },
+          },
+        },
+      },
+    });
+
+    expect(response.configOptions.find((option: any) => option.id === "effort").currentValue).toBe(
+      "low",
+    );
+    expect(applyFlagSettings).toHaveBeenCalledWith({ effortLevel: "low" });
+    expect(agent.sessions[response.sessionId].effortSettingsOverride?.effortLevel).toBe("medium");
+  });
+
   it("supports acceptEdits mode defaults", async () => {
     await fs.promises.writeFile(
       path.join(tempDir, "settings.json"),

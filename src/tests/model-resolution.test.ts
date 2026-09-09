@@ -296,6 +296,20 @@ describe("settingsEffortForModel", () => {
     expect(settingsEffortForModel(byRawId, undefined, "claude-x")).toBe("xhigh");
   });
 
+  it("matches equivalent -1m and [1m] modelSettings keys", () => {
+    const settings = {
+      effortLevel: "high" as const,
+      modelSettings: { "claude-sonnet-5-1m": { effortLevel: "low" as const } },
+    };
+    expect(
+      settingsEffortForModel(settings, {
+        ...SONNET,
+        value: "sonnet[1m]",
+        resolvedModel: "claude-sonnet-5[1m]",
+      }),
+    ).toBe("low");
+  });
+
   it("falls back to the top-level effortLevel when no per-model entry matches", () => {
     expect(settingsEffortForModel({ effortLevel: "high" }, SONNET)).toBe("high");
     expect(

@@ -663,6 +663,27 @@ describe("session config options", () => {
       expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: null });
     });
 
+    it("re-seeds switches from retained programmatic settings before file settings", async () => {
+      (agent as any).clientCapabilities = {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+      };
+      const session = agent.sessions[SESSION_ID];
+      session.settingsManager.getSettings = () => ({ effortLevel: "high" });
+      session.effortSettingsOverride = {
+        effortLevel: "medium",
+        modelSettings: { "claude-sonnet-4-6": { effortLevel: "low" } },
+      };
+
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+
+      expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("low");
+      expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "low" });
+    });
+
     it("clears an unsupported user pin before choosing the new model's concrete effort", async () => {
       (agent as any).clientCapabilities = {
         _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },

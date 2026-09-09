@@ -22,12 +22,39 @@ export function settingsEffortForModel(
 ): string | undefined {
   const modelSettings = settings.modelSettings;
   if (modelSettings) {
+    const canonicalize = (value: string) =>
+      value
+        .trim()
+        .toLowerCase()
+        .replace(/-(\d+m)$/i, "[$1]");
     for (const key of [modelInfo?.resolvedModel, modelInfo?.value, modelId]) {
-      const perModel = key !== undefined ? modelSettings[key]?.effortLevel : undefined;
+      if (key === undefined) continue;
+      const exact = modelSettings[key]?.effortLevel;
+      if (typeof exact === "string") return exact;
+      const canonicalKey = canonicalize(key);
+      const matchingEntry = Object.entries(modelSettings).find(
+        ([candidate]) => canonicalize(candidate) === canonicalKey,
+      );
+      const perModel = matchingEntry?.[1]?.effortLevel;
       if (typeof perModel === "string") return perModel;
     }
   }
   return settings.effortLevel;
+}
+
+/** Programmatic query settings have higher priority than file-backed settings,
+ * matching the SDK. Keep unrelated per-model entries from lower tiers while
+ * replacing entries supplied at the programmatic tier. */
+export function mergeEffortSettings(base: Settings, override: Settings | undefined): Settings {
+  if (!override) return base;
+  return {
+    ...base,
+    ...override,
+    modelSettings:
+      base.modelSettings || override.modelSettings
+        ? { ...base.modelSettings, ...override.modelSettings }
+        : undefined,
+  };
 }
 
 export function buildEffortConfigOption(

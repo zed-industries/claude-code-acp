@@ -81,6 +81,7 @@ import {
   SDKPartialAssistantMessage,
   SessionMessage,
   SDKUserMessage,
+  Settings,
   SlashCommand,
   ThinkingConfig,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -259,6 +260,7 @@ import {
 import {
   buildEffortConfigOption,
   EFFORT_CONFIG_ID,
+  mergeEffortSettings,
   settingsEffortForModel,
   toSdkEffortLevel,
 } from "./session-effort.js";
@@ -789,6 +791,9 @@ export type Session = {
   /** Original ACP parameters used to recreate this query with a new provider. */
   creationParams?: NewSessionRequest;
   settingsManager: SettingsManager;
+  /** Higher-priority programmatic settings passed to query(). Retained so
+   * model switches resolve effort from the same effective settings as the SDK. */
+  effortSettingsOverride?: Settings;
   /** This session's title state and the turn-end logic that maintains it. */
   titles: SessionTitles;
   accumulatedUsage: AccumulatedUsage;
@@ -7416,7 +7421,14 @@ export class ClaudeAcpAgent {
         newModelInfo.supportedEffortLevels?.some((level) => level === pinnedEffort) === true;
       const seedEffort = effortPinnedForNewModel
         ? pinnedEffort
-        : settingsEffortForModel(session.settingsManager.getSettings(), newModelInfo, value);
+        : settingsEffortForModel(
+            mergeEffortSettings(
+              session.settingsManager.getSettings(),
+              session.effortSettingsOverride,
+            ),
+            newModelInfo,
+            value,
+          );
       session.configOptions = buildConfigOptions(
         session.modes,
         session.models,
@@ -7970,17 +7982,18 @@ export class ClaudeAcpAgent {
             ...(modelConfig.availableModels && { availableModels: modelConfig.availableModels }),
           }
         : undefined);
+    const configuredSettingsObject =
+      typeof configuredSettings === "string"
+        ? (JSON.parse(
+            await fs.readFile(path.resolve(params.cwd, configuredSettings), "utf8"),
+          ) as Settings)
+        : configuredSettings;
     // Claude Code applies env from settings.json after the subprocess env. Put
     // an active ACP route in the programmatic settings tier too so user/project
     // settings cannot silently restore a different ANTHROPIC_BASE_URL.
     let settings = configuredSettings;
     if (resolvedProvider) {
-      const baseSettings =
-        typeof configuredSettings === "string"
-          ? (JSON.parse(
-              await fs.readFile(path.resolve(params.cwd, configuredSettings), "utf8"),
-            ) as Exclude<Options["settings"], string | undefined>)
-          : configuredSettings;
+      const baseSettings = configuredSettingsObject;
       settings = {
         ...baseSettings,
         apiKeyHelper: "",
@@ -8335,7 +8348,10 @@ export class ClaudeAcpAgent {
         models,
         modelInfos,
         userProvidedOptions?.effort ??
-          settingsEffortForModel(settingsManager.getSettings(), currentModelInfo),
+          settingsEffortForModel(
+            mergeEffortSettings(settingsManager.getSettings(), configuredSettingsObject),
+            currentModelInfo,
+          ),
         agents,
         currentAgent,
         fastMode,
@@ -8382,6 +8398,7 @@ export class ClaudeAcpAgent {
         sessionFingerprint: computeSessionFingerprint(params),
         creationParams: params,
         settingsManager,
+        effortSettingsOverride: configuredSettingsObject,
         titles: new SessionTitles(this, sessionId),
         accumulatedUsage: {
           inputTokens: 0,
