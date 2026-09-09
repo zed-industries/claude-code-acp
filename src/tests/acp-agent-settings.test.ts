@@ -99,6 +99,7 @@ describe("ClaudeAcpAgent settings", () => {
 
   it.each([
     { recommended: false, setting: undefined, explicit: undefined, expected: "default" },
+    { recommended: false, setting: "low", explicit: "high", expected: "high" },
     { recommended: true, setting: undefined, explicit: undefined, expected: "medium" },
     { recommended: true, setting: "high", explicit: undefined, expected: "high" },
     { recommended: true, setting: "high", explicit: "max", expected: "max" },
@@ -143,11 +144,13 @@ describe("ClaudeAcpAgent settings", () => {
       ).toBe(expected);
       if (recommended) {
         expect(applyFlagSettings).toHaveBeenCalledWith({ effortLevel: expected });
-        expect(agent.sessions[response.sessionId].effortPinnedLevel).toBe(explicit);
-        expect(agent.sessions[response.sessionId].appliedEffortLevel).toBe(expected);
       } else {
         expect(applyFlagSettings).not.toHaveBeenCalled();
       }
+      expect(agent.sessions[response.sessionId].effortPinnedLevel).toBe(explicit);
+      expect(agent.sessions[response.sessionId].appliedEffortLevel).toBe(
+        recommended ? expected : explicit,
+      );
     },
   );
 

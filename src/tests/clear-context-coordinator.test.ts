@@ -79,6 +79,7 @@ describe("continuePlanInFreshContext", () => {
       models: { currentModelId: "claude-sonnet" },
       currentAgent: "reviewer",
       fastModeEnabled: true,
+      effortPinnedLevel: "high",
       configOptions: [
         {
           id: "effort",
@@ -143,6 +144,41 @@ describe("continuePlanInFreshContext", () => {
       }),
     );
     expect(host.ensureConsumer).toHaveBeenCalledWith(freshSession, "public-session");
+  });
+
+  it("does not turn an automatic displayed effort into a pin during restart", async () => {
+    const turn: ClearContextTurn = {
+      settled: false,
+      promptUuid: "00000000-0000-4000-8000-000000000000",
+    };
+    const oldSession = testSession({
+      activeTurn: turn,
+      configOptions: [
+        {
+          id: "effort",
+          name: "Effort",
+          type: "select",
+          currentValue: "high",
+          options: [{ value: "high", name: "High" }],
+        },
+      ],
+      creationParams: {
+        cwd: "/workspace",
+        mcpServers: [],
+        _meta: { claudeCode: { options: { effort: "max" } } },
+      },
+    });
+    const host = testHost(oldSession, testSession());
+
+    await continuePlanInFreshContext(
+      "public-session",
+      oldSession,
+      { toolUseId: "tool-plan", plan: "Ship it", mode: "default" },
+      host,
+    );
+
+    const params = vi.mocked(host.restartSession).mock.calls[0]?.[0];
+    expect((params?._meta as any)?.claudeCode?.options).not.toHaveProperty("effort");
   });
 
   it("does not resurrect original preferences after the session returns to defaults", async () => {

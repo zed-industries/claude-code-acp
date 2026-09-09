@@ -195,7 +195,12 @@ export function buildModelConfigOption(
     : null;
   const concreteRecommendation = useRecommendedValue && recommended !== null;
   const available = concreteRecommendation
-    ? models.availableModels.filter((model) => model.modelId !== "default")
+    ? [
+        ...models.availableModels.filter((model) => model.modelId === recommended.value),
+        ...models.availableModels.filter(
+          (model) => model.modelId !== "default" && model.modelId !== recommended.value,
+        ),
+      ]
     : models.availableModels;
 
   return {

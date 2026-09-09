@@ -8334,7 +8334,7 @@ export class ClaudeAcpAgent {
         modes,
         models,
         modelInfos,
-        (useRecommendedValue ? userProvidedOptions?.effort : undefined) ??
+        userProvidedOptions?.effort ??
           settingsEffortForModel(settingsManager.getSettings(), currentModelInfo),
         agents,
         currentAgent,
@@ -8398,7 +8398,6 @@ export class ClaudeAcpAgent {
         autoModeFallbackWarningPending,
         configOptions,
         effortPinnedLevel:
-          useRecommendedValue &&
           userProvidedOptions?.effort !== undefined &&
           initialEffort?.currentValue === userProvidedOptions.effort
             ? userProvidedOptions.effort
@@ -8406,7 +8405,10 @@ export class ClaudeAcpAgent {
         appliedEffortLevel:
           useRecommendedValue && typeof initialEffort?.currentValue === "string"
             ? initialEffort.currentValue
-            : undefined,
+            : userProvidedOptions?.effort !== undefined &&
+                initialEffort?.currentValue === userProvidedOptions.effort
+              ? userProvidedOptions.effort
+              : undefined,
         agents,
         currentAgent,
         fastModeEnabled,

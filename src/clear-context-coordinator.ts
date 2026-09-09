@@ -5,7 +5,7 @@ import type {
   PermissionMode,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { DEFAULT_AGENT_ID, DEFAULT_MODEL_ID, EFFORT_CONFIG_ID } from "./session-config-ids.js";
+import { DEFAULT_AGENT_ID, DEFAULT_MODEL_ID } from "./session-config-ids.js";
 
 export type ClearContextReset = {
   toolUseId: string;
@@ -39,6 +39,7 @@ export type ClearContextSession<Turn extends ClearContextTurn = ClearContextTurn
   configOptions: SessionConfigOption[];
   currentAgent: string;
   fastModeEnabled: boolean;
+  effortPinnedLevel?: string;
   activeTurn?: Turn | null;
   turnQueue?: Turn[];
   pendingExitPlanContextReset?: ClearContextReset;
@@ -69,9 +70,6 @@ export type ClearContextCoordinatorHost<
 
 function restartParams<Session extends ClearContextSession>(session: Session): NewSessionRequest {
   const originalParams = session.creationParams ?? { cwd: session.cwd, mcpServers: [] };
-  const currentEffort = session.configOptions.find(
-    (option) => option.id === EFFORT_CONFIG_ID,
-  )?.currentValue;
   const originalMeta = originalParams._meta as
     ({ claudeCode?: { options?: Options } } & Record<string, unknown>) | undefined;
   const originalOptions = originalMeta?.claudeCode?.options;
@@ -92,8 +90,8 @@ function restartParams<Session extends ClearContextSession>(session: Session): N
             ? { model: session.models.currentModelId }
             : {}),
           ...(session.currentAgent !== DEFAULT_AGENT_ID ? { agent: session.currentAgent } : {}),
-          ...(typeof currentEffort === "string" && currentEffort !== "default"
-            ? { effort: currentEffort as EffortLevel }
+          ...(session.effortPinnedLevel !== undefined
+            ? { effort: session.effortPinnedLevel as EffortLevel }
             : {}),
         },
       },
