@@ -12,7 +12,7 @@ const OPUS: ModelInfo = {
   description: "Opus 5 with 1M context · Best for everyday, complex tasks",
 };
 
-describe("Opus display name", () => {
+describe("versioned model display names", () => {
   beforeEach(() => vi.stubEnv("ANTHROPIC_MODEL", undefined));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -31,7 +31,7 @@ describe("Opus display name", () => {
     ).toBe("0.3.257");
   });
 
-  it("shortens only the known Opus label and preserves model identity and recommendation", async () => {
+  it("adds standard-family versions and preserves model identity and recommendation", async () => {
     const models: ModelInfo[] = [
       { ...OPUS, value: "default", displayName: "Default (recommended)" },
       OPUS,
@@ -52,7 +52,8 @@ describe("Opus display name", () => {
     expect(state.availableModels).toEqual(
       models.map((model) => ({
         modelId: model.value,
-        name: model === OPUS ? "Opus" : model.displayName,
+        name:
+          model === OPUS ? "Opus 5" : model.value === "sonnet[1m]" ? "Sonnet 5" : model.displayName,
         description: model.description,
       })),
     );
@@ -60,11 +61,53 @@ describe("Opus display name", () => {
       currentValue: "opus[1m]",
       _meta: { jetbrains: { air: { recommendedValue: "opus[1m]" } } },
       options: expect.arrayContaining([
-        { value: "opus[1m]", name: "Opus", description: OPUS.description },
+        { value: "opus[1m]", name: "Opus 5", description: OPUS.description },
       ]),
     });
     expect(OPUS.displayName).toBe("Opus (1M context)");
     expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it("adds major and minor versions without changing custom or already-versioned names", async () => {
+    const models: ModelInfo[] = [
+      {
+        value: "sonnet",
+        resolvedModel: "claude-sonnet-5",
+        displayName: "Sonnet",
+        description: "Sonnet 5 · Efficient for routine tasks",
+      },
+      {
+        value: "haiku",
+        resolvedModel: "claude-haiku-4-5-20251001",
+        displayName: "Claude Haiku",
+        description: "Fast",
+      },
+      {
+        value: "opus[1m]",
+        resolvedModel: "claude-opus-5[1m]",
+        displayName: "Opus 5 (1M context)",
+        description: "",
+      },
+      { value: "custom", displayName: "My Sonnet", description: "" },
+      { value: "future", displayName: "Haiku (1M context)", description: "" },
+    ];
+    const state = await getAvailableModels(
+      {} as Query,
+      models,
+      models,
+      { getSettings: () => ({}) },
+      { log: vi.fn(), error: vi.fn() },
+      false,
+      "model-presentation-test",
+    );
+
+    expect(state.availableModels.map((model) => model.name)).toEqual([
+      "Sonnet 5",
+      "Claude Haiku 4.5",
+      "Opus 5",
+      "My Sonnet",
+      "Haiku (1M context)",
+    ]);
   });
 
   it("keeps the suffix if another selectable model is already named Opus", async () => {

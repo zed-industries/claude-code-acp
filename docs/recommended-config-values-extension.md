@@ -75,9 +75,12 @@ If the SDK recommendation cannot be mapped to an advertised named model, the ada
 legacy `default` row for that selector and omits `recommendedValue`. This prevents a client from
 receiving a recommendation or current value it cannot select.
 
-The SDK label `Opus (1M context)` is displayed as `Opus`, with its model ID and description
-preserved. If another selectable entry is already named `Opus`, the suffix is retained to keep
-the choices distinct. This label simplification also applies to legacy clients.
+Terse SDK labels for standard Claude families include the concrete version derived from model
+metadata: for example, `Sonnet` becomes `Sonnet 5` and `Claude Haiku` becomes `Claude Haiku 4.5`.
+Context suffixes such as `Opus (1M context)` are omitted from the label because the context remains
+in the description. Custom labels are preserved, and normalization falls back to the original
+labels if two selectable entries would otherwise collide. This presentation also applies to
+legacy clients.
 
 ## Effort behavior
 

@@ -18,6 +18,9 @@ type ModelSettingsSource = { getSettings(): Settings };
 const MODEL_CONTEXT_HINT_PATTERN = /\[(\d+m)\]$/i;
 const CONTEXT_HINT_SUFFIX_PATTERN = /-(\d+m)$/i;
 const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)(?:[-.](\d+))?\b/;
+const STANDARD_MODEL_DISPLAY_PATTERN =
+  /^(?:Claude\s+)?(Opus|Sonnet|Haiku)(?:\s+\d+(?:\.\d+)?)?(?:\s+\(\d+[mk]\s+context\))?$/i;
+const DISPLAY_CONTEXT_SUFFIX_PATTERN = /\s+\(\d+[mk]\s+context\)$/i;
 
 function stripContextHints(value: string): string {
   return value.replace(/\[\d+m\]/gi, "").replace(CONTEXT_HINT_SUFFIX_PATTERN, "");
@@ -45,6 +48,27 @@ function modelVersionsCompatible(preference: string, candidate: ModelInfo): bool
     extractModelFamilyVersion(candidate.displayName) ??
     extractModelFamilyVersion(candidate.description);
   return candidateVersion ? preferred === candidateVersion : true;
+}
+
+function displayModelVersion(model: ModelInfo, family: string): string | undefined {
+  const familyVersion = new RegExp(`\\b${family}[-\\s]+(\\d+)(?:[-.](\\d+))?`, "i");
+  for (const source of [model.resolvedModel, model.description, model.value, model.displayName]) {
+    const match = source?.match(familyVersion);
+    if (match) return match[2] ? `${match[1]}.${match[2]}` : match[1];
+  }
+  return undefined;
+}
+
+/** Add concrete versions to the SDK's terse standard-family labels while
+ * preserving custom names. Context size remains in the option description;
+ * if normalization would collide, callers fall back to the original labels. */
+function versionedModelDisplayName(model: ModelInfo): string {
+  const standard = model.displayName.match(STANDARD_MODEL_DISPLAY_PATTERN);
+  if (!standard) return model.displayName;
+  const withoutContext = model.displayName.replace(DISPLAY_CONTEXT_SUFFIX_PATTERN, "");
+  if (/\b\d+(?:\.\d+)?\b/.test(withoutContext)) return withoutContext;
+  const version = displayModelVersion(model, standard[1]);
+  return version ? `${withoutContext} ${version}` : model.displayName;
 }
 
 function tokenizeModelPreference(model: string): { tokens: string[]; contextHint?: string } {
@@ -412,16 +436,17 @@ export async function getAvailableModels(
     }
   }
 
+  const displayNames = models.map(versionedModelDisplayName);
+  const displayNameCounts = new Map<string, number>();
+  for (const name of displayNames) {
+    displayNameCounts.set(name, (displayNameCounts.get(name) ?? 0) + 1);
+  }
+
   return {
-    availableModels: models.map((model) => ({
+    availableModels: models.map((model, index) => ({
       modelId: model.value,
-      // SDK 0.3.257 exposes a single named Opus entry; keep the context size
-      // in its description. The SDK contract test requires review on upgrades.
       name:
-        model.displayName === "Opus (1M context)" &&
-        !models.some((other) => other !== model && other.displayName === "Opus")
-          ? "Opus"
-          : model.displayName,
+        displayNameCounts.get(displayNames[index]) === 1 ? displayNames[index] : model.displayName,
       description: model.description,
     })),
     currentModelId: currentModel.value,
