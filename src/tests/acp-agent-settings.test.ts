@@ -157,7 +157,10 @@ describe("ClaudeAcpAgent settings", () => {
   it("seeds effort from higher-priority programmatic model settings", async () => {
     await fs.promises.writeFile(
       path.join(tempDir, "settings.json"),
-      JSON.stringify({ effortLevel: "high" }),
+      JSON.stringify({
+        effortLevel: "high",
+        modelSettings: { "claude-sonnet-5[1m]": { effortLevel: "high" } },
+      }),
     );
     const applyFlagSettings = vi.fn();
     querySpy.mockReturnValue(

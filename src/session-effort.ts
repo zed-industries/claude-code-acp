@@ -12,6 +12,13 @@ export function toSdkEffortLevel(value: string | undefined): EffortLevel | null 
   return value === undefined || value === "default" ? null : (value as EffortLevel);
 }
 
+function canonicalizeModelSettingsKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/-(\d+m)$/i, "[$1]");
+}
+
 /** Resolve the effort the CLI will use: per-model settings first, then the
  *  legacy top-level effort setting. Model settings are keyed by canonical
  *  model name, so try the resolved SDK model before picker and raw IDs. */
@@ -22,18 +29,13 @@ export function settingsEffortForModel(
 ): string | undefined {
   const modelSettings = settings.modelSettings;
   if (modelSettings) {
-    const canonicalize = (value: string) =>
-      value
-        .trim()
-        .toLowerCase()
-        .replace(/-(\d+m)$/i, "[$1]");
     for (const key of [modelInfo?.resolvedModel, modelInfo?.value, modelId]) {
       if (key === undefined) continue;
       const exact = modelSettings[key]?.effortLevel;
       if (typeof exact === "string") return exact;
-      const canonicalKey = canonicalize(key);
+      const canonicalKey = canonicalizeModelSettingsKey(key);
       const matchingEntry = Object.entries(modelSettings).find(
-        ([candidate]) => canonicalize(candidate) === canonicalKey,
+        ([candidate]) => canonicalizeModelSettingsKey(candidate) === canonicalKey,
       );
       const perModel = matchingEntry?.[1]?.effortLevel;
       if (typeof perModel === "string") return perModel;
@@ -47,12 +49,20 @@ export function settingsEffortForModel(
  * replacing entries supplied at the programmatic tier. */
 export function mergeEffortSettings(base: Settings, override: Settings | undefined): Settings {
   if (!override) return base;
+  const overriddenModelKeys = new Set(
+    Object.keys(override.modelSettings ?? {}).map(canonicalizeModelSettingsKey),
+  );
+  const unshadowedBaseModelSettings = Object.fromEntries(
+    Object.entries(base.modelSettings ?? {}).filter(
+      ([key]) => !overriddenModelKeys.has(canonicalizeModelSettingsKey(key)),
+    ),
+  );
   return {
     ...base,
     ...override,
     modelSettings:
       base.modelSettings || override.modelSettings
-        ? { ...base.modelSettings, ...override.modelSettings }
+        ? { ...unshadowedBaseModelSettings, ...override.modelSettings }
         : undefined,
   };
 }
