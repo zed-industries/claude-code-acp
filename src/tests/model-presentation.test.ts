@@ -111,9 +111,47 @@ describe("versioned model display names", () => {
       "Sonnet 5",
       "Claude Haiku 4.5",
       "Fable 5.1",
-      "Opus 5",
+      "Opus 5 (1M context)",
       "My Sonnet",
       "Haiku (1M context)",
+      "Fable 5.1 (1M context)",
+    ]);
+  });
+
+  it("only moves the context hint out of the name when the description retains it", async () => {
+    const models: ModelInfo[] = [
+      {
+        value: "opus-described[1m]",
+        resolvedModel: "claude-opus-5[1m]",
+        displayName: "Opus 5 (1M context)",
+        description: "Opus 5 with 1M context",
+      },
+      {
+        value: "opus-undescribed[1m]",
+        resolvedModel: "claude-opus-5[1m]",
+        displayName: "Opus 5 (1M context)",
+        description: "",
+      },
+      {
+        value: "fable-undescribed[1m]",
+        resolvedModel: "claude-fable-5-1[1m]",
+        displayName: "Fable (1M context)",
+        description: "",
+      },
+    ];
+    const state = await getAvailableModels(
+      {} as Query,
+      models,
+      models,
+      { getSettings: () => ({}) },
+      { log: vi.fn(), error: vi.fn() },
+      false,
+      "model-presentation-test",
+    );
+
+    expect(state.availableModels.map((model) => model.name)).toEqual([
+      "Opus 5",
+      "Opus 5 (1M context)",
       "Fable 5.1 (1M context)",
     ]);
   });

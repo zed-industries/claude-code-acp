@@ -20,7 +20,7 @@ const CONTEXT_HINT_SUFFIX_PATTERN = /-(\d+m)$/i;
 const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)(?:[-.](\d+))?\b/;
 const VERSIONABLE_MODEL_DISPLAY_PATTERN =
   /^(?:Claude\s+)?([a-z][a-z0-9-]*)(?:\s+\d+(?:\.\d+)?)?(?:\s+\(\d+[mk]\s+context\))?$/i;
-const DISPLAY_CONTEXT_SUFFIX_PATTERN = /\s+\(\d+[mk]\s+context\)$/i;
+const DISPLAY_CONTEXT_SUFFIX_PATTERN = /\s+\((\d+[mk])\s+context\)$/i;
 
 function stripContextHints(value: string): string {
   return value.replace(/\[\d+m\]/gi, "").replace(CONTEXT_HINT_SUFFIX_PATTERN, "");
@@ -68,11 +68,19 @@ function displayModelVersion(model: ModelInfo, family: string): string | undefin
 function versionedModelDisplayName(model: ModelInfo): string {
   const versionable = model.displayName.match(VERSIONABLE_MODEL_DISPLAY_PATTERN);
   if (!versionable) return model.displayName;
-  const withoutContext = model.displayName.replace(DISPLAY_CONTEXT_SUFFIX_PATTERN, "");
   const version = displayModelVersion(model, versionable[1]);
   if (!version) return model.displayName;
-  if (/\b\d+(?:\.\d+)?\b/.test(withoutContext)) return withoutContext;
-  return version ? `${withoutContext} ${version}` : model.displayName;
+  const contextSuffix = model.displayName.match(DISPLAY_CONTEXT_SUFFIX_PATTERN);
+  const descriptionKeepsContext =
+    contextSuffix !== null &&
+    new RegExp(`\\b${contextSuffix[1]}\\s+context\\b`, "i").test(model.description);
+  const withoutContext = model.displayName.replace(DISPLAY_CONTEXT_SUFFIX_PATTERN, "");
+  if (/\b\d+(?:\.\d+)?\b/.test(withoutContext)) {
+    return descriptionKeepsContext ? withoutContext : model.displayName;
+  }
+  if (descriptionKeepsContext || contextSuffix === null) return `${withoutContext} ${version}`;
+  // Keep the suffix in its original spelling and insert the version before it.
+  return `${withoutContext} ${version}${contextSuffix[0]}`;
 }
 
 function tokenizeModelPreference(model: string): { tokens: string[]; contextHint?: string } {
