@@ -92,6 +92,11 @@ re-reads the new model's settings before falling back to the recommendation. Swi
 model without effort support clears the flag override. Legacy clients continue to let the SDK
 resolve automatic effort.
 
+If effort synchronization fails after the model has already switched, the adapter still reports
+the new model but never presents the unapplied effort as current. It retains the last successfully
+applied value when that value is selectable for the new model; otherwise it temporarily omits the
+effort selector until a later successful switch can rebuild truthful state.
+
 If a future model exposes effort choices without `medium`, the first SDK-advertised effort level is
 used so both `recommendedValue` and `currentValue` remain valid option values.
 

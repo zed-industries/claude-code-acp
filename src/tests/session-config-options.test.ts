@@ -430,7 +430,7 @@ describe("session config options", () => {
       const session = (agent as unknown as { sessions: Record<string, any> }).sessions[SESSION_ID];
       const effortOpt = session.configOptions.find((o: any) => o.id === "effort");
       if (effortOpt) effortOpt.currentValue = "max";
-      session.effortPinnedByUser = true;
+      session.effortPinnedLevel = "max";
 
       session.modelInfos = [
         {
@@ -467,7 +467,7 @@ describe("session config options", () => {
       const session = (agent as unknown as { sessions: Record<string, any> }).sessions[SESSION_ID];
       const effortOpt = session.configOptions.find((o: any) => o.id === "effort");
       if (effortOpt) effortOpt.currentValue = "low";
-      session.effortPinnedByUser = true;
+      session.effortPinnedLevel = "low";
 
       const response = await agent.setSessionConfigOption({
         sessionId: SESSION_ID,
@@ -565,6 +565,23 @@ describe("session config options", () => {
       expect(effortOption?.currentValue).toBe("medium");
     });
 
+    it("keeps effort state unchanged when the SDK rejects a direct selection", async () => {
+      applyFlagSettingsSpy.mockRejectedValueOnce(new Error("effort update failed"));
+
+      await expect(
+        agent.setSessionConfigOption({
+          sessionId: SESSION_ID,
+          configId: "effort",
+          value: "low",
+        }),
+      ).rejects.toThrow("effort update failed");
+
+      const session = agent.sessions[SESSION_ID];
+      expect(session.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("default");
+      expect(session.effortPinnedLevel).toBeUndefined();
+      expect(session.appliedEffortLevel).toBeUndefined();
+    });
+
     it("throws for invalid effort value", async () => {
       await expect(
         agent.setSessionConfigOption({
@@ -625,7 +642,8 @@ describe("session config options", () => {
         _meta: { jetbrains: { air: { recommendedValue: "medium" } } },
       });
       expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "medium" });
-      expect(session.effortPinnedByUser).not.toBe(true);
+      expect(session.effortPinnedLevel).toBeUndefined();
+      expect(session.appliedEffortLevel).toBe("medium");
 
       await agent.setSessionConfigOption({
         sessionId: SESSION_ID,
@@ -633,7 +651,8 @@ describe("session config options", () => {
         value: "claude-opus-4-5",
       });
       expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "high" });
-      expect(session.effortPinnedByUser).not.toBe(true);
+      expect(session.effortPinnedLevel).toBeUndefined();
+      expect(session.appliedEffortLevel).toBe("high");
 
       session.modelInfos[1].supportsEffort = false;
       await agent.setSessionConfigOption({
@@ -652,7 +671,7 @@ describe("session config options", () => {
       session.modelInfos[0].supportedEffortLevels = ["low", "medium", "high", "max"];
       session.settingsManager.getSettings = () => ({ effortLevel: "low" });
       session.configOptions.find((o) => o.id === "effort")!.currentValue = "max";
-      session.effortPinnedByUser = true;
+      session.effortPinnedLevel = "max";
       const response = await agent.setSessionConfigOption({
         sessionId: SESSION_ID,
         configId: "model",
@@ -660,7 +679,8 @@ describe("session config options", () => {
       });
       expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("low");
       expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: "low" });
-      expect(session.effortPinnedByUser).toBe(false);
+      expect(session.effortPinnedLevel).toBeUndefined();
+      expect(session.appliedEffortLevel).toBe("low");
     });
 
     it("clears a legacy pin without promoting persisted effort to a flag override", async () => {
@@ -668,7 +688,7 @@ describe("session config options", () => {
       session.modelInfos[0].supportedEffortLevels = ["low", "medium", "high", "max"];
       session.settingsManager.getSettings = () => ({ effortLevel: "low" });
       session.configOptions.find((o) => o.id === "effort")!.currentValue = "max";
-      session.effortPinnedByUser = true;
+      session.effortPinnedLevel = "max";
 
       const response = await agent.setSessionConfigOption({
         sessionId: SESSION_ID,
@@ -678,7 +698,8 @@ describe("session config options", () => {
 
       expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("low");
       expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: null });
-      expect(session.effortPinnedByUser).toBe(false);
+      expect(session.effortPinnedLevel).toBeUndefined();
+      expect(session.appliedEffortLevel).toBeUndefined();
     });
 
     it("retains the original pin value when a legacy clamp fails", async () => {
@@ -686,7 +707,7 @@ describe("session config options", () => {
       session.modelInfos[0].supportedEffortLevels = ["low", "medium", "high", "max"];
       session.settingsManager.getSettings = () => ({ effortLevel: "low" });
       session.configOptions.find((o) => o.id === "effort")!.currentValue = "max";
-      session.effortPinnedByUser = true;
+      session.effortPinnedLevel = "max";
       applyFlagSettingsSpy.mockRejectedValueOnce(new Error("effort clear failed"));
 
       await agent.setSessionConfigOption({
@@ -694,6 +715,7 @@ describe("session config options", () => {
         configId: "model",
         value: "claude-sonnet-4-6",
       });
+      expect(session.configOptions.find((o) => o.id === "effort")).toBeUndefined();
       const response = await agent.setSessionConfigOption({
         sessionId: SESSION_ID,
         configId: "model",
@@ -702,6 +724,27 @@ describe("session config options", () => {
 
       expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("max");
       expect(session.effortPinnedLevel).toBe("max");
+    });
+
+    it("restores the last applied effort when recommended-value synchronization fails", async () => {
+      (agent as any).clientCapabilities = {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+      };
+      const session = agent.sessions[SESSION_ID];
+      session.configOptions.find((o) => o.id === "effort")!.currentValue = "low";
+      session.appliedEffortLevel = "low";
+      session.settingsManager.getSettings = () => ({ effortLevel: "high" });
+      applyFlagSettingsSpy.mockRejectedValueOnce(new Error("effort sync failed"));
+
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+
+      expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("low");
+      expect(session.appliedEffortLevel).toBe("low");
+      expect(session.effortPinnedLevel).toBeUndefined();
     });
 
     it("returns the new model state when effort synchronization fails", async () => {
@@ -809,7 +852,7 @@ describe("session config options", () => {
 
       expect(applyFlagSettingsSpy).toHaveBeenCalledWith({ effortLevel: null });
       // The clamp un-pins: a later switch back re-seeds from settings.
-      expect(session.effortPinnedByUser).toBe(false);
+      expect(session.effortPinnedLevel).toBeUndefined();
     });
 
     it("adds effort option when switching to a model that supports effort", async () => {
@@ -852,7 +895,7 @@ describe("session config options", () => {
       // pinned, as a user's ACP picker choice would be.
       const effortOpt = session.configOptions.find((o: any) => o.id === "effort");
       if (effortOpt) effortOpt.currentValue = "max";
-      session.effortPinnedByUser = true;
+      session.effortPinnedLevel = "max";
 
       session.modelInfos = [
         {

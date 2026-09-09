@@ -143,7 +143,8 @@ describe("ClaudeAcpAgent settings", () => {
       ).toBe(expected);
       if (recommended) {
         expect(applyFlagSettings).toHaveBeenCalledWith({ effortLevel: expected });
-        expect(agent.sessions[response.sessionId].effortPinnedByUser).toBe(explicit !== undefined);
+        expect(agent.sessions[response.sessionId].effortPinnedLevel).toBe(explicit);
+        expect(agent.sessions[response.sessionId].appliedEffortLevel).toBe(expected);
       } else {
         expect(applyFlagSettings).not.toHaveBeenCalled();
       }
