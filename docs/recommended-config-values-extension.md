@@ -71,9 +71,6 @@ removes the `default` row, and advertises the named value in
 `_meta.jetbrains.air.recommendedValue`. When the session itself is still using the SDK default, the
 same concrete value is presented as `currentValue`.
 
-The concrete recommendation is placed first in the advertised option list. All remaining models
-retain their SDK/allowlist order; the adapter does not alphabetically re-sort them.
-
 If the SDK recommendation cannot be mapped to an advertised named model, the adapter retains the
 legacy `default` row for that selector and omits `recommendedValue`. This prevents a client from
 receiving a recommendation or current value it cannot select.

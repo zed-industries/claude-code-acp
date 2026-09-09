@@ -153,8 +153,8 @@ describe("buildConfigOptions recommended values presentation", () => {
     expect(model.currentValue).toBe("sonnet");
     expect(model.options).toHaveLength(3);
     expect(model.options.map((option) => ("value" in option ? option.value : undefined))).toEqual([
-      "sonnet",
       "opus",
+      "sonnet",
       "haiku",
     ]);
     expect(model.options).not.toEqual(
