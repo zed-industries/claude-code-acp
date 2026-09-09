@@ -18,8 +18,8 @@ type ModelSettingsSource = { getSettings(): Settings };
 const MODEL_CONTEXT_HINT_PATTERN = /\[(\d+m)\]$/i;
 const CONTEXT_HINT_SUFFIX_PATTERN = /-(\d+m)$/i;
 const MODEL_FAMILY_VERSION_PATTERN = /\b(\d+)(?:[-.](\d+))?\b/;
-const STANDARD_MODEL_DISPLAY_PATTERN =
-  /^(?:Claude\s+)?(Opus|Sonnet|Haiku)(?:\s+\d+(?:\.\d+)?)?(?:\s+\(\d+[mk]\s+context\))?$/i;
+const VERSIONABLE_MODEL_DISPLAY_PATTERN =
+  /^(?:Claude\s+)?([a-z][a-z0-9-]*)(?:\s+\d+(?:\.\d+)?)?(?:\s+\(\d+[mk]\s+context\))?$/i;
 const DISPLAY_CONTEXT_SUFFIX_PATTERN = /\s+\(\d+[mk]\s+context\)$/i;
 
 function stripContextHints(value: string): string {
@@ -59,15 +59,16 @@ function displayModelVersion(model: ModelInfo, family: string): string | undefin
   return undefined;
 }
 
-/** Add concrete versions to the SDK's terse standard-family labels while
- * preserving custom names. Context size remains in the option description;
- * if normalization would collide, callers fall back to the original labels. */
+/** Add concrete versions when a terse SDK label names the same family as the
+ * underlying model metadata. Multi-word/custom labels remain untouched.
+ * Context size remains in the option description; if normalization would
+ * collide, callers fall back to the original labels. */
 function versionedModelDisplayName(model: ModelInfo): string {
-  const standard = model.displayName.match(STANDARD_MODEL_DISPLAY_PATTERN);
-  if (!standard) return model.displayName;
+  const versionable = model.displayName.match(VERSIONABLE_MODEL_DISPLAY_PATTERN);
+  if (!versionable) return model.displayName;
   const withoutContext = model.displayName.replace(DISPLAY_CONTEXT_SUFFIX_PATTERN, "");
   if (/\b\d+(?:\.\d+)?\b/.test(withoutContext)) return withoutContext;
-  const version = displayModelVersion(model, standard[1]);
+  const version = displayModelVersion(model, versionable[1]);
   return version ? `${withoutContext} ${version}` : model.displayName;
 }
 
