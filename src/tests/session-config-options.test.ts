@@ -663,6 +663,24 @@ describe("session config options", () => {
       expect(session.effortPinnedByUser).toBe(false);
     });
 
+    it("clears a legacy pin without promoting persisted effort to a flag override", async () => {
+      const session = agent.sessions[SESSION_ID];
+      session.modelInfos[0].supportedEffortLevels = ["low", "medium", "high", "max"];
+      session.settingsManager.getSettings = () => ({ effortLevel: "low" });
+      session.configOptions.find((o) => o.id === "effort")!.currentValue = "max";
+      session.effortPinnedByUser = true;
+
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+
+      expect(response.configOptions.find((o) => o.id === "effort")?.currentValue).toBe("low");
+      expect(applyFlagSettingsSpy).toHaveBeenLastCalledWith({ effortLevel: null });
+      expect(session.effortPinnedByUser).toBe(false);
+    });
+
     it("returns the new model state when effort synchronization fails", async () => {
       (agent as any).clientCapabilities = {
         _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },

@@ -7445,7 +7445,12 @@ export class ClaudeAcpAgent {
         if (useRecommendedValue || newEffort !== currentEffort) {
           try {
             await session.query.applyFlagSettings({
-              effortLevel: toSdkEffortLevel(newEffort),
+              // A legacy client's unpinned effort is display-only: the CLI
+              // resolves the persisted value for the new model. When an old
+              // user pin is no longer supported, clear the flag layer instead
+              // of replacing it with that displayed value. Opted-in clients
+              // deliberately apply their concrete displayed effort.
+              effortLevel: useRecommendedValue ? toSdkEffortLevel(newEffort) : null,
             });
             session.effortPinnedByUser = effortPinnedForNewModel;
           } catch (error) {
