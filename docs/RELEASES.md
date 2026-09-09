@@ -61,9 +61,8 @@ job so that a tag failure can be retried on its own with **Re-run failed jobs**
 publishing the same one twice fails outright.
 
 Both downstream jobs are gated on a `published` output that the publish step
-sets, not on whether the publish job went green. That keeps the two concerns
-apart — `published` means "npm has this version" and nothing else — and it means
-a rehearsal run that only passes `--dry-run` neither tags nor dispatches.
+sets only after `npm publish --tag preview` succeeds. This ensures tagging and
+the registry update run only after the version has been published to npm.
 
 A stable and a preview dispatch can never collide — a release merge publishes
 stable and skips the preview, every other push does the reverse — so the registry
@@ -111,12 +110,11 @@ version _below_ `latest` until the next push lands; that is cosmetic.
 Release merges are excluded by checking the head commit's author and the subject
 release-please generates. Both are checked, either is enough, and the cost of a
 miss is one wasted version number plus a `preview` tag briefly pointing at
-already-released code — `latest` is untouched. release-please's own
-`releases_created` output would be a sharper signal, but previews hang off the
-`CI` workflow finishing rather than off the push, so they run in a different
-workflow run from the `release-please` job and cannot read its outputs.
+already-released code — `latest` is untouched. Previews start directly on pushes
+to `main`, without waiting for CI or the `release-please` job. The commit checks
+let previews run independently of release-please's outputs.
 
-To publish a preview by hand — from any commit, bypassing the CI gate:
+To publish a preview by hand from any commit:
 
 ```sh
 gh workflow run publish.yml --ref main \
