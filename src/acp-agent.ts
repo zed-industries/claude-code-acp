@@ -7399,15 +7399,12 @@ export class ClaudeAcpAgent {
       const currentEffort =
         typeof effortOpt?.currentValue === "string" ? effortOpt.currentValue : undefined;
       const useRecommendedValue = clientSupportsRecommendedConfigValue(this.clientCapabilities);
-      if (
-        useRecommendedValue &&
-        session.effortPinnedByUser &&
-        (!newModelInfo?.supportsEffort ||
-          !newModelInfo.supportedEffortLevels?.some((level) => level === currentEffort))
-      ) {
-        session.effortPinnedByUser = false;
-      }
-      const seedEffort = session.effortPinnedByUser
+      const effortWasPinned = session.effortPinnedByUser === true;
+      const effortPinnedForNewModel =
+        effortWasPinned &&
+        newModelInfo?.supportsEffort === true &&
+        newModelInfo.supportedEffortLevels?.some((level) => level === currentEffort) === true;
+      const seedEffort = effortPinnedForNewModel
         ? currentEffort
         : settingsEffortForModel(session.settingsManager.getSettings(), newModelInfo, value);
       session.configOptions = buildConfigOptions(
@@ -7441,17 +7438,32 @@ export class ClaudeAcpAgent {
       // invisibly. Settings-derived seeds are display-only: the CLI resolves
       // persisted effort itself, and pinning it at the flag layer would
       // shadow the per-model values on every later switch.
-      if (useRecommendedValue || session.effortPinnedByUser) {
+      if (useRecommendedValue || effortWasPinned) {
         const newEffortOpt = session.configOptions.find((o) => o.id === EFFORT_CONFIG_ID);
         const newEffort =
           typeof newEffortOpt?.currentValue === "string" ? newEffortOpt.currentValue : undefined;
         if (useRecommendedValue || newEffort !== currentEffort) {
-          await session.query.applyFlagSettings({
-            effortLevel: toSdkEffortLevel(newEffort),
-          });
-          if (newEffort === undefined || newEffort === "default") {
-            session.effortPinnedByUser = false;
+          try {
+            await session.query.applyFlagSettings({
+              effortLevel: toSdkEffortLevel(newEffort),
+            });
+            session.effortPinnedByUser = effortPinnedForNewModel;
+          } catch (error) {
+            // setModel has already succeeded. Effort synchronization is a
+            // secondary, best-effort operation: propagating this error would
+            // make the RPC report failure (or suppress an external-switch
+            // notification) even though the SDK is already on the new model.
+            // Preserve the old pin bookkeeping because the rejected flag
+            // update left that layer unchanged, and still publish/return the
+            // truthful model state below.
+            session.effortPinnedByUser = effortWasPinned;
+            this.logger.error(
+              `Failed to synchronize effort after model switch to "${value}":`,
+              error,
+            );
           }
+        } else {
+          session.effortPinnedByUser = effortPinnedForNewModel;
         }
       }
 

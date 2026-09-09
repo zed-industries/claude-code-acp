@@ -663,6 +663,48 @@ describe("session config options", () => {
       expect(session.effortPinnedByUser).toBe(false);
     });
 
+    it("returns the new model state when effort synchronization fails", async () => {
+      (agent as any).clientCapabilities = {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+      };
+      applyFlagSettingsSpy.mockRejectedValueOnce(new Error("effort sync failed"));
+
+      const response = await agent.setSessionConfigOption({
+        sessionId: SESSION_ID,
+        configId: "model",
+        value: "claude-sonnet-4-6",
+      });
+
+      expect(setModelSpy).toHaveBeenCalledWith("claude-sonnet-4-6");
+      expect(response.configOptions.find((o) => o.id === "model")?.currentValue).toBe(
+        "claude-sonnet-4-6",
+      );
+      expect(agent.sessions[SESSION_ID].models.currentModelId).toBe("claude-sonnet-4-6");
+    });
+
+    it("publishes the new model state when external-switch effort synchronization fails", async () => {
+      (agent as any).clientCapabilities = {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["recommendedValue"] } } },
+      };
+      applyFlagSettingsSpy.mockRejectedValueOnce(new Error("effort sync failed"));
+      const session = agent.sessions[SESSION_ID];
+
+      await (agent as any).syncModelAfterExternalSwitch(SESSION_ID, session, "claude-sonnet-4-6");
+
+      expect(setModelSpy).not.toHaveBeenCalled();
+      expect(session.models.currentModelId).toBe("claude-sonnet-4-6");
+      expect(
+        sessionUpdates
+          .filter((notification) => notification.update.sessionUpdate === "config_option_update")
+          .at(-1)?.update,
+      ).toMatchObject({
+        sessionUpdate: "config_option_update",
+        configOptions: expect.arrayContaining([
+          expect.objectContaining({ id: "model", currentValue: "claude-sonnet-4-6" }),
+        ]),
+      });
+    });
+
     it("drops effort option when switching to a model without effort support", async () => {
       // Make sonnet not support effort
       const session = (agent as unknown as { sessions: Record<string, any> }).sessions[SESSION_ID];
