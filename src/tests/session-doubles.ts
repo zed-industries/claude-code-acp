@@ -74,8 +74,6 @@ export function mockSessionState(
     accumulatedModelUsage: {},
     lastModelUsageReading: {},
     configOptions: [],
-    agents: [],
-    currentAgent: "default",
     abortController: new AbortController(),
     emitRawSDKMessages: false,
     forwardSubagentText: false,
