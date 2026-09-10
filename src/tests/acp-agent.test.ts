@@ -8411,6 +8411,18 @@ describe("logout", () => {
 });
 
 describe("session/fork", () => {
+  function mockForkActivation(agent: ClaudeAcpAgent, sessionId = "fork-id") {
+    const modes = { currentModeId: "default", availableModes: [] };
+    const configOptions: never[] = [];
+    const createSession = vi
+      .spyOn(
+        agent as unknown as { createSession: (...args: unknown[]) => Promise<unknown> },
+        "createSession",
+      )
+      .mockResolvedValueOnce({ sessionId, modes, configOptions });
+    return { createSession, modes, configOptions };
+  }
+
   beforeEach(() => {
     vi.mocked(forkSession).mockClear();
     vi.mocked(getSessionMessages).mockClear();
@@ -8421,6 +8433,7 @@ describe("session/fork", () => {
     const client = { sessionUpdate: async () => {} } as unknown as AcpClient;
     const agent = new ClaudeAcpAgent(client, { log: () => {}, error: () => {} });
     vi.mocked(forkSession).mockResolvedValueOnce({ sessionId: "fork-id" });
+    const { createSession, modes, configOptions } = mockForkActivation(agent);
 
     const response = await agent.unstable_forkSession({
       sessionId: "source-id",
@@ -8430,7 +8443,13 @@ describe("session/fork", () => {
     });
 
     expect(response.sessionId).toBe("fork-id");
+    expect(response.modes).toBe(modes);
+    expect(response.configOptions).toBe(configOptions);
     expect(forkSession).toHaveBeenCalledWith("source-id", { dir: "/workspace" });
+    expect(createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "source-id", cwd: "/workspace" }),
+      { resume: "fork-id" },
+    );
   });
 
   it("forks at an AIR message id through the current SDK", async () => {
@@ -8459,6 +8478,7 @@ describe("session/fork", () => {
       },
     ]);
     vi.mocked(forkSession).mockResolvedValueOnce({ sessionId: "fork-id" });
+    const { createSession, modes, configOptions } = mockForkActivation(agent);
     const meta = {
       jetbrains: { air: { fork: { version: 1, messageId: "msg_123:segment:0" } } },
     };
@@ -8471,12 +8491,18 @@ describe("session/fork", () => {
     });
 
     expect(response.sessionId).toBe("fork-id");
+    expect(response.modes).toBe(modes);
+    expect(response.configOptions).toBe(configOptions);
     expect(getSessionMessages).toHaveBeenCalledWith("source-id", { dir: "/workspace" });
     expect(importSessionToStore).not.toHaveBeenCalled();
     expect(forkSession).toHaveBeenCalledWith("source-id", {
       dir: "/workspace",
       upToMessageId: "assistant-uuid",
     });
+    expect(createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "source-id", cwd: "/workspace" }),
+      { resume: "fork-id" },
+    );
   });
 
   it.each([
@@ -8578,6 +8604,7 @@ describe("session/fork", () => {
       ]);
     });
     vi.mocked(forkSession).mockResolvedValueOnce({ sessionId: "fork-id" });
+    const { createSession, modes, configOptions } = mockForkActivation(agent);
 
     const response = await agent.unstable_forkSession({
       sessionId: "source-id",
@@ -8599,6 +8626,8 @@ describe("session/fork", () => {
     });
 
     expect(response.sessionId).toBe("fork-id");
+    expect(response.modes).toBe(modes);
+    expect(response.configOptions).toBe(configOptions);
     expect(importSessionToStore).toHaveBeenLastCalledWith("source-id", expect.any(Object), {
       dir: "/workspace",
       includeSubagents: false,
@@ -8607,6 +8636,10 @@ describe("session/fork", () => {
       dir: "/workspace",
       upToMessageId: "inactive-assistant-uuid",
     });
+    expect(createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "source-id", cwd: "/workspace" }),
+      { resume: "fork-id" },
+    );
   });
 });
 
