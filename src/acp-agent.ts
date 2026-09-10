@@ -1160,13 +1160,15 @@ export type NewSessionMeta = {
   claudeCode?: {
     /**
      * Options forwarded to Claude Code when starting a new session.
-     * Those parameters will be ignored and managed by ACP:
+     * Those parameters will not be forwarded because they are managed by ACP:
      *   - cwd
      *   - includePartialMessages
      *   - allowDangerouslySkipPermissions
      *   - permissionMode
      *   - canUseTool
      *   - executable
+     * The `agent` parameter is also ignored: main-thread agent selection is not
+     * part of this adapter's ACP contract.
      * Those parameters will be used and updated to work with ACP:
      *   - hooks (merged with ACP's hooks)
      *   - mcpServers (merged with ACP's mcpServers)
