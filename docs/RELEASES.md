@@ -55,14 +55,18 @@ handling for preview versions.
 
 Those are three jobs, in that order: `publish-npm-preview` mirrors `publish-npm`
 and does nothing but publish; `publish-tag-preview` creates the tag; and
-`trigger-registry-update` is shared with the stable path. The tag is a separate
-job so that a tag failure can be retried on its own with **Re-run failed jobs**
-— re-running the publish is not an option, because npm versions are immutable and
-publishing the same one twice fails outright.
+`trigger-registry-update` is shared with the stable path. Before dispatching,
+the registry job polls npm for the exact published version for up to 12.5 minutes,
+including downloading its tarball, so the registry never checks while npm is
+still propagating the package. The tag is a separate job so that a tag failure
+can be retried on its own with **Re-run failed jobs** — re-running the publish is
+not an option, because npm versions are immutable and publishing the same one
+twice fails outright.
 
 Both downstream jobs are gated on a `published` output that the publish step
-sets only after `npm publish --tag preview` succeeds. This ensures tagging and
-the registry update run only after the version has been published to npm.
+sets only after `npm publish --tag preview` succeeds. This ensures tagging runs
+only after publication and the registry update runs only after that exact version
+can also be downloaded from npm.
 
 A stable and a preview dispatch can never collide — a release merge publishes
 stable and skips the preview, every other push does the reverse — so the registry
