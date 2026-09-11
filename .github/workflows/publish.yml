@@ -67,6 +67,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      version: ${{ steps.publish.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -78,7 +80,12 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
       - run: npm run build
-      - run: npm publish
+      - name: Publish
+        id: publish
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          npm publish
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   # Same shape as publish-npm. Tagging is a separate job, so nothing here needs
   # write access to the repository.
@@ -207,7 +214,45 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions: {}
+    # npm metadata is normally visible within about five minutes. Leave 2.5x that
+    # window for propagation, plus enough time to mint the token and dispatch.
+    timeout-minutes: 15
     steps:
+      - name: Wait for package to become available
+        if: ${{ needs.publish-npm.result == 'success' || needs.publish-npm-preview.outputs.published == 'true' }}
+        env:
+          PACKAGE: "@agentclientprotocol/claude-agent-acp"
+          VERSION: ${{ needs.publish-npm-preview.outputs.version || needs.publish-npm.outputs.version }}
+        #language=bash
+        run: |
+          if [ -z "$VERSION" ]; then
+            echo "::error::The publish job did not report a package version."
+            exit 1
+          fi
+
+          deadline=$((SECONDS + 750))
+          while (( SECONDS < deadline )); do
+            if timeout 10s npm pack "$PACKAGE@$VERSION" \
+              --dry-run \
+              --ignore-scripts \
+              --silent \
+              --registry=https://registry.npmjs.org \
+              --prefer-online \
+              --fetch-retries=0 >/dev/null 2>&1; then
+              echo "$PACKAGE@$VERSION is available from npm."
+              exit 0
+            fi
+
+            remaining=$((deadline - SECONDS))
+            if (( remaining > 0 )); then
+              echo "Waiting for $PACKAGE@$VERSION to become available (${remaining}s remaining)..."
+              sleep 10
+            fi
+          done
+
+          echo "::error::$PACKAGE@$VERSION was not available from npm after 12.5 minutes."
+          exit 1
+
       - name: Generate token scoped to the registry repo
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         id: registry-token
