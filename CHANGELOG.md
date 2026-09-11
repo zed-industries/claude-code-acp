@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.77.0](https://github.com/agentclientprotocol/claude-agent-acp/compare/v0.76.0...v0.77.0) (2026-09-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* claudeCode.options.agent is no longer forwarded to Claude Code, and the agent-picker exports DEFAULT_AGENT_ID, AGENT_CONFIG_ID, BUILTIN_AGENT_NAMES, and discoverCustomAgents are removed. Consumers relying on main-thread agent selection must stop passing that option.
+
+### Code Refactoring
+
+* remove agent config option ([#1112](https://github.com/agentclientprotocol/claude-agent-acp/issues/1112)) ([6b7473b](https://github.com/agentclientprotocol/claude-agent-acp/commit/6b7473b1afb48fbf0cb3b463d576a89a73ddf7a3))
+
 ## [0.76.0](https://github.com/agentclientprotocol/claude-agent-acp/compare/v0.75.1...v0.76.0) (2026-09-09)
 
 
